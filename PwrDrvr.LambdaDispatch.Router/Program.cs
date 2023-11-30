@@ -1,4 +1,4 @@
-namespace lambda_dispatch.router;
+namespace PwrDrvr.LambdaDispatch.Router;
 
 public class Program
 {

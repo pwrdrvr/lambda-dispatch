@@ -2,9 +2,9 @@ using NUnit.Framework;
 using System.Net.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using lambda_dispatch.router;
+using PwrDrvr.LambdaDispatch.Router;
 
-namespace lambda_dispatch.router.Tests
+namespace PwrDrvr.LambdaDispatch.Router.Tests
 {
     public class StartupTests
     {

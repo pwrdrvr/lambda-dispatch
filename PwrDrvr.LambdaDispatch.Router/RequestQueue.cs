@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace lambda_dispatch.router
+namespace PwrDrvr.LambdaDispatch.Router
 {
   public class Request
   {

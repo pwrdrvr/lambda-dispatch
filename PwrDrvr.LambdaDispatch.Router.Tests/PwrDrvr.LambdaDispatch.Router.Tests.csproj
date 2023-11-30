@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>router_tests</RootNamespace>
+    <RootNamespace>PwrDrvr.LambdaDispatch.Router.Tests</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\router\router.csproj" />
+    <ProjectReference Include="..\PwrDrvr.LambdaDispatch.Router\PwrDrvr.LambdaDispatch.Router.csproj" />
   </ItemGroup>
 
 </Project>

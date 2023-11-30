@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace lambda_dispatch.router
+namespace PwrDrvr.LambdaDispatch.Router
 {
     public class Startup
     {

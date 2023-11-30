@@ -3,9 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "extension", "extension\extension.csproj", "{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Extension", "PwrDrvr.LambdaDispatch.Extension\PwrDrvr.LambdaDispatch.Extension.csproj", "{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "router", "router\router.csproj", "{5697720B-CF2E-4A76-8652-54F2BABEE490}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router", "PwrDrvr.LambdaDispatch.Router\PwrDrvr.LambdaDispatch.Router.csproj", "{5697720B-CF2E-4A76-8652-54F2BABEE490}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.Tests", "PwrDrvr.LambdaDispatch.Router.Tests\PwrDrvr.LambdaDispatch.Router.Tests.csproj", "{713C8E92-D53E-4659-A8A5-9B35BC0360AA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -24,5 +26,9 @@ Global
 		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Release|Any CPU.Build.0 = Release|Any CPU
+		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
