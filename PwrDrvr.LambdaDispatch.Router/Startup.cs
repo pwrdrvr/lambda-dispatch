@@ -11,6 +11,7 @@ namespace PwrDrvr.LambdaDispatch.Router
         {
             services.AddRouting();
             services.AddHealthChecks();
+            services.AddControllers();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -40,7 +41,8 @@ namespace PwrDrvr.LambdaDispatch.Router
                 builder.UseEndpoints(endpoints =>
                 {
                     endpoints.MapHealthChecks("/health");
-                    endpoints.MapFallback(() => "Control Interface");
+                    endpoints.MapControllers();  // Map the ChunkedController
+                    // endpoints.MapFallback(() => "Control Interface");
                     // Add more routes for the control interface here
                 });
             });
