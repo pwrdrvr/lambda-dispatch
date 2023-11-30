@@ -12,6 +12,26 @@ public class ChunkedController : ControllerBase
   [DisableRequestSizeLimit]
   public async Task Post()
   {
+    Console.WriteLine("Got request");
+
+    Response.StatusCode = 200;
+    Response.ContentType = "text/plain";
+    Response.Headers.Append("Transfer-Encoding", "chunked");
+
+    // Print when we start the response
+    Response.OnStarting(() =>
+    {
+      Console.WriteLine("Starting response");
+      return Task.CompletedTask;
+    });
+
+    // Print when we finish the response
+    Response.OnCompleted(() =>
+    {
+      Console.WriteLine("Finished response");
+      return Task.CompletedTask;
+    });
+
     // Write the response body
     await using (var writer = new StreamWriter(Response.Body))
     {
@@ -26,7 +46,7 @@ public class ChunkedController : ControllerBase
       while ((line = await reader.ReadLineAsync()) != null)
       {
         // Process the line...
-        await Task.Delay(5000);
+        await Task.Delay(1000);
 
         // Dump request to the console
         Console.WriteLine(line);
