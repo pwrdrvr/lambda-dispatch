@@ -9,6 +9,7 @@ namespace lambda_dispatch.router
     {
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddRouting();
             services.AddHealthChecks();
         }
 
