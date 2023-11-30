@@ -1,5 +1,7 @@
 ﻿using System.Net.Http;
+using System.Net.Sockets;
 using System.IO.Pipelines;
+using System.Runtime.CompilerServices;
 
 namespace PwrDrvr.LambdaDispatch.Router.TestClient;
 
@@ -7,41 +9,79 @@ public class Program
 {
   static public async Task TestChunkedRequest()
   {
-    using (var client = new HttpClient())
+    using (var client = new TcpClient("localhost", 5001))
+    using (var stream = client.GetStream())
+    using (var writer = new StreamWriter(stream))
+    using (var reader = new StreamReader(stream))
     {
-      client.BaseAddress = new Uri("http://localhost:5001");
+      // Send the request headers
+      await writer.WriteAsync("POST /api/chunked HTTP/1.1\r\n");
+      await writer.WriteAsync("Host: localhost:5001\r\n");
+      await writer.WriteAsync("Content-Type: text/plain\r\n");
+      // await writer.WriteAsync("Content-Length: 0\r\n");
+      await writer.WriteAsync("Transfer-Encoding: chunked\r\n");
+      await writer.WriteAsync("\r\n");
+      await writer.FlushAsync();
 
-      // Prepare the request
-      var request = new HttpRequestMessage(HttpMethod.Post, "/api/chunked");
-
-      // Create a pipe to send the request body in chunks
-      var pipe = new Pipe();
-      request.Content = new StreamContent(pipe.Reader.AsStream());
-
-      // Start sending the request
-      var responseTask = client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-
-      // Write the request body in chunks
-      await using (var writer = new StreamWriter(pipe.Writer.AsStream()))
+      // Start a task to read the response headers and body
+      var readResponseTask = Task.Run(async () =>
       {
-        for (int i = 0; i < 10; i++)
+        // Read the response headers
+        string? line;
+        while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
         {
-          await writer.WriteAsync($"Chunk {i}\n");
-          await writer.FlushAsync();
-
-          // Sleep for 1 second between chunks
-          await Task.Delay(TimeSpan.FromSeconds(1));
+          Console.WriteLine(line);
         }
+
+        // Read the response body
+        while ((line = await reader.ReadLineAsync()) != null)
+        {
+          Console.WriteLine(line);
+        }
+      });
+
+      await Task.Delay(TimeSpan.FromSeconds(5));
+
+
+      // Send the request body in chunks
+      for (int i = 0; i < 10; i++)
+      {
+        var chunk = $"Chunk {i}\r\n";
+        var chunkSize = chunk.Length.ToString("X");
+
+        Console.WriteLine($"Sending chunk {i} of size {chunkSize}");
+
+        await writer.WriteAsync($"{chunkSize}\r\n");
+        await writer.WriteAsync(chunk);
+        await writer.WriteAsync("\r\n");
+        await writer.FlushAsync();
+
+        // Sleep for 1 second between chunks
+        await Task.Delay(TimeSpan.FromSeconds(1));
       }
 
-      // Wait for the response
-      var response = await responseTask;
+      // Send the last chunk
+      await writer.WriteAsync("0\r\n\r\n");
+      await writer.FlushAsync();
 
-      // Print the response body to the console
-      var responseBody = await response.Content.ReadAsStringAsync();
-      Console.WriteLine(responseBody);
+      // Read the response headers
+      // string? line;
+      // while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
+      // {
+      //   Console.WriteLine(line);
+      // }
+
+      // // Read the response body
+      // while ((line = await reader.ReadLineAsync()) != null)
+      // {
+      //   Console.WriteLine(line);
+      // }
+
+      // Wait for the response reading task to complete
+      await readResponseTask;
     }
   }
+
   static async Task Main(string[] args)
   {
     await TestChunkedRequest();

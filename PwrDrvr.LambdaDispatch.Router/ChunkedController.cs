@@ -16,7 +16,9 @@ public class ChunkedController : ControllerBase
 
     Response.StatusCode = 200;
     Response.ContentType = "text/plain";
-    Response.Headers.Append("Transfer-Encoding", "chunked");
+    // If you set this it hangs... it's implied that the transfer-encoding is chunked
+    // and is already handled by the server
+    // Response.Headers.Append("Transfer-Encoding", "chunked");
 
     // Print when we start the response
     Response.OnStarting(() =>
@@ -33,24 +35,25 @@ public class ChunkedController : ControllerBase
     });
 
     // Write the response body
-    await using (var writer = new StreamWriter(Response.Body))
-    {
-      await writer.WriteAsync("Chunked response");
-      await writer.FlushAsync();
-    }
+    var writer = new StreamWriter(Response.Body);
+    await writer.WriteAsync("Chunked response");
+    await writer.FlushAsync();
+    // Close the response body
+    await writer.DisposeAsync();
 
     // Read the request body
-    using (var reader = new StreamReader(Request.Body))
+    using var reader = new StreamReader(Request.Body);
+    string? line;
+    while ((line = await reader.ReadLineAsync()) != null)
     {
-      string? line;
-      while ((line = await reader.ReadLineAsync()) != null)
-      {
-        // Process the line...
-        await Task.Delay(1000);
+      // Process the line...
+      await Task.Delay(1000);
 
-        // Dump request to the console
-        Console.WriteLine(line);
-      }
+      // Dump request to the console
+      Console.WriteLine(line);
     }
+
+    // Close the response body
+    // await writer.DisposeAsync();
   }
 }

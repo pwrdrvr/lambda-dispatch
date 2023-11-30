@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 namespace PwrDrvr.LambdaDispatch.Router
 {
@@ -9,6 +10,12 @@ namespace PwrDrvr.LambdaDispatch.Router
     {
         public void ConfigureServices(IServiceCollection services)
         {
+            services.Configure<KestrelServerOptions>(options =>
+                {
+                    options.Limits.MinRequestBodyDataRate = null;
+                    options.Limits.MinResponseDataRate = null;
+                });
+
             services.AddRouting();
             services.AddHealthChecks();
             services.AddControllers();
@@ -42,7 +49,7 @@ namespace PwrDrvr.LambdaDispatch.Router
                 {
                     endpoints.MapHealthChecks("/health");
                     endpoints.MapControllers();  // Map the ChunkedController
-                    // endpoints.MapFallback(() => "Control Interface");
+                    // endpoints.MapFallback(() => Console.WriteLine("Unhandled route"));
                     // Add more routes for the control interface here
                 });
             });
