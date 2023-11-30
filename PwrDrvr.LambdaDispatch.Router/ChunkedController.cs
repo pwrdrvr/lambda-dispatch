@@ -22,7 +22,7 @@ public class ChunkedController : ControllerBase
     // Read the request body
     using (var reader = new StreamReader(Request.Body))
     {
-      string line;
+      string? line;
       while ((line = await reader.ReadLineAsync()) != null)
       {
         // Process the line...

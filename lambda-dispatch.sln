@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Rout
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.Tests", "PwrDrvr.LambdaDispatch.Router.Tests\PwrDrvr.LambdaDispatch.Router.Tests.csproj", "{713C8E92-D53E-4659-A8A5-9B35BC0360AA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.TestClient", "PwrDrvr.LambdaDispatch.Router.TestClient\PwrDrvr.LambdaDispatch.Router.TestClient.csproj", "{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
