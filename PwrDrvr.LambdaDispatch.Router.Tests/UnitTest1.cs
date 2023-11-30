@@ -27,7 +27,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
             response.EnsureSuccessStatusCode();
 
             var responseString = await response.Content.ReadAsStringAsync();
-            Assert.AreEqual("Hello World!", responseString);
+            Assert.That(responseString, Is.EqualTo("Hello World!"));
         }
 
         [Test]
@@ -38,7 +38,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
             response.EnsureSuccessStatusCode();
 
             var responseString = await response.Content.ReadAsStringAsync();
-            Assert.AreEqual("Control Interface", responseString);
+            Assert.That(responseString, Is.EqualTo("Control Interface"));
         }
     }
 }
