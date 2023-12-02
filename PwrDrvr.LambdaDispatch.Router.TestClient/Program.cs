@@ -18,7 +18,6 @@ public class Program
       await writer.WriteAsync("POST /api/chunked HTTP/1.1\r\n");
       await writer.WriteAsync("Host: localhost:5001\r\n");
       await writer.WriteAsync("Content-Type: text/plain\r\n");
-      // await writer.WriteAsync("Content-Length: 0\r\n");
       await writer.WriteAsync("Transfer-Encoding: chunked\r\n");
       await writer.WriteAsync("\r\n");
       await writer.FlushAsync();
@@ -40,9 +39,6 @@ public class Program
         }
       });
 
-      await Task.Delay(TimeSpan.FromSeconds(5));
-
-
       // Send the request body in chunks
       for (int i = 0; i < 10; i++)
       {
@@ -55,27 +51,11 @@ public class Program
         await writer.WriteAsync(chunk);
         await writer.WriteAsync("\r\n");
         await writer.FlushAsync();
-
-        // Sleep for 1 second between chunks
-        await Task.Delay(TimeSpan.FromSeconds(1));
       }
 
       // Send the last chunk
       await writer.WriteAsync("0\r\n\r\n");
       await writer.FlushAsync();
-
-      // Read the response headers
-      // string? line;
-      // while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
-      // {
-      //   Console.WriteLine(line);
-      // }
-
-      // // Read the response body
-      // while ((line = await reader.ReadLineAsync()) != null)
-      // {
-      //   Console.WriteLine(line);
-      // }
 
       // Wait for the response reading task to complete
       await readResponseTask;
