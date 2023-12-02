@@ -18,6 +18,9 @@ https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool
 
 * [AWS CLI](https://aws.amazon.com/cli/)
 * [DotNet 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+* [LambdaTestTool for DotNet 8](https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool)
+  * `dotnet tool install -g Amazon.Lambda.TestTool-8.0`
+  * `dotnet lambda-test-tool-8.0 --help`
 
 ## Install Lambda Templates
 
@@ -41,4 +44,10 @@ dotnet run --project PwrDrvr.LambdaDispatch.Router
 
 ```bash
 dotnet test
+```
+
+## Start the Lambda Test Tool
+
+```bash
+dotnet-lambda-test-tool-8.0
 ```

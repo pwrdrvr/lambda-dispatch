@@ -1,0 +1,47 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "foo bootstrap (console)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/foo/src/foo/bin/Debug/net8.0/bootstrap",
+      "args": [],
+      "cwd": "${workspaceFolder}/foo/src/foo",
+      "stopAtEntry": false,
+      "console": "internalConsole"
+    },
+    {
+      "name": ".NET Lambda Test Tool",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "<home-directory>/.dotnet/tools/dotnet-lambda-test-tool-8.0",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "stopAtEntry": false,
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "name": "LambdaLB (console)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/PwrDrvr.LambdaDispatch.LambdaLB/test/PwrDrvr.LambdaDispatch.LambdaLB.Tests/bin/Debug/net8.0/PwrDrvr.LambdaDispatch.LambdaLB.Tests.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/PwrDrvr.LambdaDispatch.LambdaLB/test/PwrDrvr.LambdaDispatch.LambdaLB.Tests",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": ".NET Core Attach",
+      "type": "coreclr",
+      "request": "attach"
+    }
+  ]
+}
