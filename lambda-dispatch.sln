@@ -3,31 +3,23 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Extension", "PwrDrvr.LambdaDispatch.Extension\PwrDrvr.LambdaDispatch.Extension.csproj", "{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{57510FFB-6217-43EC-A3D8-A7EB62F4627B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router", "PwrDrvr.LambdaDispatch.Router\PwrDrvr.LambdaDispatch.Router.csproj", "{5697720B-CF2E-4A76-8652-54F2BABEE490}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Extension", "src\PwrDrvr.LambdaDispatch.Extension\PwrDrvr.LambdaDispatch.Extension.csproj", "{5FB1EC44-572C-42BC-BAA4-E22644D242E4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.Tests", "PwrDrvr.LambdaDispatch.Router.Tests\PwrDrvr.LambdaDispatch.Router.Tests.csproj", "{713C8E92-D53E-4659-A8A5-9B35BC0360AA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.LambdaLB", "src\PwrDrvr.LambdaDispatch.LambdaLB\PwrDrvr.LambdaDispatch.LambdaLB.csproj", "{7FB69D16-91AF-422E-9538-FC9FFBD9BC54}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.TestClient", "PwrDrvr.LambdaDispatch.Router.TestClient\PwrDrvr.LambdaDispatch.Router.TestClient.csproj", "{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Messages", "src\PwrDrvr.LambdaDispatch.Messages\PwrDrvr.LambdaDispatch.Messages.csproj", "{30F0EE01-AAB3-468A-9321-6FB3B60E82C8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Messages", "PwrDrvr.LambdaDispatch.Messages\PwrDrvr.LambdaDispatch.Messages.csproj", "{981E5ABC-B29D-4DE6-8347-66629E25A3E2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router", "src\PwrDrvr.LambdaDispatch.Router\PwrDrvr.LambdaDispatch.Router.csproj", "{B5A98CB5-760A-4A8B-B9FF-F7BA192DDB95}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "PwrDrvr.LambdaDispatch.LambdaLB", "PwrDrvr.LambdaDispatch.LambdaLB", "{3116E907-BA1E-45CB-A05C-5DE02CF683DC}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{993D2B89-BE20-4637-B5B9-1530D4EBA055}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.LambdaLB.Tests", "test\PwrDrvr.LambdaDispatch.LambdaLB.Tests\PwrDrvr.LambdaDispatch.LambdaLB.Tests.csproj", "{37AF82C7-00E3-4205-ACC5-C1A9305A20D3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.LambdaLB", "PwrDrvr.LambdaDispatch.LambdaLB\src\PwrDrvr.LambdaDispatch.LambdaLB\PwrDrvr.LambdaDispatch.LambdaLB.csproj", "{67049178-B506-49C3-AF27-96E973A8D59F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.TestClient", "test\PwrDrvr.LambdaDispatch.Router.TestClient\PwrDrvr.LambdaDispatch.Router.TestClient.csproj", "{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{76C4D35F-4F73-4465-8F5A-305A92A141AF}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.LambdaLB.Tests", "PwrDrvr.LambdaDispatch.LambdaLB\test\PwrDrvr.LambdaDispatch.LambdaLB.Tests\PwrDrvr.LambdaDispatch.LambdaLB.Tests.csproj", "{D449499A-DAE6-43FF-9F30-BAE048B16092}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "foo", "foo", "{16E2858A-704B-432C-8FDE-65A8AD9CE8F2}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{72B0A179-BFA2-4359-BC10-0AA49457724D}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "foo", "foo\src\foo\foo.csproj", "{64015A3F-56CB-4474-8FAB-8076C09368E8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.Tests", "test\PwrDrvr.LambdaDispatch.Router.Tests\PwrDrvr.LambdaDispatch.Router.Tests.csproj", "{462C1425-7514-4F30-9DF1-93F296605597}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -38,45 +30,42 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DAAB22C6-DEAE-4E5D-B5E3-53FF1FFC7037}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5697720B-CF2E-4A76-8652-54F2BABEE490}.Release|Any CPU.Build.0 = Release|Any CPU
-		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{713C8E92-D53E-4659-A8A5-9B35BC0360AA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0D341BEC-0D92-49E2-9CDF-28ADB2461C47}.Release|Any CPU.Build.0 = Release|Any CPU
-		{981E5ABC-B29D-4DE6-8347-66629E25A3E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{981E5ABC-B29D-4DE6-8347-66629E25A3E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{981E5ABC-B29D-4DE6-8347-66629E25A3E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{981E5ABC-B29D-4DE6-8347-66629E25A3E2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{67049178-B506-49C3-AF27-96E973A8D59F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{67049178-B506-49C3-AF27-96E973A8D59F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{67049178-B506-49C3-AF27-96E973A8D59F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{67049178-B506-49C3-AF27-96E973A8D59F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D449499A-DAE6-43FF-9F30-BAE048B16092}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D449499A-DAE6-43FF-9F30-BAE048B16092}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D449499A-DAE6-43FF-9F30-BAE048B16092}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D449499A-DAE6-43FF-9F30-BAE048B16092}.Release|Any CPU.Build.0 = Release|Any CPU
-		{64015A3F-56CB-4474-8FAB-8076C09368E8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{64015A3F-56CB-4474-8FAB-8076C09368E8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{64015A3F-56CB-4474-8FAB-8076C09368E8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{64015A3F-56CB-4474-8FAB-8076C09368E8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5FB1EC44-572C-42BC-BAA4-E22644D242E4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FB1EC44-572C-42BC-BAA4-E22644D242E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5FB1EC44-572C-42BC-BAA4-E22644D242E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5FB1EC44-572C-42BC-BAA4-E22644D242E4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7FB69D16-91AF-422E-9538-FC9FFBD9BC54}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7FB69D16-91AF-422E-9538-FC9FFBD9BC54}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7FB69D16-91AF-422E-9538-FC9FFBD9BC54}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7FB69D16-91AF-422E-9538-FC9FFBD9BC54}.Release|Any CPU.Build.0 = Release|Any CPU
+		{30F0EE01-AAB3-468A-9321-6FB3B60E82C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{30F0EE01-AAB3-468A-9321-6FB3B60E82C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{30F0EE01-AAB3-468A-9321-6FB3B60E82C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{30F0EE01-AAB3-468A-9321-6FB3B60E82C8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B5A98CB5-760A-4A8B-B9FF-F7BA192DDB95}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B5A98CB5-760A-4A8B-B9FF-F7BA192DDB95}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B5A98CB5-760A-4A8B-B9FF-F7BA192DDB95}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B5A98CB5-760A-4A8B-B9FF-F7BA192DDB95}.Release|Any CPU.Build.0 = Release|Any CPU
+		{37AF82C7-00E3-4205-ACC5-C1A9305A20D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{37AF82C7-00E3-4205-ACC5-C1A9305A20D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{37AF82C7-00E3-4205-ACC5-C1A9305A20D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{37AF82C7-00E3-4205-ACC5-C1A9305A20D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788}.Release|Any CPU.Build.0 = Release|Any CPU
+		{462C1425-7514-4F30-9DF1-93F296605597}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{462C1425-7514-4F30-9DF1-93F296605597}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{462C1425-7514-4F30-9DF1-93F296605597}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{462C1425-7514-4F30-9DF1-93F296605597}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{993D2B89-BE20-4637-B5B9-1530D4EBA055} = {3116E907-BA1E-45CB-A05C-5DE02CF683DC}
-		{67049178-B506-49C3-AF27-96E973A8D59F} = {993D2B89-BE20-4637-B5B9-1530D4EBA055}
-		{76C4D35F-4F73-4465-8F5A-305A92A141AF} = {3116E907-BA1E-45CB-A05C-5DE02CF683DC}
-		{D449499A-DAE6-43FF-9F30-BAE048B16092} = {76C4D35F-4F73-4465-8F5A-305A92A141AF}
-		{72B0A179-BFA2-4359-BC10-0AA49457724D} = {16E2858A-704B-432C-8FDE-65A8AD9CE8F2}
-		{64015A3F-56CB-4474-8FAB-8076C09368E8} = {72B0A179-BFA2-4359-BC10-0AA49457724D}
+		{5FB1EC44-572C-42BC-BAA4-E22644D242E4} = {57510FFB-6217-43EC-A3D8-A7EB62F4627B}
+		{7FB69D16-91AF-422E-9538-FC9FFBD9BC54} = {57510FFB-6217-43EC-A3D8-A7EB62F4627B}
+		{30F0EE01-AAB3-468A-9321-6FB3B60E82C8} = {57510FFB-6217-43EC-A3D8-A7EB62F4627B}
+		{B5A98CB5-760A-4A8B-B9FF-F7BA192DDB95} = {57510FFB-6217-43EC-A3D8-A7EB62F4627B}
+		{37AF82C7-00E3-4205-ACC5-C1A9305A20D3} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
+		{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
+		{462C1425-7514-4F30-9DF1-93F296605597} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
 	EndGlobalSection
 EndGlobal

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsTestProject>true</IsTestProject>
@@ -13,6 +13,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\foo\foo.csproj" />
+    <ProjectReference Include="..\..\src\PwrDrvr.LambdaDispatch.LambdaLB\PwrDrvr.LambdaDispatch.LambdaLB.csproj" />
   </ItemGroup>
 </Project>

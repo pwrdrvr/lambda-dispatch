@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PwrDrvr.LambdaDispatch.Router\PwrDrvr.LambdaDispatch.Router.csproj" />
+    <ProjectReference Include="..\..\src\PwrDrvr.LambdaDispatch.Router\PwrDrvr.LambdaDispatch.Router.csproj" />
   </ItemGroup>
 
 </Project>
