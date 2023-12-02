@@ -3,6 +3,7 @@ using Amazon.Lambda.RuntimeSupport;
 using Amazon.Lambda.Serialization.SystemTextJson;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 namespace foo;
 
@@ -43,8 +44,8 @@ public class Function
     /// </summary>
     private static async Task Main()
     {
-        Func<Stream, ILambdaContext, Task<string>> handler = FunctionHandler;
-        await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
+        Func<MyRequest, ILambdaContext, Task<MyResponse>> handler = FunctionHandler;
+        await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<JsonContext>())
             .Build()
             .RunAsync();
     }
@@ -100,17 +101,15 @@ public class Function
     //     return outputStream;
     // }
 
-    public static async Task<string> FunctionHandler(Stream stream, ILambdaContext context)
+    public static async Task<MyResponse> FunctionHandler(MyRequest request, ILambdaContext context)
     {
-        using var reader = new StreamReader(stream);
-        var input = await reader.ReadToEndAsync();
-
-        var request = JsonSerializer.Deserialize<MyRequest>(input, JsonContext.Default.MyRequest);
-
         // Process the request...
         var response = new MyResponse($"Hello, {request.Name}!");
 
-        return JsonSerializer.Serialize(response, JsonContext.Default.MyResponse);
+        await Task.Delay(1);
+
+        // return JsonSerializer.Serialize(response, JsonContext.Default.MyResponse);
+        return response;
     }
 }
 
