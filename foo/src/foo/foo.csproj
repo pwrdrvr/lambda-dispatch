@@ -18,6 +18,7 @@
     <TrimMode>partial</TrimMode>
     <!-- If you're using NativeAOT, you don't need ReadyToRun because NativeAOT already compiles your application ahead-of-time. -->
     <!-- <ReadyToRun>true</ReadyToRun> -->
+    <IncludeSystemTextJsonSourceGenerator>true</IncludeSystemTextJsonSourceGenerator>
   </PropertyGroup>
   <!-- 
   When publishing Lambda functions for ARM64 to the provided.al2 runtime a newer version of libicu needs to be included

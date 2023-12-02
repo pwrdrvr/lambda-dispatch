@@ -1,9 +1,38 @@
 using Amazon.Lambda.Core;
 using Amazon.Lambda.RuntimeSupport;
 using Amazon.Lambda.Serialization.SystemTextJson;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace foo;
+
+public class MyRequest
+{
+    // Constructor
+    public MyRequest(string name)
+    {
+        Name = name;
+    }
+
+    public string Name { get; set; }
+}
+
+public class MyResponse
+{
+    // Constructor
+    public MyResponse(string message)
+    {
+        Message = message;
+    }
+
+    public string Message { get; set; }
+}
+
+[JsonSerializable(typeof(MyRequest))]
+[JsonSerializable(typeof(MyResponse))]
+public partial class JsonContext : JsonSerializerContext
+{
+}
 
 public class Function
 {
@@ -14,7 +43,7 @@ public class Function
     /// </summary>
     private static async Task Main()
     {
-        Func<string, ILambdaContext, string> handler = FunctionHandler;
+        Func<Stream, ILambdaContext, Task<string>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()
             .RunAsync();
@@ -40,15 +69,48 @@ public class Function
     /// <param name="input"></param>
     /// <param name="context"></param>
     /// <returns></returns>
-    public static string FunctionHandler(string input, ILambdaContext context)
+    // public static string FunctionHandler(string input, ILambdaContext context)
+    // {
+    //     // Log the JSON input string received from the Lambda runtime
+    //     context.Logger.LogLine($"Received input: {input}");
+
+    //     Console.WriteLine("Hello World!");
+
+    //     // Return a simple object that converts to JSON
+    //     return "cats";
+    // }
+
+    // public static async Task<Stream> FunctionHandler(Stream inputStream, ILambdaContext context)
+    // {
+    //     using var reader = new StreamReader(inputStream);
+    //     var input = await reader.ReadToEndAsync();
+
+    //     // Log the input string received from the Lambda runtime
+    //     context.Logger.LogLine($"Received input: {input}");
+
+    //     // Process the input and create a response...
+    //     var response = "Your response";
+
+    //     var outputStream = new MemoryStream();
+    //     var writer = new StreamWriter(outputStream);
+    //     await writer.WriteAsync(response);
+    //     await writer.FlushAsync();
+
+    //     outputStream.Position = 0;
+    //     return outputStream;
+    // }
+
+    public static async Task<string> FunctionHandler(Stream stream, ILambdaContext context)
     {
-        // Log the JSON input string received from the Lambda runtime
-        context.Logger.LogLine($"Received input: {input}");
+        using var reader = new StreamReader(stream);
+        var input = await reader.ReadToEndAsync();
 
-        Console.WriteLine("Hello World!");
+        var request = JsonSerializer.Deserialize<MyRequest>(input, JsonContext.Default.MyRequest);
 
-        // Return a simple object that converts to JSON
-        return "cats";
+        // Process the request...
+        var response = new MyResponse($"Hello, {request.Name}!");
+
+        return JsonSerializer.Serialize(response, JsonContext.Default.MyResponse);
     }
 }
 
