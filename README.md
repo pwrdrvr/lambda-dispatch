@@ -51,3 +51,9 @@ dotnet test
 ```bash
 dotnet-lambda-test-tool-8.0
 ```
+
+## Build for Deploy as NativeAoT Lambda
+
+```bash
+dotnet build -c Release --sc true --arch arm64
+```

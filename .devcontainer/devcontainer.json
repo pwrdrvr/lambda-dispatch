@@ -22,7 +22,10 @@
 	"features": {
 		"ghcr.io/devcontainers/features/aws-cli:1": {}
 	},
-	"postCreateCommand": "dotnet tool install -g Amazon.Lambda.TestTool-8.0"
+	"postCreateCommand": "dotnet tool install -g Amazon.Lambda.TestTool-8.0",
+	"containerEnv": {
+		"AWS_PROFILE": "pwrdrvr-ghpublic-admin"
+	}
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [5000, 5001],
 	// "portsAttributes": {
