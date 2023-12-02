@@ -12,7 +12,9 @@
 			"extensions": [
 				"GitHub.copilot-chat",
 				"GitHub.copilot",
-				"amazonwebservices.aws-toolkit-vscode"
+				"amazonwebservices.aws-toolkit-vscode",
+				"ms-dotnettools.vscodeintellicode-csharp",
+				"ms-dotnettools.csdevkit"
 			]
 		}
 	},
