@@ -5,6 +5,17 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "LambdaLB bootstrap (console)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/PwrDrvr.LambdaDispatch.LambdaLB/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Debug/net8.0/bootstrap",
+      "args": [],
+      "cwd": "${workspaceFolder}/PwrDrvr.LambdaDispatch.LambdaLB/src/PwrDrvr.LambdaDispatch.LambdaLB",
+      "stopAtEntry": false,
+      "console": "internalConsole"
+    },
+    {
       "name": "foo bootstrap (console)",
       "type": "coreclr",
       "request": "launch",

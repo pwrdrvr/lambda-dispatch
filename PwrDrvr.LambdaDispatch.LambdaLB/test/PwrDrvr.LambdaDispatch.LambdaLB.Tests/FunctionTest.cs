@@ -8,12 +8,12 @@ namespace PwrDrvr.LambdaDispatch.LambdaLB.Tests;
 public class FunctionTest
 {
     [Fact]
-    public void TestSampleFunction()
+    public async void TestSampleFunction()
     {
         var function = new Function();
         var context = new TestLambdaContext();
-        var request = new WaiterRequest("1234", "http://localhost:5001");
-        var response = function.FunctionHandler(request, context);
+        var request = new WaiterRequest { Id = "1234", DispatcherUrl = "http://localhost:5001" };
+        var response = await Function.FunctionHandler(request, context);
 
         Assert.Equal(request.Id, response.Id);
     }

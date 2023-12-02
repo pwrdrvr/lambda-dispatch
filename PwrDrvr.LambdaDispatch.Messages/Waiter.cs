@@ -1,26 +1,14 @@
 ﻿namespace PwrDrvr.LambdaDispatch.Messages;
-using PwrDrvr.LambdaDispatch.Messages;
 
 public class WaiterRequest
 {
-  public readonly string Id;
+  public string Id { get; set; }
 
-  public readonly string DispatcherUrl;
-
-  public WaiterRequest(string id, string dispatcherUrl)
-  {
-    Id = id;
-    DispatcherUrl = dispatcherUrl;
-  }
+  public string DispatcherUrl { get; set; }
 }
 
 
 public class WaiterResponse
 {
-  public readonly string Id;
-
-  public WaiterResponse(string id)
-  {
-    Id = id;
-  }
+  public string Id { get; set; }
 }
