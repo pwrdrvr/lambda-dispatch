@@ -57,3 +57,10 @@ dotnet-lambda-test-tool-8.0
 ```bash
 dotnet build -c Release --sc true --arch arm64
 ```
+
+## Count Lines of Code
+
+```bash
+npm i -g cloc
+cloc --exclude-dir=bin,obj --exclude-ext=csproj,sln,json,md .
+```

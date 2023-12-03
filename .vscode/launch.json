@@ -39,6 +39,17 @@
       "stopAtEntry": false
     },
     {
+      "name": "Router (console)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.Router/bin/Debug/net8.0/PwrDrvr.LambdaDispatch.Router.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.Router",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
       "name": ".NET Core Attach",
       "type": "coreclr",
       "request": "attach"

@@ -3,6 +3,7 @@ using Amazon.Lambda.RuntimeSupport;
 using Amazon.Lambda.Serialization.SystemTextJson;
 using System.Text.Json.Serialization;
 using PwrDrvr.LambdaDispatch.Messages;
+using System.Net.Cache;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
@@ -48,16 +49,17 @@ public class Function
     /// <returns></returns>
     public static async Task<WaiterResponse> FunctionHandler(WaiterRequest request, ILambdaContext context)
     {
-        var response = new WaiterResponse { Id = request.Id };
+        Console.WriteLine($"Received WaiterRequest id: {request.Id}, dispatcherUrl: {request.DispatcherUrl}");
 
         await Task.Delay(1);
 
-        Console.WriteLine($"Waiter {request.Id} received request to dispatch to {request.DispatcherUrl}");
-        Console.WriteLine($"Waiter {response.Id} sending response");
+        // Establish a connection back to the control interface
+        await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
 
-        // TODO: Establish a connection back to the control interface
+        // Decode received payload
+        var aRequest = await reverseRequester.GetRequest();
 
-        // TODO: Decode received payload
+        Console.WriteLine($"Received request from dispatcher: {aRequest}");
 
         // TODO: Setup a timeout according to that specified in the payload
 
@@ -75,6 +77,10 @@ public class Function
         // line delimited headers, and a blank line to indicate the end of the headers, then the body
 
         // We can reuse the sockets too, just closing the request/response bodies not the connection
+
+        var response = new WaiterResponse { Id = request.Id };
+
+        Console.WriteLine($"Responding with WaiterResponse id: {response.Id}");
 
         return response;
     }

@@ -4,17 +4,14 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        Task.WaitAll(
-            CreateHostBuilder(args, urls: "http://localhost:5000").Build().RunAsync(), // Public interface
-            CreateHostBuilder(args, urls: "http://localhost:5001").Build().RunAsync()  // Control interface
-        );
+        CreateHostBuilder(args).Build().Run();
     }
 
-    public static IHostBuilder CreateHostBuilder(string[] args, string urls) =>
+    public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
             .ConfigureWebHostDefaults(webBuilder =>
             {
-                webBuilder.UseUrls(urls);
+                webBuilder.UseUrls("http://localhost:5000", "http://localhost:5001");
                 webBuilder.UseStartup<Startup>();
             });
 }

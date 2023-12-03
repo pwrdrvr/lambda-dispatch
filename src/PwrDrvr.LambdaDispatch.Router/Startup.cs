@@ -19,6 +19,8 @@ namespace PwrDrvr.LambdaDispatch.Router
             services.AddRouting();
             services.AddHealthChecks();
             services.AddControllers();
+
+            services.AddSingleton<Dispatcher>();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -36,6 +38,7 @@ namespace PwrDrvr.LambdaDispatch.Router
                 builder.UseEndpoints(endpoints =>
                 {
                     endpoints.MapHealthChecks("/health");
+                    endpoints.MapControllers();  // Map the IncomingController
                     endpoints.MapFallback(() => "Hello World!");
 
                     // Add more routes for the public interface here
