@@ -63,7 +63,7 @@ public class Dispatcher
     // Send the headers to the Lambda
     foreach (var header in request.Headers)
     {
-      await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}"));
+      await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
     }
 
     // Send the body to the Lambda
@@ -80,6 +80,9 @@ public class Dispatcher
 
     // Send the body to the caller
     await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
+
+    // Mark that the Response has been sent on the LambdaInstance
+    lambdaInstance.TCS.SetResult();
   }
 
   // Add a new lambda, dispatch to it immediately if a request is waiting

@@ -82,6 +82,8 @@ public class ReverseRequester : IAsyncDisposable
       // TODO: Read the chunk size and use it to read the response body
       // TODO: Make sure the chunk sizes are removed from the request
 
+      Console.WriteLine("Starting reading response from router, containing request to Lambda");
+
       // Read the response headers
       string? line;
       while (!string.IsNullOrEmpty(line = await _reader.ReadLineAsync()))
@@ -90,6 +92,8 @@ public class ReverseRequester : IAsyncDisposable
         Console.WriteLine(line);
       }
 
+      Console.WriteLine("Finished reading response headers from router, containing request to Lambda");
+
       // Read the response body
       while ((line = await _reader.ReadLineAsync()) != null)
       {
@@ -97,6 +101,7 @@ public class ReverseRequester : IAsyncDisposable
         Console.WriteLine(line);
       }
 
+      Console.WriteLine("Finished reading response");
       return requestWriter.ToString();
     });
 
@@ -104,7 +109,7 @@ public class ReverseRequester : IAsyncDisposable
     // TODO: We may need to move this await till after we send the request body (our response)
     string requestString = await readResponseTask;
 
-    Console.WriteLine($"Received request from dispatcher: {requestString}");
+    Console.WriteLine($"Received request from router: {requestString}");
 
 #pragma warning disable SYSLIB0014 // Type or member is obsolete
     return WebRequest.CreateHttp("http://localhost:5001/api/chunked");
@@ -114,6 +119,8 @@ public class ReverseRequester : IAsyncDisposable
   public async Task SendResponse()
   {
     // These request headeers are HTTP within HTTP
+
+    Console.WriteLine("Sending response to dispatcher over request channel");
 
     // Create a StringWriter to write the response body with chunk size prefix
     var writer = new StringWriter();
@@ -129,22 +136,22 @@ public class ReverseRequester : IAsyncDisposable
     await _writer.WriteAsync("\r\n");
     await _writer.FlushAsync();
 
-    // Send the request body in chunks
-    for (int i = 0; i < 10; i++)
-    {
-      var chunk = $"Chunk {i}\r\n";
-      var chunkSize = chunk.Length.ToString("X");
+    // // Send the request body in chunks
+    // for (int i = 0; i < 10; i++)
+    // {
+    //   var chunk = $"Chunk {i}\r\n";
+    //   var chunkSize = chunk.Length.ToString("X");
 
-      Console.WriteLine($"Sending chunk {i} of size {chunkSize}");
+    //   Console.WriteLine($"Sending chunk {i} of size {chunkSize}");
 
-      await _writer.WriteAsync($"{chunkSize}\r\n");
-      await _writer.WriteAsync(chunk);
-      await _writer.WriteAsync("\r\n");
-      await _writer.FlushAsync();
-    }
+    //   await _writer.WriteAsync($"{chunkSize}\r\n");
+    //   await _writer.WriteAsync(chunk);
+    //   await _writer.WriteAsync("\r\n");
+    //   await _writer.FlushAsync();
+    // }
 
-    // Send the last chunk
-    await _writer.WriteAsync("0\r\n\r\n");
-    await _writer.FlushAsync();
+    // // Send the last chunk
+    // await _writer.WriteAsync("0\r\n\r\n");
+    // await _writer.FlushAsync();
   }
 }

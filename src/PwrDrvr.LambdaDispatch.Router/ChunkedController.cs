@@ -32,11 +32,11 @@ public class ChunkedController : ControllerBase
 
     Console.WriteLine($"Router.ChunkedController.Post - A Lambda has connected with Id: {value}");
 
-    Response.StatusCode = 200;
+    Response.Headers.Append("Transfer-Encoding", "chunked");
     Response.ContentType = "text/plain";
+    Response.StatusCode = 200;
     // If you set this it hangs... it's implied that the transfer-encoding is chunked
     // and is already handled by the server
-    // Response.Headers.Append("Transfer-Encoding", "chunked");
 
     // Print when we start the response
     Response.OnStarting(() =>
@@ -59,6 +59,11 @@ public class ChunkedController : ControllerBase
 
     // Register this Lambda with the Dispatcher
     await dispatcher.AddLambda(lambdaInstance);
+
+    // Wait until we have processed a request and send a response
+    await lambdaInstance.TCS.Task;
+
+    Console.WriteLine("Router.ChunkedController.Post - Finished - Response will be closed");
 
     // // Write the response body
     // var writer = new StreamWriter(Response.Body);

@@ -26,6 +26,8 @@ public class LambdaInstance
 
   public LambdaInstanceStatus Status { get; private set; }
 
+  public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
+
   public LambdaInstance()
   {
     Id = Guid.NewGuid().ToString();
