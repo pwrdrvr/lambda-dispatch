@@ -128,11 +128,27 @@ public class Dispatcher
     // Send the body to the caller
     using var lambdaResponseReader = new StreamReader(lambdaInstance.Request.BodyReader.AsStream(), leaveOpen: true);
     string? line;
+    // First line should be status
+    line = await lambdaResponseReader.ReadLineAsync();
+    Console.WriteLine($"Got status line from lambda: {line}");
+    response.StatusCode = int.Parse(line.Split(' ')[1]);
     while (!string.IsNullOrEmpty(line = await lambdaResponseReader.ReadLineAsync()))
     {
       Console.WriteLine($"Got header line from lambda: {line}");
-      // await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(line));
-      // await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+
+      // Parse the header
+      var parts = line.Split(new[] { ": " }, 2, StringSplitOptions.None);
+      var key = parts[0];
+      // Join all the parts after the first one
+      var value = string.Join(": ", parts.Skip(1));
+      if (key == "Transfer-Encoding")
+      {
+        // Don't set the Transfer-Encoding header as it breaks the response
+        continue;
+      }
+
+      // Set the header on the Kestrel response
+      response.Headers[parts[0]] = parts[1];
     }
 
     while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
