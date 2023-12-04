@@ -61,7 +61,7 @@ public class Dispatcher
     Console.WriteLine("Sending incoming request headers to Lambda");
 
     // TODO: Write the request line
-    await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{request.Method} {request.Path} HTTP/{request.Protocol}\r\n"));
+    await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{request.Method} {request.Path} {request.Protocol}\r\n"));
 
     // Send the headers to the Lambda
     foreach (var header in request.Headers)
@@ -91,14 +91,34 @@ public class Dispatcher
     // Get the response from the lambda request and relay it back to the caller
     Console.WriteLine("Finished sending entire request to Lambda");
 
+    //
+    //
+    // Read response from Lambda and relay back to caller
+    //
+    //
+
+    Console.WriteLine("Reading response headers from Lambda");
+
     // Send the headers to the caller
     foreach (var header in lambdaInstance.Response.Headers)
     {
       response.Headers.Add(header.Key, header.Value);
     }
 
+    Console.WriteLine("Finished reading response headers from Lambda");
+
+    Console.WriteLine("Reading response body from from Lambda");
+
     // Send the body to the caller
-    await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
+    // TODO: This is throwing an exception
+    try
+    {
+      await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine(ex);
+    }
 
     // Mark that the Response has been sent on the LambdaInstance
     lambdaInstance.TCS.SetResult();

@@ -32,7 +32,7 @@ public class ChunkedController : ControllerBase
 
     Console.WriteLine($"Router.ChunkedController.Post - A Lambda has connected with Id: {value}");
 
-    Response.Headers.Append("Transfer-Encoding", "chunked");
+    // Response.Headers["Transfer-Encoding"] = "chunked";
     // This is our content type for the body that will contain a request
     // and (optional) request body
     Response.ContentType = "application/octet-stream";
