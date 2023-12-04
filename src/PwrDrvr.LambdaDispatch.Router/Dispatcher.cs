@@ -100,23 +100,49 @@ public class Dispatcher
     Console.WriteLine("Reading response headers from Lambda");
 
     // Send the headers to the caller
-    foreach (var header in lambdaInstance.Response.Headers)
-    {
-      if (header.Key == "Transfer-Encoding")
-      {
-        // Don't send the Transfer-Encoding header
-        continue;
-      }
-      response.Headers.Add(header.Key, header.Value);
-      Console.WriteLine($"Sent reponse header to caller: {header.Key}: {header.Value}");
-    }
+    // This was reading the response headers from the Lambda
+    // foreach (var header in lambdaInstance.Response.Headers)
+    // {
+    //   // Do not set the status code by adding a header
+    //   if (header.Key == "Status-Code")
+    //   {
+    //     // Set the status code on the response
+    //     response.StatusCode = int.Parse(header.Value);
+    //     Console.WriteLine($"Set response status code to {header.Value}");
+    //     continue;
+    //   }
+
+    //   if (header.Key == "Transfer-Encoding")
+    //   {
+    //     // Don't send the Transfer-Encoding header
+    //     continue;
+    //   }
+    //   response.Headers.Add(header.Key, header.Value);
+    //   Console.WriteLine($"Sent reponse header to caller: {header.Key}: {header.Value}");
+    // }
 
     Console.WriteLine("Finished reading response headers from Lambda");
 
     Console.WriteLine("Copying response body from from Lambda");
 
     // Send the body to the caller
-    await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
+    using var lambdaResponseReader = new StreamReader(lambdaInstance.Request.BodyReader.AsStream(), leaveOpen: true);
+    string? line;
+    while (!string.IsNullOrEmpty(line = await lambdaResponseReader.ReadLineAsync()))
+    {
+      Console.WriteLine($"Got header line from lambda: {line}");
+      // await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(line));
+      // await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+    }
+
+    while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
+    {
+      Console.WriteLine($"Got body line from lambda: {line}");
+      await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(line));
+      await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+    }
+
+    // await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
 
     Console.WriteLine("Copied response body from from Lambda");
 

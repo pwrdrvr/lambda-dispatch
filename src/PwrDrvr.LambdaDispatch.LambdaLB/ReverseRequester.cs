@@ -225,26 +225,30 @@ public class ReverseRequester : IAsyncDisposable
     Console.WriteLine("Sending response to dispatcher over request channel");
     // Create a StringWriter to write the response body with chunk size prefix
     var writer = new StringWriter();
+    writer.Write("HTTP/1.1 200 OK\r\n");
+    writer.Write("X-Lambda-Id: " + _id + "\r\n");
+    writer.Write("Server: PwrDrvr.LambdaDispatch.LambdaLB\r\n");
     writer.Write("Content-Type: text/plain\r\n");
     writer.Write("Transfer-Encoding: chunked\r\n");
     writer.Write("\r\n");
     // Write the response headers onto the request body
     var headerString = writer.ToString();
-    var headerChunkSize = headerString.Length.ToString("X");
+    var encodedHeaderString = Encoding.UTF8.GetBytes(headerString);
+    var headerChunkSize = encodedHeaderString.Length.ToString("X");
     await _stream.WriteAsync(Encoding.UTF8.GetBytes($"{headerChunkSize}\r\n"));
-    // Blank line before next chunk size
+    await _stream.WriteAsync(encodedHeaderString);
+    // Yes, there is a line return after the chunk size of bytes is written
     await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
-    await _stream.FlushAsync();
     // Send the request body in chunks
     for (int i = 0; i < 10; i++)
     {
-      var chunk = Encoding.UTF8.GetBytes($"Chunk {i}\r\n");
+      var chunk = Encoding.UTF8.GetBytes($"Chunk-from-lambda {i}\r\n");
       var chunkSize = chunk.Length.ToString("X");
       Console.WriteLine($"Sending chunk {i} of size {chunkSize}");
       await _stream.WriteAsync(Encoding.UTF8.GetBytes($"{chunkSize}\r\n"));
       await _stream.WriteAsync(chunk);
+      // Yes, there is a line return after the chunk size of bytes is written
       await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
-      await _stream.FlushAsync();
     }
     // Send the last chunk
     await _stream.WriteAsync(Encoding.UTF8.GetBytes("0\r\n\r\n"));

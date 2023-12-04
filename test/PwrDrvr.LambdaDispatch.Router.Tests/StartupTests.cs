@@ -25,9 +25,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
         }
 
         [Test]
-        public async Task TestRequestToPort5000()
+        public async Task TestRequestToPort5002()
         {
-            _client.BaseAddress = new Uri("http://localhost:5000");
+            _client.BaseAddress = new Uri("http://localhost:5002");
             var response = await _client.GetAsync("/");
             response.EnsureSuccessStatusCode();
 

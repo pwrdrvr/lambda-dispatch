@@ -32,7 +32,7 @@ namespace PwrDrvr.LambdaDispatch.Router
 
             app.UseRouting();
 
-            app.MapWhen(context => context.Request.Host.Port == 5000, builder =>  // Public interface
+            app.MapWhen(context => context.Request.Host.Port == 5002, builder =>  // Public interface
             {
                 builder.UseRouting();
                 builder.UseEndpoints(endpoints =>
