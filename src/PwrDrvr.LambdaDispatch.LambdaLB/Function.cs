@@ -61,6 +61,9 @@ public class Function
 
         Console.WriteLine($"Received request from dispatcher: {aRequest}");
 
+        // Send a hard-coded response back to the router
+        await reverseRequester.SendResponse();
+
         // TODO: Setup a timeout according to that specified in the payload
 
         // TODO: Connect back to the specified control interface target in the payload

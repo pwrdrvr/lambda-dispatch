@@ -218,4 +218,36 @@ public class ReverseRequester : IAsyncDisposable
     return WebRequest.CreateHttp("http://localhost:5001/api/chunked");
 #pragma warning restore SYSLIB0014 // Type or member is obsolete
   }
+
+  public async Task SendResponse()
+  {
+    // These request headeers are HTTP within HTTP
+    Console.WriteLine("Sending response to dispatcher over request channel");
+    // Create a StringWriter to write the response body with chunk size prefix
+    var writer = new StringWriter();
+    writer.Write("Content-Type: text/plain\r\n");
+    writer.Write("Transfer-Encoding: chunked\r\n");
+    writer.Write("\r\n");
+    // Write the response headers onto the request body
+    var headerString = writer.ToString();
+    var headerChunkSize = headerString.Length.ToString("X");
+    await _stream.WriteAsync(Encoding.UTF8.GetBytes($"{headerChunkSize}\r\n"));
+    // Blank line before next chunk size
+    await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+    await _stream.FlushAsync();
+    // Send the request body in chunks
+    for (int i = 0; i < 10; i++)
+    {
+      var chunk = Encoding.UTF8.GetBytes($"Chunk {i}\r\n");
+      var chunkSize = chunk.Length.ToString("X");
+      Console.WriteLine($"Sending chunk {i} of size {chunkSize}");
+      await _stream.WriteAsync(Encoding.UTF8.GetBytes($"{chunkSize}\r\n"));
+      await _stream.WriteAsync(chunk);
+      await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+      await _stream.FlushAsync();
+    }
+    // Send the last chunk
+    await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+    await _stream.FlushAsync();
+  }
 }
