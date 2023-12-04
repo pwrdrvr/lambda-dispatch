@@ -58,7 +58,10 @@ public class Dispatcher
   public async Task RunRequest(HttpRequest request, HttpResponse response, LambdaInstance lambdaInstance)
   {
     // Send the incoming Request on the lambda's Response
-    Console.WriteLine("Sending incoming request to Lambda");
+    Console.WriteLine("Sending incoming request headers to Lambda");
+
+    // TODO: Write the request line
+    await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{request.Method} {request.Path} HTTP/{request.Protocol}\r\n"));
 
     // Send the headers to the Lambda
     foreach (var header in request.Headers)
@@ -66,11 +69,27 @@ public class Dispatcher
       await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
     }
 
-    // Send the body to the Lambda
-    await request.BodyReader.CopyToAsync(lambdaInstance.Response.BodyWriter.AsStream());
-    await request.BodyReader.CompleteAsync();
+    // Only copy the request body if the request has a body
+    if (request.ContentLength > 0 || (request.Headers.ContainsKey("Transfer-Encoding") && request.Headers["Transfer-Encoding"] == "chunked"))
+    {
+      {
+        await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+      }
+
+      Console.WriteLine("Sending incoming request body to Lambda");
+
+      // Send the body to the Lambda
+      await request.BodyReader.CopyToAsync(lambdaInstance.Response.BodyWriter.AsStream());
+      await request.BodyReader.CompleteAsync();
+
+      Console.WriteLine("Finished sending incoming request body to Lambda");
+    }
+
+    // Mark that the Request has been sent on the LambdaInstances
+    await lambdaInstance.Response.BodyWriter.CompleteAsync();
 
     // Get the response from the lambda request and relay it back to the caller
+    Console.WriteLine("Finished sending entire request to Lambda");
 
     // Send the headers to the caller
     foreach (var header in lambdaInstance.Response.Headers)
