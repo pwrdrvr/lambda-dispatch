@@ -102,23 +102,25 @@ public class Dispatcher
     // Send the headers to the caller
     foreach (var header in lambdaInstance.Response.Headers)
     {
+      if (header.Key == "Transfer-Encoding")
+      {
+        // Don't send the Transfer-Encoding header
+        continue;
+      }
       response.Headers.Add(header.Key, header.Value);
+      Console.WriteLine($"Sent reponse header to caller: {header.Key}: {header.Value}");
     }
 
     Console.WriteLine("Finished reading response headers from Lambda");
 
-    Console.WriteLine("Reading response body from from Lambda");
+    Console.WriteLine("Copying response body from from Lambda");
 
     // Send the body to the caller
-    // TODO: This is throwing an exception
-    try
-    {
-      await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
-    }
-    catch (Exception ex)
-    {
-      Console.WriteLine(ex);
-    }
+    await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
+
+    Console.WriteLine("Copied response body from from Lambda");
+
+    await response.BodyWriter.CompleteAsync();
 
     // Mark that the Response has been sent on the LambdaInstance
     lambdaInstance.TCS.SetResult();

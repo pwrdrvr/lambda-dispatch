@@ -247,7 +247,7 @@ public class ReverseRequester : IAsyncDisposable
       await _stream.FlushAsync();
     }
     // Send the last chunk
-    await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+    await _stream.WriteAsync(Encoding.UTF8.GetBytes("0\r\n\r\n"));
     await _stream.FlushAsync();
   }
 }
