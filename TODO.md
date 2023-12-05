@@ -13,3 +13,4 @@
 - [ ] There needs to be a control protocol on the chunked request/response that allows the router to tell a Lambda to close the connection
 - [ ] The Lambda invoke should tell it how many connections to establish to the router
 - [ ] The router should age out Lambda instances that have not connected back in a while
+- [ ] The Lambda should monitor how much time it has left and close the connection before it gets within 60 seconds of the timeout
