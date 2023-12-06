@@ -37,6 +37,9 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       Cpu: '256'
       Memory: '512'
+      RuntimePlatform:
+        CpuArchitecture: 'ARM64'
+        OperatingSystemFamily: 'LINUX'
       ContainerDefinitions:
         - Name: lambda-dispatch-router
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
@@ -66,6 +69,10 @@ Resources:
           SecurityGroups:
             - !Ref ECSFargateSG
       DesiredCount: 1
+      LoadBalancers:
+        - ContainerName: lambda-dispatch-router
+          ContainerPort: 5002
+          TargetGroupArn: !Ref FargateTargetGroup
 
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -80,6 +87,8 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
 
   PublicSubnet1:
     Type: AWS::EC2::Subnet
@@ -102,12 +111,14 @@ Resources:
     Properties:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -117,6 +128,41 @@ Resources:
     Properties:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref InternetGateway
+
+  ECREndpointSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for the ECR Endpoints
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt MyVPC.CidrBlock
+
+  ECRDKRVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref MyVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref ECREndpointSG
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  ECRAPIVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref MyVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref ECREndpointSG
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
 
   RouteTable:
     Type: AWS::EC2::RouteTable
@@ -166,31 +212,12 @@ Resources:
 
   FargateTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ECSFargateLoadBalancer
     Properties:
       Port: 5002
       Protocol: HTTP
       VpcId: !Ref MyVPC
       TargetType: ip
-
-  FargateServiceLoadBalancer:
-    Type: AWS::ECS::Service
-    Properties:
-      ServiceName: FargateService
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref ECSFargateTaskDefinition
-      DesiredCount: 1
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          Subnets:
-            - !Ref PrivateSubnet1
-            - !Ref PrivateSubnet2
-          SecurityGroups:
-            - !Ref ECSFargateSG
-      LoadBalancers:
-        - ContainerName: lambda-dispatch-router
-          ContainerPort: 5002
-          TargetGroupArn: !Ref FargateTargetGroup
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
