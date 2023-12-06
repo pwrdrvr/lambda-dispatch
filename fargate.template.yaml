@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ECSTaskExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  ECSFargateTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: lambda-dispatch-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      CpuArchitecture: ARM64
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      Cpu: '256'
+      Memory: '512'
+      ContainerDefinitions:
+        - Name: lambda-dispatch-container
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch:latest'
+          Essential: true
+          PortMappings:
+            # Lambda ReverseRouter port
+            - ContainerPort: 5002
+              HostPort: 5002
+              Protocol: tcp
+            # IncomingRequest port
+            - ContainerPort: 5002
+              HostPort: 5002
+              Protocol: tcp
+
+  ECSFargateService:
+    Type: AWS::ECS::Service
+    DependsOn: ECSCluster
+    Properties:
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSFargateTaskDefinition
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref ECSFargateSG
+      DesiredCount: 1
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+
+  ECSFargateSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for ECS Fargate
+      VpcId: !Ref MyVPC
+
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.3.0/24
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.4.0/24
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref RouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref RouteTable
+
+  ECSFargateLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ECSFargateSG
+      Scheme: internet-facing
+
+  FargateListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FargateTargetGroup
+      LoadBalancerArn: !Ref ECSFargateLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  FargateTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 5002
+      Protocol: HTTP
+      VpcId: !Ref MyVPC
+      TargetType: ip
+
+  FargateServiceLoadBalancer:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: FargateService
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSFargateTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref ECSFargateSG
+      LoadBalancers:
+        - ContainerName: lambda-dispatch-container
+          ContainerPort: 80
+          TargetGroupArn: !Ref FargateTargetGroup
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  # LambdaDispatchExampleFunction:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     FunctionName: "dotnet8-lambda-dispatch"
+  #     Handler: "hello.handler"
+  #     Role: !GetAtt LambdaExecutionRole.Arn
+  #     Code:
+  #       S3Bucket: "awslambda-us-east-2-tasks"
+  #       S3Key: "snapshots/220761759939/dotnet8-lambda-dispatch"
+  #     Runtime: "provided.al2023"
+  #     MemorySize: 128
+  #     Timeout: 3
+  #     TracingConfig:
+  #       Mode: "PassThrough"
+
+Outputs:
+  LoadBalancerDNS:
+    Description: DNS Name of the Load Balancer
+    Value: !GetAtt ECSFargateLoadBalancer.DNSName
+

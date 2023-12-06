@@ -20,7 +20,8 @@
 	},
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {
-		"ghcr.io/devcontainers/features/aws-cli:1": {}
+		"ghcr.io/devcontainers/features/aws-cli:1": {},
+		"ghcr.io/customink/codespaces-features/sam-cli:1": {}
 	},
 	"postCreateCommand": "dotnet tool install -g Amazon.Lambda.TestTool-8.0",
 	"containerEnv": {

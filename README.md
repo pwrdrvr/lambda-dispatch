@@ -58,6 +58,33 @@ dotnet-lambda-test-tool-8.0
 dotnet build -c Release --sc true --arch arm64
 ```
 
+## Send an HTTP Request to the Router
+
+```bash
+curl http://localhost:5002/fact
+```
+
+## Deploy the ECR Template
+
+```bash
+aws cloudformation create-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
+```
+
+## Publish the Docker Image
+
+```bash
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-1.amazonaws.com
+
+docker build -t lambda-dispatch-router .
+```
+
+
+## Deploy the Fargate Template
+
+```bash
+aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml
+```
+
 ## Count Lines of Code
 
 ```bash
