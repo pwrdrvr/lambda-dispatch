@@ -32,7 +32,7 @@ namespace PwrDrvr.LambdaDispatch.Router
 
             app.UseRouting();
 
-            app.MapWhen(context => context.Request.Host.Port == 5002, builder =>  // Public interface
+            app.MapWhen(context => context.Request.HttpContext.Connection.LocalPort == 5002, builder =>  // Public interface
             {
                 builder.UseRouting();
                 builder.UseEndpoints(endpoints =>
@@ -45,7 +45,7 @@ namespace PwrDrvr.LambdaDispatch.Router
                 });
             });
 
-            app.MapWhen(context => context.Request.Host.Port == 5001, builder =>  // Control interface
+            app.MapWhen(context => context.Request.HttpContext.Connection.LocalPort == 5001, builder =>  // Control interface
             {
                 builder.UseRouting();
                 builder.UseEndpoints(endpoints =>
