@@ -33,28 +33,27 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
-      CpuArchitecture: ARM64
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       Cpu: '256'
       Memory: '512'
       ContainerDefinitions:
-        - Name: lambda-dispatch-container
-          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch:latest'
+        - Name: lambda-dispatch-router
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
           PortMappings:
-            # Lambda ReverseRouter port
-            - ContainerPort: 5002
+            - ContainerPort: 5002  # Lambda ReverseRouter port
               HostPort: 5002
               Protocol: tcp
-            # IncomingRequest port
-            - ContainerPort: 5002
-              HostPort: 5002
+            - ContainerPort: 5001 # IncomingRequest port
+              HostPort: 5001
               Protocol: tcp
 
   ECSFargateService:
     Type: AWS::ECS::Service
-    DependsOn: ECSCluster
+    DependsOn: 
+      - ECSCluster
+      - FargateListener
     Properties:
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSFargateTaskDefinition
@@ -88,6 +87,7 @@ Resources:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.1.0/24
       MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
@@ -95,6 +95,7 @@ Resources:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.2.0/24
       MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
 
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
@@ -144,6 +145,7 @@ Resources:
 
   ECSFargateLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: VPCGatewayAttachment
     Properties:
       Subnets:
         - !Ref PublicSubnet1
@@ -186,8 +188,8 @@ Resources:
           SecurityGroups:
             - !Ref ECSFargateSG
       LoadBalancers:
-        - ContainerName: lambda-dispatch-container
-          ContainerPort: 80
+        - ContainerName: lambda-dispatch-router
+          ContainerPort: 5002
           TargetGroupArn: !Ref FargateTargetGroup
 
   LambdaExecutionRole:
