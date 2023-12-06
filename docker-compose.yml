@@ -3,7 +3,12 @@ services:
   router:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: DockerfileRouter
     ports:
       - 5002:5002
       - 5001:5001
+
+  lambda:
+    build:
+      context: .
+      dockerfile: DockerfileLambda
