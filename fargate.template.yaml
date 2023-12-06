@@ -26,6 +26,12 @@ Resources:
                   - logs:PutLogEvents
                 Resource: '*'
 
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/ecs/lambda-dispatch-router
+      RetentionInDays: 7
+
   ECSFargateTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -44,6 +50,12 @@ Resources:
         - Name: lambda-dispatch-router
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
           PortMappings:
             - ContainerPort: 5002  # Lambda ReverseRouter port
               HostPort: 5002
@@ -77,11 +89,21 @@ Resources:
   ECSCluster:
     Type: AWS::ECS::Cluster
 
+  # Security Group used by the tasks
   ECSFargateSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security Group for ECS Fargate
       VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5002
+          ToPort: 5002
+          CidrIp: !GetAtt MyVPC.CidrBlock
+        - IpProtocol: tcp
+          FromPort: 5001
+          ToPort: 5001
+          CidrIp: !GetAtt MyVPC.CidrBlock
 
   MyVPC:
     Type: AWS::EC2::VPC
@@ -129,7 +151,7 @@ Resources:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref InternetGateway
 
-  ECREndpointSG:
+  VPCEndpointsSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security Group for the ECR Endpoints
@@ -140,6 +162,46 @@ Resources:
           ToPort: 443
           CidrIp: !GetAtt MyVPC.CidrBlock
 
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  CloudWatchLogsVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref MyVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VPCEndpointsSG
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  # This is needed because ECR stores the image layers in S3
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref MyVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+
   ECRDKRVPCEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -148,7 +210,7 @@ Resources:
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
       SecurityGroupIds:
-        - !Ref ECREndpointSG
+        - !Ref VPCEndpointsSG
       SubnetIds:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
@@ -161,7 +223,7 @@ Resources:
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
       SecurityGroupIds:
-        - !Ref ECREndpointSG
+        - !Ref VPCEndpointsSG
       SubnetIds:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
@@ -191,6 +253,21 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref RouteTable
 
+  ECSLoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for ECS Fargate
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
   ECSFargateLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     DependsOn: VPCGatewayAttachment
@@ -199,7 +276,7 @@ Resources:
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
       SecurityGroups:
-        - !Ref ECSFargateSG
+        - !Ref ECSLoadBalancerSG
       Scheme: internet-facing
 
   FargateListener:
@@ -216,10 +293,15 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     DependsOn: ECSFargateLoadBalancer
     Properties:
+      HealthCheckPath: /health
       Port: 5002
       Protocol: HTTP
       VpcId: !Ref MyVPC
       TargetType: ip
+      # Shorten the healthcheck intervals and number of required successes
+      HealthCheckIntervalSeconds: 5
+      HealthCheckTimeoutSeconds: 2
+      HealthyThresholdCount: 2
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
