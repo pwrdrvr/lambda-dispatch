@@ -146,6 +146,7 @@ Resources:
       VpcId: !Ref MyVPC
       ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
       VpcEndpointType: Interface
+      PrivateDnsEnabled: true
       SecurityGroupIds:
         - !Ref ECREndpointSG
       SubnetIds:
@@ -158,6 +159,7 @@ Resources:
       VpcId: !Ref MyVPC
       ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
       VpcEndpointType: Interface
+      PrivateDnsEnabled: true
       SecurityGroupIds:
         - !Ref ECREndpointSG
       SubnetIds:
