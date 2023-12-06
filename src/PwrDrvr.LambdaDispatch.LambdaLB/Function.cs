@@ -3,7 +3,8 @@ using Amazon.Lambda.RuntimeSupport;
 using Amazon.Lambda.Serialization.SystemTextJson;
 using System.Text.Json.Serialization;
 using PwrDrvr.LambdaDispatch.Messages;
-using System.Net.Cache;
+using Microsoft.Extensions.Logging;
+using AWS.Logger;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
@@ -23,6 +24,13 @@ public partial class LambdaFunctionJsonSerializerContext : JsonSerializerContext
 
 public class Function
 {
+    private static readonly ILogger _logger;
+
+    static Function()
+    {
+        _logger = LoggerInstance.CreateLogger<Function>();
+    }
+
     /// <summary>
     /// The main entry point for the Lambda function. The main function is called once during the Lambda init phase. It
     /// initializes the .NET Lambda runtime client passing in the function handler to invoke for each Lambda event and
@@ -49,7 +57,7 @@ public class Function
     /// <returns></returns>
     public static async Task<WaiterResponse> FunctionHandler(WaiterRequest request, ILambdaContext context)
     {
-        Console.WriteLine($"Received WaiterRequest id: {request.Id}, dispatcherUrl: {request.DispatcherUrl}");
+        _logger.LogInformation($"Received WaiterRequest id: {request.Id}, dispatcherUrl: {request.DispatcherUrl}");
 
         await Task.Delay(1);
 
@@ -59,7 +67,7 @@ public class Function
         // Decode received payload
         var aRequest = await reverseRequester.GetRequest();
 
-        Console.WriteLine($"Received request from dispatcher: {aRequest}");
+        _logger.LogInformation($"Received request from dispatcher: {aRequest}");
 
         // Send a hard-coded response back to the router
         await reverseRequester.SendResponse();
@@ -83,7 +91,7 @@ public class Function
 
         var response = new WaiterResponse { Id = request.Id };
 
-        Console.WriteLine($"Responding with WaiterResponse id: {response.Id}");
+        _logger.LogInformation($"Responding with WaiterResponse id: {response.Id}");
 
         return response;
     }

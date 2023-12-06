@@ -1,12 +1,14 @@
 using System.Net.Sockets;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
 public class ReverseRequester : IAsyncDisposable
 {
+  private readonly ILogger<ReverseRequester> _logger;
+
   private readonly string _dispatcherUrl;
 
   private readonly string _id;
@@ -33,6 +35,8 @@ public class ReverseRequester : IAsyncDisposable
 
     _client = new TcpClient(_uri.Host, _uri.Port);
     _stream = _client.GetStream();
+
+    _logger = LoggerInstance.CreateLogger<ReverseRequester>();
   }
 
   // Async Dispose
@@ -121,7 +125,7 @@ public class ReverseRequester : IAsyncDisposable
       // TODO: Read the chunk size and use it to read the response body
       // TODO: Make sure the chunk sizes are removed from the request
 
-      Console.WriteLine("Starting reading response from router, containing request to Lambda");
+      _logger.LogDebug("Starting reading response from router, containing request to Lambda");
 
       //
       // Read the response headers from the Router itself
@@ -133,12 +137,12 @@ public class ReverseRequester : IAsyncDisposable
       {
         var headerLine = headerLines[i];
         requestWriter.Write($"{headerLine}\r\n");
-        Console.WriteLine($"Router header: {headerLine}");
+        _logger.LogDebug("Router header: {headerLine}", headerLine);
       }
       // Write the blank line after headers
       requestWriter.Write("\r\n");
 
-      Console.WriteLine("Finished reading response headers from router, containing request to Lambda");
+      _logger.LogDebug("Finished reading response headers from router, containing request to Lambda");
 
       //
       // Read the actual request off the Response from the router
@@ -158,20 +162,20 @@ public class ReverseRequester : IAsyncDisposable
         // Read the chunk size from the stream
         int chunkSize = ReadChunkSize(_stream);
 
-        Console.WriteLine($"Chunk size: {chunkSize}");
+        _logger.LogDebug("Chunk size: {chunkSize}", chunkSize);
 
         // If the chunk size is 0, break the loop
         if (chunkSize == 0)
         {
-          Console.WriteLine("Chunk size is 0, breaking loop");
+          _logger.LogDebug("Chunk size is 0, breaking loop");
           break;
         }
 
         // Read the specified number of bytes from the stream
         byte[] buffer = new byte[chunkSize];
-        Console.WriteLine($"Reading {chunkSize} bytes from response body");
+        _logger.LogDebug("Reading {chunkSize} bytes from response body", chunkSize);
         await _stream.ReadAsync(buffer, 0, chunkSize);
-        Console.WriteLine($"Read {chunkSize} bytes from response body");
+        _logger.LogDebug("Read {chunkSize} bytes from response body", chunkSize);
 
         // Write the bytes to the MemoryStream
         await responseBody.WriteAsync(buffer, 0, chunkSize);
@@ -183,9 +187,9 @@ public class ReverseRequester : IAsyncDisposable
       // Reset the position of the MemoryStream to the beginning
       responseBody.Seek(0, SeekOrigin.Begin);
 
-      Console.WriteLine("Finished reading request from response body");
+      _logger.LogDebug("Finished reading request from response body");
 
-      Console.WriteLine("Starting parsing request headers from response body");
+      _logger.LogDebug("Starting parsing request headers from response body");
       using (var reader = new StreamReader(responseBody, Encoding.UTF8, leaveOpen: true))
       {
         // Read the headers
@@ -193,14 +197,14 @@ public class ReverseRequester : IAsyncDisposable
         while (!string.IsNullOrEmpty(requestHeaderLine = await reader.ReadLineAsync()))
         {
           requestWriter.Write($"{requestHeaderLine}\r\n");
-          Console.WriteLine($"Request header: {requestHeaderLine}");
+          _logger.LogDebug("Request header: {requestHeaderLine}", requestHeaderLine);
         }
 
-        Console.WriteLine("Finished parsing request headers from response body");
+        _logger.LogDebug("Finished parsing request headers from response body");
 
         // Dump the request body
         string remainingData = await reader.ReadToEndAsync();
-        Console.WriteLine("Remaining data: " + remainingData);
+        _logger.LogDebug("Remaining data: {remainingData}", remainingData);
 
         await requestWriter.WriteAsync(remainingData);
       }
@@ -212,7 +216,7 @@ public class ReverseRequester : IAsyncDisposable
     // TODO: We may need to move this await till after we send the request body (our response)
     string requestString = await readResponseTask;
 
-    Console.WriteLine($"Received request from router: {requestString}");
+    _logger.LogDebug("Received request from router: {requestString}", requestString);
 
 #pragma warning disable SYSLIB0014 // Type or member is obsolete
     return WebRequest.CreateHttp("http://localhost:5001/api/chunked");
@@ -222,7 +226,7 @@ public class ReverseRequester : IAsyncDisposable
   public async Task SendResponse()
   {
     // These request headeers are HTTP within HTTP
-    Console.WriteLine("Sending response to dispatcher over request channel");
+    _logger.LogInformation("Sending response to dispatcher over request channel");
     // Create a StringWriter to write the response body with chunk size prefix
     var writer = new StringWriter();
     writer.Write("HTTP/1.1 200 OK\r\n");
@@ -244,7 +248,7 @@ public class ReverseRequester : IAsyncDisposable
     {
       var chunk = Encoding.UTF8.GetBytes($"Chunk-from-lambda {i}\r\n");
       var chunkSize = chunk.Length.ToString("X");
-      Console.WriteLine($"Sending chunk {i} of size {chunkSize}");
+      _logger.LogDebug("Sending chunk {i} of size {chunkSize}", i, chunkSize);
       await _stream.WriteAsync(Encoding.UTF8.GetBytes($"{chunkSize}\r\n"));
       await _stream.WriteAsync(chunk);
       // Yes, there is a line return after the chunk size of bytes is written

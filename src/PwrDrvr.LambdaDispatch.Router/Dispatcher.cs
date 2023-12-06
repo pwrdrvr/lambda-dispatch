@@ -6,6 +6,8 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 public class Dispatcher
 {
+  private readonly ILogger<Dispatcher> _logger;
+
   // Requests that are dispatched to a Lambda - Keyed by request ID
   private readonly ConcurrentDictionary<string, (HttpRequest, HttpResponse, TaskCompletionSource)> _runningRequests = new();
 
@@ -21,27 +23,28 @@ public class Dispatcher
   // Starting Lambdas - Invoked but not called back yet
   private readonly ConcurrentDictionary<string, LambdaInstance> _startingLambdas = new();
 
-  public Dispatcher()
+  public Dispatcher(ILogger<Dispatcher> logger)
   {
-    Console.WriteLine("Dispatcher created");
+    _logger = logger;
+    _logger.LogDebug("Dispatcher created");
   }
 
   // Add a new request, dispatch immediately if able
   public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
   {
-    Console.WriteLine("Adding request to the Dispatcher");
+    _logger.LogDebug("Adding request to the Dispatcher");
 
     // Try to get an idle lambda and dispatch immediately
     if (_idleLambdas.TryDequeue(out var lambdaInstance))
     {
-      Console.WriteLine("Dispatching added request to Lambda, immediately");
+      _logger.LogDebug("Dispatching added request to Lambda, immediately");
 
       // Dispatch the request to the lambda
       await this.RunRequest(incomingRequest, incomingResponse, lambdaInstance);
       return;
     }
 
-    Console.WriteLine("No idle lambdas, adding request to the pending queue");
+    _logger.LogDebug("No idle lambdas, adding request to the pending queue");
 
     // If there are no idle lambdas, add the request to the pending queue
     var tcs = new TaskCompletionSource();
@@ -58,7 +61,7 @@ public class Dispatcher
   public async Task RunRequest(HttpRequest request, HttpResponse response, LambdaInstance lambdaInstance)
   {
     // Send the incoming Request on the lambda's Response
-    Console.WriteLine("Sending incoming request headers to Lambda");
+    _logger.LogDebug("Sending incoming request headers to Lambda");
 
     // TODO: Write the request line
     await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{request.Method} {request.Path} {request.Protocol}\r\n"));
@@ -76,20 +79,20 @@ public class Dispatcher
         await lambdaInstance.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
       }
 
-      Console.WriteLine("Sending incoming request body to Lambda");
+      _logger.LogDebug("Sending incoming request body to Lambda");
 
       // Send the body to the Lambda
       await request.BodyReader.CopyToAsync(lambdaInstance.Response.BodyWriter.AsStream());
       await request.BodyReader.CompleteAsync();
 
-      Console.WriteLine("Finished sending incoming request body to Lambda");
+      _logger.LogDebug("Finished sending incoming request body to Lambda");
     }
 
     // Mark that the Request has been sent on the LambdaInstances
     await lambdaInstance.Response.BodyWriter.CompleteAsync();
 
     // Get the response from the lambda request and relay it back to the caller
-    Console.WriteLine("Finished sending entire request to Lambda");
+    _logger.LogDebug("Finished sending entire request to Lambda");
 
     //
     //
@@ -97,7 +100,7 @@ public class Dispatcher
     //
     //
 
-    Console.WriteLine("Reading response headers from Lambda");
+    _logger.LogDebug("Reading response headers from Lambda");
 
     // Send the headers to the caller
     // This was reading the response headers from the Lambda
@@ -108,7 +111,7 @@ public class Dispatcher
     //   {
     //     // Set the status code on the response
     //     response.StatusCode = int.Parse(header.Value);
-    //     Console.WriteLine($"Set response status code to {header.Value}");
+    //     _logger.LogDebug($"Set response status code to {header.Value}");
     //     continue;
     //   }
 
@@ -118,23 +121,23 @@ public class Dispatcher
     //     continue;
     //   }
     //   response.Headers.Add(header.Key, header.Value);
-    //   Console.WriteLine($"Sent reponse header to caller: {header.Key}: {header.Value}");
+    //   _logger.LogDebug($"Sent reponse header to caller: {header.Key}: {header.Value}");
     // }
 
-    Console.WriteLine("Finished reading response headers from Lambda");
+    _logger.LogDebug("Finished reading response headers from Lambda");
 
-    Console.WriteLine("Copying response body from from Lambda");
+    _logger.LogDebug("Copying response body from from Lambda");
 
     // Send the body to the caller
     using var lambdaResponseReader = new StreamReader(lambdaInstance.Request.BodyReader.AsStream(), leaveOpen: true);
     string? line;
     // First line should be status
     line = await lambdaResponseReader.ReadLineAsync();
-    Console.WriteLine($"Got status line from lambda: {line}");
+    _logger.LogDebug("Got status line from lambda: {line}", line);
     response.StatusCode = int.Parse(line.Split(' ')[1]);
     while (!string.IsNullOrEmpty(line = await lambdaResponseReader.ReadLineAsync()))
     {
-      Console.WriteLine($"Got header line from lambda: {line}");
+      _logger.LogDebug("Got header line from lambda: {line}", line);
 
       // Parse the header
       var parts = line.Split(new[] { ": " }, 2, StringSplitOptions.None);
@@ -153,14 +156,14 @@ public class Dispatcher
 
     while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
     {
-      Console.WriteLine($"Got body line from lambda: {line}");
+      _logger.LogDebug("Got body line from lambda: {line}", line);
       await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(line));
       await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
     }
 
     // await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
 
-    Console.WriteLine("Copied response body from from Lambda");
+    _logger.LogDebug("Copied response body from from Lambda");
 
     await response.BodyWriter.CompleteAsync();
 
@@ -171,12 +174,12 @@ public class Dispatcher
   // Add a new lambda, dispatch to it immediately if a request is waiting
   public async Task AddLambda(LambdaInstance lambdaInstance)
   {
-    Console.WriteLine("Adding Lambda to the Dispatcher");
+    _logger.LogInformation("Adding Lambda to the Dispatcher");
 
     // Try to get a pending request and dispatch immediately
     if (_pendingRequests.TryDequeue(out var requestItem))
     {
-      Console.WriteLine("Dispatching pending request to Lambda, immediately");
+      _logger.LogDebug("Dispatching pending request to Lambda, immediately");
 
       (var request, var response, var tcs) = requestItem;
 
@@ -188,7 +191,7 @@ public class Dispatcher
       return;
     }
 
-    Console.WriteLine("No pending requests, adding Lambda to the idle queue");
+    _logger.LogDebug("No pending requests, adding Lambda to the idle queue");
 
     // If there are no pending requests, add the lambda to the idle queue
     _idleLambdas.Enqueue(lambdaInstance);

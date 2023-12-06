@@ -10,11 +10,13 @@ namespace PwrDrvr.LambdaDispatch.Router;
 [Route("api/chunked")]
 public class ChunkedController : ControllerBase
 {
+  private readonly ILogger<ChunkedController> logger;
   private readonly Dispatcher dispatcher;
 
-  public ChunkedController(Dispatcher dispatcher)
+  public ChunkedController(Dispatcher dispatcher, ILogger<ChunkedController> logger)
   {
     this.dispatcher = dispatcher;
+    this.logger = logger;
   }
 
   [HttpPost]
@@ -23,14 +25,14 @@ public class ChunkedController : ControllerBase
   {
     if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues value))
     {
-      Console.WriteLine("Router.ChunkedController.Post - No X-Lambda-Id header");
+      logger.LogDebug("Router.ChunkedController.Post - No X-Lambda-Id header");
       Response.StatusCode = 400;
       Response.ContentType = "text/plain";
       await Response.WriteAsync("No X-Lambda-Id header");
       return;
     }
 
-    Console.WriteLine($"Router.ChunkedController.Post - A Lambda has connected with Id: {value}");
+    logger.LogDebug($"Router.ChunkedController.Post - A Lambda has connected with Id: {value}");
 
     // Response.Headers["Transfer-Encoding"] = "chunked";
     // This is our content type for the body that will contain a request
@@ -44,14 +46,14 @@ public class ChunkedController : ControllerBase
     // Print when we start the response
     Response.OnStarting(() =>
     {
-      Console.WriteLine("Starting response");
+      logger.LogDebug("Starting response");
       return Task.CompletedTask;
     });
 
     // Print when we finish the response
     Response.OnCompleted(() =>
     {
-      Console.WriteLine("Finished response");
+      logger.LogDebug("Finished response");
       return Task.CompletedTask;
     });
 
@@ -66,7 +68,7 @@ public class ChunkedController : ControllerBase
     // Wait until we have processed a request and send a response
     await lambdaInstance.TCS.Task;
 
-    Console.WriteLine("Router.ChunkedController.Post - Finished - Response will be closed");
+    logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed");
 
     // // Write the response body
     // var writer = new StreamWriter(Response.Body);
@@ -91,7 +93,7 @@ public class ChunkedController : ControllerBase
     // while ((line = await reader.ReadLineAsync()) != null)
     // {
     //   // Dump request to the console
-    //   Console.WriteLine(line);
+    //   logger.LogDebug(line);
     // }
 
     // // Close the response body
