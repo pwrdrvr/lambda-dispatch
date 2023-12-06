@@ -18,7 +18,7 @@ public class Program
             })
             .ConfigureWebHostDefaults(webBuilder =>
             {
-                webBuilder.UseUrls("http://localhost:5002", "http://localhost:5001");
+                webBuilder.UseUrls("http://0.0.0.0:5002", "http://0.0.0.0:5001");
                 webBuilder.UseStartup<Startup>();
             });
 }
