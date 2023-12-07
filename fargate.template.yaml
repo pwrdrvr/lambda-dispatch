@@ -95,6 +95,11 @@ Resources:
     Properties:
       GroupDescription: Security Group for ECS Fargate
       VpcId: !Ref MyVPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: !GetAtt MyVPC.CidrBlock
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5002
@@ -156,6 +161,11 @@ Resources:
     Properties:
       GroupDescription: Security Group for the ECR Endpoints
       VpcId: !Ref MyVPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: !GetAtt MyVPC.CidrBlock
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 443
@@ -303,7 +313,7 @@ Resources:
       HealthCheckTimeoutSeconds: 2
       HealthyThresholdCount: 2
 
-  LambdaExecutionRole:
+  LambdaLBExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -326,21 +336,44 @@ Resources:
                   - ec2:DescribeNetworkInterfaces
                   - ec2:DeleteNetworkInterface
                 Resource: '*'
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
 
-  # LambdaDispatchExampleFunction:
-  #   Type: AWS::Lambda::Function
-  #   Properties:
-  #     FunctionName: "dotnet8-lambda-dispatch"
-  #     Handler: "hello.handler"
-  #     Role: !GetAtt LambdaExecutionRole.Arn
-  #     Code:
-  #       S3Bucket: "awslambda-us-east-2-tasks"
-  #       S3Key: "snapshots/220761759939/dotnet8-lambda-dispatch"
-  #     Runtime: "provided.al2023"
-  #     MemorySize: 128
-  #     Timeout: 3
-  #     TracingConfig:
-  #       Mode: "PassThrough"
+  LambdaLBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for ECS Fargate
+      VpcId: !Ref MyVPC
+      # Allow all outbound TCP traffic
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: !GetAtt MyVPC.CidrBlock
+
+  LambdaLB:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "lambda-dispatch-lambdalb"
+      Role: !GetAtt LambdaLBExecutionRole.Arn
+      Code:
+        ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-lambdalb:latest
+      MemorySize: 256
+      Timeout: 60
+      PackageType: "Image"
+      Architectures:
+        - arm64
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaLBSG]
+        SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
 
 Outputs:
   LoadBalancerDNS:

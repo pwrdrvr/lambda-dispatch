@@ -68,22 +68,36 @@ curl http://localhost:5002/fact
 
 ```bash
 aws cloudformation create-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
+
+aws cloudformation update-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
 ```
 
-## Publish the Docker Image
+## Publish the Docker Image - Router
 
 ```bash
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
 
-docker build -t lambda-dispatch-router .
+docker build --file DockerfileRouter -t lambda-dispatch-router .
 docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
 docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
+```
+
+## Publish the Docker Image - LambdaLB
+
+```bash
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
+
+docker build --file DockerfileLambdaLB -t lambda-dispatch-lambdalb .
+docker tag lambda-dispatch-lambdalb:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
 ```
 
 ## Deploy the Fargate Template
 
 ```bash
 aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
+
+aws cloudformation update-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
 ```
 
 ## Count Lines of Code

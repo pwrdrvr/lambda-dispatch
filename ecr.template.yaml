@@ -5,3 +5,8 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: lambda-dispatch-router
+
+  ECRRepositoryLambdaLB:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: lambda-dispatch-lambdalb
