@@ -48,8 +48,7 @@ public class LambdaInstance
     var payload = new WaiterRequest
     {
       Id = Id,
-      // TODO: Get this from the configuration
-      DispatcherUrl = "http://localhost:5001/api/chunked"
+      DispatcherUrl = await GetCallbackIP.Get()
     };
 
     // Invoke the Lambda
