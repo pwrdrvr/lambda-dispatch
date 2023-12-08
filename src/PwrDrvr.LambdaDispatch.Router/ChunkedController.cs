@@ -65,7 +65,7 @@ public class ChunkedController : ControllerBase
     // Register this Lambda with the Dispatcher
     await dispatcher.AddLambda(lambdaInstance);
 
-    // Wait until we have processed a request and send a response
+    // Wait until we have processed a request and sent a response
     await lambdaInstance.TCS.Task;
 
     logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed");
