@@ -59,7 +59,12 @@ public class LambdaInstance
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
 #if DEBUG
-  public static readonly CustomAmazonLambdaClient LambdaClient = new();
+  public static readonly AmazonLambdaClient LambdaClient = new(new AmazonLambdaConfig
+  {
+    // ServiceURL = "http://localhost:5051"
+    // If in a devcontainer you need to use this:
+    ServiceURL = "http://host.docker.internal:5051"
+  });
 #else
   public static readonly AmazonLambdaClient LambdaClient = new();
 #endif
@@ -280,7 +285,8 @@ public class LambdaInstance
     var payload = new WaiterRequest
     {
       Id = Id,
-      DispatcherUrl = await GetCallbackIP.Get()
+      DispatcherUrl = await GetCallbackIP.Get(),
+      NumberOfChannels = maxConcurrentCount
     };
 
     // Invoke the Lambda

@@ -26,7 +26,7 @@ public class GetCallbackIP
       {
         if (network.GetProperty("NetworkMode").GetString() == "awsvpc")
         {
-          callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5001";
+          callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5001/api/chunked";
           return callbackUrl;
         }
       }
@@ -40,7 +40,7 @@ public class GetCallbackIP
       // Ignore
     }
 
-    callbackUrl = "http://localhost:5001";
+    callbackUrl = "http://localhost:5001/api/chunked";
     return callbackUrl;
   }
 }

@@ -45,9 +45,12 @@ public class Dispatcher
     Interlocked.Increment(ref _pendingRequestCount);
 
     // TODO: Everytime we add a request to the queue, we start another Lambda / concurrent requests per lambda
+    // This is not quite what we want... we want to start a fraction of Lambdas vs parallel incoming requests
+    await _lambdaInstanceManager.StartNewInstance();
 
     // Wait for the request to be dispatched or to timeout
-    await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
+    // await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
+    await tcs.Task.WaitAsync(TimeSpan.FromMinutes(5));
   }
 
   // Add a new lambda, dispatch to it immediately if a request is waiting

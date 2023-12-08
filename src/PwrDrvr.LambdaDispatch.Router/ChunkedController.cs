@@ -34,7 +34,7 @@ public class ChunkedController : ControllerBase
 
     var lambdaId = lambdaIdMulti.ToString();
 
-    logger.LogDebug($"Router.ChunkedController.Post - A Lambda has connected with Id: {lambdaId}");
+    logger.LogDebug("Router.ChunkedController.Post - A Lambda has connected with Id: {lambdaId}", lambdaId);
 
     // Response.Headers["Transfer-Encoding"] = "chunked";
     // This is our content type for the body that will contain a request
