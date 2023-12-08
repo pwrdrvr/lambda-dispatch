@@ -58,7 +58,11 @@ public class LambdaInstance
 
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
+#if DEBUG
+  public static readonly CustomAmazonLambdaClient LambdaClient = new();
+#else
   public static readonly AmazonLambdaClient LambdaClient = new();
+#endif
 
   private readonly int maxConcurrentCount;
 
