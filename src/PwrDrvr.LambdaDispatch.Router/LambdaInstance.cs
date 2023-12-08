@@ -4,6 +4,7 @@ using Amazon.Lambda.Model;
 using PwrDrvr.LambdaDispatch.Messages;
 using System.Text.Json;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -48,12 +49,12 @@ public class LambdaInstance
   /// <summary>
   /// Raised when the Lambda Instance has completed it's invocation
   /// </summary>
-  public event Action<LambdaInstance> OnInvocationComplete;
+  public event Action<LambdaInstance>? OnInvocationComplete;
 
   /// <summary>
   /// Raised when the Lambda Instance has opened
   /// </summary>
-  public event Action<LambdaInstance> OnOpen;
+  public event Action<LambdaInstance>? OnOpen;
 
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
@@ -61,7 +62,7 @@ public class LambdaInstance
 
   private readonly int maxConcurrentCount;
 
-  public string Id { get; private set; }
+  public string Id { get; private set; } = Guid.NewGuid().ToString();
 
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
@@ -86,10 +87,9 @@ public class LambdaInstance
 
   public int AvailableConnectionCount => availableConnectionCount;
 
-  public LambdaInstance()
+  public LambdaInstance(int maxConcurrentCount)
   {
-    // _logger = logger;
-    Id = Guid.NewGuid().ToString();
+    this.maxConcurrentCount = maxConcurrentCount;
   }
 
   /// <summary>
@@ -97,7 +97,7 @@ public class LambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public void AddConnection(HttpRequest request, HttpResponse response)
+  public LambdaConnection? AddConnection(HttpRequest request, HttpResponse response)
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
@@ -116,7 +116,7 @@ public class LambdaInstance
         Console.WriteLine(ex.Message);
       }
 
-      return;
+      return null;
     }
 
     // Signal that we are ready if this the first connection
@@ -125,7 +125,7 @@ public class LambdaInstance
       State = LambdaInstanceState.Open;
 
       // Signal that we are open
-      OnOpen.Invoke(this);
+      OnOpen?.Invoke(this);
     }
 
     if (State != LambdaInstanceState.Open)
@@ -138,18 +138,22 @@ public class LambdaInstance
     Interlocked.Increment(ref availableConnectionCount);
 
     connectionQueue.Enqueue(connection);
+
+    return connection;
   }
 
   /// <summary>
   /// Get an available connection from this Lambda Instance
   /// </summary>
   /// <returns></returns>
-  public LambdaConnection? TryGetConnection()
+  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection)
   {
+    connection = null;
+
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
       Console.WriteLine("Connection requested from Lambda Instance that is closing or closed");
-      return null;
+      return false;
     }
 
     if (State != LambdaInstanceState.Open)
@@ -158,17 +162,17 @@ public class LambdaInstance
     }
 
     // Loop through the connections until we find one that is available
-    while (connectionQueue.TryDequeue(out var connection))
+    while (connectionQueue.TryDequeue(out var dequeuedConnection))
     {
       // The connection should only be Closed unexpectedly, not Busy
-      if (connection.State == LambdaConnectionState.Busy)
+      if (dequeuedConnection.State == LambdaConnectionState.Busy)
       {
         Interlocked.Decrement(ref availableConnectionCount);
         throw new InvalidOperationException("Connection should not be busy");
       }
 
       // If the connection is Closed we discard it (can happen on abnormal close during idle)
-      if (connection.State == LambdaConnectionState.Closed)
+      if (dequeuedConnection.State == LambdaConnectionState.Closed)
       {
         Interlocked.Decrement(ref availableConnectionCount);
         continue;
@@ -176,10 +180,11 @@ public class LambdaInstance
 
       // We found an available connection
       Interlocked.Decrement(ref availableConnectionCount);
-      return connection;
+      connection = dequeuedConnection;
+      return true;
     }
 
-    return null;
+    return false;
   }
 
   /// <summary>
@@ -297,7 +302,7 @@ public class LambdaInstance
       // but it will linger until we close the responses to it's requests
       // This prevents race conditions on shutdown
 
-      this.OnInvocationComplete.Invoke(this);
+      OnInvocationComplete?.Invoke(this);
 
       if (t.IsFaulted)
       {

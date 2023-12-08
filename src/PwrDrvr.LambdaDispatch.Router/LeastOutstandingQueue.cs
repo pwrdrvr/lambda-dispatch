@@ -1,6 +1,7 @@
 namespace PwrDrvr.LambdaDispatch.Router;
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 public interface ILeastOutstandingItem
 {
@@ -98,8 +99,10 @@ public class LeastOutstandingQueue
   /// Note: this will perform some limited rebalancing of instances if wrong counts are encountered
   /// </summary>
   /// <returns></returns>
-  public LambdaConnection? TryGetLeastOustandingConnection()
+  public bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection)
   {
+    connection = null;
+
     // Get the instance with the least outstanding requests
     // Skip the "full" instances
     for (var i = 0; i < availableInstances.Length - 1; i++)
@@ -125,12 +128,7 @@ public class LeastOutstandingQueue
         // Once we put it back in a queue it's mutable by other threads
 
         // Get a connection from the instance
-        var connection = instance.TryGetConnection();
-
-        //
-        // Put the instance back - after this we can't mutate it
-        //
-        if (connection == null)
+        if (!instance.TryGetConnection(out var dequeuedConnection))
         {
           // The instance is full due to disconnects
           // so we'll put it in the full instances
@@ -150,6 +148,10 @@ public class LeastOutstandingQueue
           // So we can put it back in the queue
           availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
         }
+
+        // We got a connection
+        connection = dequeuedConnection;
+        return true;
       }
     }
 
@@ -158,7 +160,7 @@ public class LeastOutstandingQueue
     // The dispatcher will start looking through the full instances
     // and send requests to any instances that have capacity
     // If none have capacity, it will block until one does
-    return null;
+    return false;
   }
 
   /// <summary>

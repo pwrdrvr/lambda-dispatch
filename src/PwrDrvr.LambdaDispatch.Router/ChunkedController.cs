@@ -23,7 +23,7 @@ public class ChunkedController : ControllerBase
   [DisableRequestSizeLimit]
   public async Task Post()
   {
-    if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues value))
+    if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues lambdaIdMulti) || lambdaIdMulti.Count != 1)
     {
       logger.LogDebug("Router.ChunkedController.Post - No X-Lambda-Id header");
       Response.StatusCode = 400;
@@ -32,7 +32,9 @@ public class ChunkedController : ControllerBase
       return;
     }
 
-    logger.LogDebug($"Router.ChunkedController.Post - A Lambda has connected with Id: {value}");
+    var lambdaId = lambdaIdMulti.ToString();
+
+    logger.LogDebug($"Router.ChunkedController.Post - A Lambda has connected with Id: {lambdaId}");
 
     // Response.Headers["Transfer-Encoding"] = "chunked";
     // This is our content type for the body that will contain a request
@@ -60,13 +62,21 @@ public class ChunkedController : ControllerBase
     // TODO: Lookup the LambdaInstance for this request
     // Based on the X-Lambda-Id header
     // We should have this LambdaInstance in a dictionary keyed by the X-Lambda-Id header
-    LambdaInstance lambdaInstance = new(Request, Response, value);
 
     // Register this Lambda with the Dispatcher
-    await dispatcher.AddLambda(lambdaInstance);
+    var connection = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId);
+
+    if (connection == null)
+    {
+      logger.LogInformation("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id header");
+      Response.StatusCode = 1001;
+      Response.ContentType = "text/plain";
+      await Response.WriteAsync("No LambdaInstance found for X-Lambda-Id header");
+      return;
+    }
 
     // Wait until we have processed a request and sent a response
-    await lambdaInstance.TCS.Task;
+    await connection.TCS.Task;
 
     logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed");
 

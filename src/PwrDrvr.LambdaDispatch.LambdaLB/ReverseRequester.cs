@@ -7,7 +7,7 @@ namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
 public class ReverseRequester : IAsyncDisposable
 {
-  private readonly ILogger<ReverseRequester> _logger;
+  private readonly ILogger<ReverseRequester> _logger = LoggerInstance.CreateLogger<ReverseRequester>();
 
   private readonly string _dispatcherUrl;
 
@@ -35,8 +35,6 @@ public class ReverseRequester : IAsyncDisposable
 
     _client = new TcpClient(_uri.Host, _uri.Port);
     _stream = _client.GetStream();
-
-    _logger = LoggerInstance.CreateLogger<ReverseRequester>();
   }
 
   // Async Dispose
