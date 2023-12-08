@@ -64,9 +64,9 @@ public class ChunkedController : ControllerBase
     // We should have this LambdaInstance in a dictionary keyed by the X-Lambda-Id header
 
     // Register this Lambda with the Dispatcher
-    var connection = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId);
+    var result = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId);
 
-    if (connection == null)
+    if (!result.ImmediatelyDispatched && result.Connection == null)
     {
       logger.LogInformation("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id header");
       Response.StatusCode = 1001;
@@ -76,7 +76,7 @@ public class ChunkedController : ControllerBase
     }
 
     // Wait until we have processed a request and sent a response
-    await connection.TCS.Task;
+    await result.Connection.TCS.Task;
 
     logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed");
 

@@ -4,6 +4,12 @@ using System.Text;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
+public class DispatcherAddConnectionResult
+{
+  public LambdaConnection? Connection { get; set; }
+  public bool ImmediatelyDispatched { get; set; }
+}
+
 public class Dispatcher
 {
   private readonly ILogger<Dispatcher> _logger;
@@ -54,15 +60,61 @@ public class Dispatcher
   }
 
   // Add a new lambda, dispatch to it immediately if a request is waiting
-  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId)
+  public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId)
   {
-    _logger.LogInformation("Adding Lambda to the Dispatcher");
+    DispatcherAddConnectionResult result = new();
+    result.ImmediatelyDispatched = false;
+
+    _logger.LogInformation("Adding Connection for Lambda {lambdaID} to the Dispatcher", lambdaId);
+
+    // Validate that the Lambda ID  is valid
+    if (string.IsNullOrWhiteSpace(lambdaId))
+    {
+      _logger.LogError("Lambda ID is blank");
+      return result;
+    }
+
+    if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId))
+    {
+      _logger.LogError("Lambda ID is not known: {lambdaId}", lambdaId);
+      return result;
+    }
+
+    // We have a valid connection, let's try to dispatch if there is a pending request in the queue
+    // Get the pending request
+    if (_pendingRequests.TryDequeue(out var pendingRequest))
+    {
+      _logger.LogDebug("Dispatching pending request to Lambda {lambdaId}", lambdaId);
+      Interlocked.Decrement(ref _pendingRequestCount);
+
+      // Get the connection
+      var connection = await _lambdaInstanceManager.AddConnectionForLambda(pendingRequest.Item1, pendingRequest.Item2, lambdaId, true);
+
+      if (connection == null)
+      {
+        throw new Exception("Connection should not be null");
+      }
+
+      // If we got a connection, dispatch the request
+      // Dispatch the request to the lambda
+      await connection.RunRequest(pendingRequest.Item1, pendingRequest.Item2);
+
+      result.ImmediatelyDispatched = true;
+      result.Connection = connection;
+
+      // Signal the pending request that it's been dispatched
+      pendingRequest.Item3.SetResult();
+
+      return result;
+    }
 
     // Note: we cannot immediatley dispatch here because we do not know if the 
     // lambdaId exists, so there are cases that would cause us to pull a request
     // from the queue but then not be able to dispatch it.
     // We wouldn't be able to put the request back at the head of the queue
     // so it would lose it's spot
-    return await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId);
+    result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId);
+
+    return result;
   }
 }

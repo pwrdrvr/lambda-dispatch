@@ -19,6 +19,8 @@ public class LambdaInstanceManager
   /// </summary>
   private readonly ConcurrentDictionary<string, LambdaInstance> _instances = new();
 
+  private readonly string _instanceGuid = Guid.NewGuid().ToString();
+
   public LambdaInstanceManager(int maxConcurrentCount)
   {
     _maxConcurrentCount = maxConcurrentCount;
@@ -50,14 +52,19 @@ public class LambdaInstanceManager
     }
   }
 
-  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId)
+  public bool ValidateLambdaId(string lambdaId)
+  {
+    return _instances.ContainsKey(lambdaId);
+  }
+
+  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, bool immediateDispatch = false)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      return instance.AddConnection(request, response);
+      return instance.AddConnection(request, response, immediateDispatch);
     }
 
     Console.WriteLine($"Connection added to Lambda Instance {lambdaId} that does not exist - closing with 1001");

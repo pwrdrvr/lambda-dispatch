@@ -106,7 +106,7 @@ public class LambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public LambdaConnection? AddConnection(HttpRequest request, HttpResponse response)
+  public LambdaConnection? AddConnection(HttpRequest request, HttpResponse response, bool immediateDispatch = false)
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
@@ -144,9 +144,12 @@ public class LambdaInstance
 
     var connection = new LambdaConnection(request, response, this);
 
-    Interlocked.Increment(ref availableConnectionCount);
-
-    connectionQueue.Enqueue(connection);
+    // Only make this connection visible if we're not going to immediately use it for a queued request
+    if (!immediateDispatch)
+    {
+      Interlocked.Increment(ref availableConnectionCount);
+      connectionQueue.Enqueue(connection);
+    }
 
     return connection;
   }
