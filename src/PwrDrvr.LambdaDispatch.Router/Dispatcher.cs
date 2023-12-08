@@ -10,6 +10,19 @@ public class DispatcherAddConnectionResult
   public bool ImmediatelyDispatched { get; set; }
 }
 
+public class PendingRequest
+{
+  public HttpRequest Request { get; set; }
+  public HttpResponse Response { get; set; }
+  public TaskCompletionSource ResponseFinishedTCS { get; set; } = new TaskCompletionSource();
+
+  public PendingRequest(HttpRequest request, HttpResponse response)
+  {
+    Request = request;
+    Response = response;
+  }
+}
+
 public class Dispatcher
 {
   private readonly ILogger<Dispatcher> _logger;
@@ -18,7 +31,7 @@ public class Dispatcher
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
-  private readonly ConcurrentQueue<(HttpRequest, HttpResponse, TaskCompletionSource)> _pendingRequests = new();
+  private readonly ConcurrentQueue<PendingRequest> _pendingRequests = new();
 
   public Dispatcher(ILogger<Dispatcher> logger)
   {
@@ -38,25 +51,26 @@ public class Dispatcher
 
       // Dispatch the request to the lambda
       await lambdaInstance.RunRequest(incomingRequest, incomingResponse);
+
+      // Release the task
+
       return;
     }
 
     _logger.LogDebug("No idle lambdas, adding request to the pending queue");
 
     // If there are no idle lambdas, add the request to the pending queue
-    var tcs = new TaskCompletionSource();
-
     // Add the request to the pending queue
-    _pendingRequests.Enqueue((incomingRequest, incomingResponse, tcs));
+    var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
+    _pendingRequests.Enqueue(pendingRequest);
     Interlocked.Increment(ref _pendingRequestCount);
 
-    // TODO: Everytime we add a request to the queue, we start another Lambda / concurrent requests per lambda
-    // This is not quite what we want... we want to start a fraction of Lambdas vs parallel incoming requests
-    await _lambdaInstanceManager.StartNewInstance();
+    // Check if anyone is listening
+    await _lambdaInstanceManager.CheckCapacity();
 
     // Wait for the request to be dispatched or to timeout
     // await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
-    await tcs.Task.WaitAsync(TimeSpan.FromMinutes(5));
+    await pendingRequest.ResponseFinishedTCS.Task.WaitAsync(TimeSpan.FromMinutes(5));
   }
 
   // Add a new lambda, dispatch to it immediately if a request is waiting
@@ -88,7 +102,7 @@ public class Dispatcher
       Interlocked.Decrement(ref _pendingRequestCount);
 
       // Get the connection
-      var connection = await _lambdaInstanceManager.AddConnectionForLambda(pendingRequest.Item1, pendingRequest.Item2, lambdaId, true);
+      var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, true);
 
       if (connection == null)
       {
@@ -97,13 +111,13 @@ public class Dispatcher
 
       // If we got a connection, dispatch the request
       // Dispatch the request to the lambda
-      await connection.RunRequest(pendingRequest.Item1, pendingRequest.Item2);
+      await connection.RunRequest(pendingRequest.Request, pendingRequest.Response);
 
       result.ImmediatelyDispatched = true;
       result.Connection = connection;
 
       // Signal the pending request that it's been dispatched
-      pendingRequest.Item3.SetResult();
+      pendingRequest.ResponseFinishedTCS.SetResult();
 
       return result;
     }

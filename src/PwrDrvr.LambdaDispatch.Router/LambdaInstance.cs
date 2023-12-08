@@ -73,8 +73,6 @@ public class LambdaInstance
 
   public string Id { get; private set; } = Guid.NewGuid().ToString();
 
-  public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
-
   /// <summary>
   /// Connections to the Lambda Instance
   /// If a connection closes we change it's state and decrement the available connection count

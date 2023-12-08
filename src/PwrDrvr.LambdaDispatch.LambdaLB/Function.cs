@@ -57,7 +57,7 @@ public class Function
     /// <returns></returns>
     public static async Task<WaiterResponse> FunctionHandler(WaiterRequest request, ILambdaContext context)
     {
-        _logger.LogInformation($"Received WaiterRequest id: {request.Id}, dispatcherUrl: {request.DispatcherUrl}");
+        _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
 
         await Task.Delay(1);
 
@@ -65,9 +65,9 @@ public class Function
         await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
 
         // Decode received payload
-        var aRequest = await reverseRequester.GetRequest();
+        await reverseRequester.GetRequest();
 
-        _logger.LogInformation($"Received request from dispatcher: {aRequest}");
+        // _logger.LogInformation("Received request from dispatcher: {aRequest}", aRequest);
 
         // Send a hard-coded response back to the router
         await reverseRequester.SendResponse();
@@ -91,7 +91,7 @@ public class Function
 
         var response = new WaiterResponse { Id = request.Id };
 
-        _logger.LogInformation($"Responding with WaiterResponse id: {response.Id}");
+        _logger.LogInformation("Responding with WaiterResponse id: {Id}", response.Id);
 
         return response;
     }

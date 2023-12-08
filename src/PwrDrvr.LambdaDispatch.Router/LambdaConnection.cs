@@ -151,7 +151,7 @@ public class LambdaConnection
 
     _logger.LogDebug("Finished reading response headers from Lambda");
 
-    _logger.LogDebug("Copying response body from from Lambda");
+    _logger.LogDebug("Copying response body from Lambda");
 
     // Send the body to the caller
     using var lambdaResponseReader = new StreamReader(this.Request.BodyReader.AsStream(), leaveOpen: true);
@@ -188,7 +188,7 @@ public class LambdaConnection
 
     // await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
 
-    _logger.LogDebug("Copied response body from from Lambda");
+    _logger.LogDebug("Copied response body from Lambda");
 
     await response.BodyWriter.CompleteAsync();
 

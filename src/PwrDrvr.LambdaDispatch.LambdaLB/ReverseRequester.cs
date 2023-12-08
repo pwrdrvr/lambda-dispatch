@@ -102,7 +102,7 @@ public class ReverseRequester : IAsyncDisposable
   /// and we will receive the request as the response "body"
   /// </summary>
   /// <returns></returns>
-  public async Task<System.Net.HttpWebRequest> GetRequest()
+  public async Task GetRequest()
   {
     // Initiate a chunked request to the router
     // This opens the channel for the response to come back
@@ -216,9 +216,7 @@ public class ReverseRequester : IAsyncDisposable
 
     _logger.LogDebug("Received request from router: {requestString}", requestString);
 
-#pragma warning disable SYSLIB0014 // Type or member is obsolete
-    return WebRequest.CreateHttp("http://localhost:5001/api/chunked");
-#pragma warning restore SYSLIB0014 // Type or member is obsolete
+    // TODO: Need to package up the Request data and return it
   }
 
   public async Task SendResponse()

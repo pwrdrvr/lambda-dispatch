@@ -86,6 +86,15 @@ public class LambdaInstanceManager
     return null;
   }
 
+  public async Task CheckCapacity()
+  {
+    // Check if we should start a new instance
+    if (_desiredCount == 0 || _runningCount < _desiredCount)
+    {
+      await this.StartNewInstance();
+    }
+  }
+
   /// <summary>
   /// Start a new LambdaInstance and increment the desired count
   /// </summary>
