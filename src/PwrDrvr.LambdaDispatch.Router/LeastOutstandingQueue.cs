@@ -60,7 +60,15 @@ public class LeastOutstandingQueue
     }
 
     // We add 2 because we want to use `0` for idle and `maxConcurrentCount` for full
-    return new ConcurrentQueue<LambdaInstance>[maxConcurrentCount + 2];
+    var queueList = new ConcurrentQueue<LambdaInstance>[maxConcurrentCount + 2];
+
+    // Initialize the queues
+    for (var i = 0; i < queueList.Length; i++)
+    {
+      queueList[i] = new ConcurrentQueue<LambdaInstance>();
+    }
+
+    return queueList;
   }
 
   public async Task CloseMostIdleInstance()
