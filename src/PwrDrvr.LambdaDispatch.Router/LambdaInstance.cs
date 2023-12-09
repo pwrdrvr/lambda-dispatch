@@ -46,6 +46,8 @@ public enum LambdaInstanceState
 /// </summary>
 public class LambdaInstance
 {
+  private readonly ILogger<LambdaInstance> _logger = LoggerInstance.CreateLogger<LambdaInstance>();
+
   /// <summary>
   /// Raised when the Lambda Instance has completed it's invocation
   /// </summary>
@@ -108,7 +110,7 @@ public class LambdaInstance
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
-      Console.WriteLine("Connection added to Lambda Instance that is closing or closed - closing with 1001");
+      _logger.LogError("Connection added to Lambda Instance that is closing or closed - closing with 1001");
 
       // Close the connection
       try
@@ -119,8 +121,7 @@ public class LambdaInstance
       }
       catch (Exception ex)
       {
-        Console.WriteLine("Exception closing down connection to Lambda");
-        Console.WriteLine(ex.Message);
+        _logger.LogError("Exception closing down connection to Lambda: {Message}", ex.Message);
       }
 
       return null;
@@ -274,6 +275,8 @@ public class LambdaInstance
   /// <returns></returns>
   public async Task Start()
   {
+    _logger.LogInformation("Starting Lambda Instance {Id}", Id);
+
     // Throw if the instance is already open or closed
     if (State != LambdaInstanceState.Initial)
     {
@@ -299,7 +302,6 @@ public class LambdaInstance
       Payload = JsonSerializer.Serialize(payload)
     };
 
-
     // Should not wait here as we will not get a response until the Lambda is done
     var invokeTask = LambdaClient.InvokeAsync(request);
 
@@ -319,11 +321,12 @@ public class LambdaInstance
       {
         // Handle any exceptions that occurred during the invocation
         Exception ex = t.Exception;
-        Console.WriteLine(ex.Message);
+        _logger.LogError("LambdaInvoke for Id {Id}, gave error: {Message}", this.Id, ex.Message);
       }
       else if (t.IsCompleted)
       {
         // The Lambda invocation has completed
+        _logger.LogDebug("LambdaInvoke completed for Id: {Id}", this.Id);
       }
     });
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

@@ -59,30 +59,39 @@ public class Function
     {
         _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
 
-        await Task.Delay(1);
+        CancellationTokenSource cts = new CancellationTokenSource();
+        CancellationToken token = cts.Token;
 
-        // Establish a connection back to the control interface
-        await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
+        List<Task> tasks = new List<Task>();
+        for (int i = 0; i < request.NumberOfChannels; i++)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
+                    var status = await reverseRequester.GetRequest();
 
-        // Decode received payload
-        await reverseRequester.GetRequest();
+                    if (status == 1001)
+                    {
+                        // Stop the other tasks from looping
+                        cts.Cancel();
+                        _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", i);
+                        return;
+                    }
 
-        // _logger.LogInformation("Received request from dispatcher: {aRequest}", aRequest);
+                    await reverseRequester.SendResponse();
 
-        // Send a hard-coded response back to the router
-        await reverseRequester.SendResponse();
+                    _logger.LogInformation("Sent response to Router {i}", i);
+                }
+
+                _logger.LogInformation("Exiting task {i}", i);
+            }));
+        }
+
+        await Task.WhenAll(tasks);
 
         // TODO: Setup a timeout according to that specified in the payload
-
-        // TODO: Connect back to the specified control interface target in the payload
-
-        // TODO: Use chunked encoding for the request
-
-        // TODO: Dispatch a request if one is received on the reponse channel to the control interface
-
-        // TODO: Send the response back to the control interface on the still-open chunked request channel
-
-        // TODO: If the control interface closes the chunked response without a request, close the request channel
 
         // TODO: We can send HTTP semantics over the chunked response and request
         // line delimited headers, and a blank line to indicate the end of the headers, then the body

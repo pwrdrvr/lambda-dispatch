@@ -102,7 +102,7 @@ public class ReverseRequester : IAsyncDisposable
   /// and we will receive the request as the response "body"
   /// </summary>
   /// <returns></returns>
-  public async Task GetRequest()
+  public async Task<int> GetRequest()
   {
     // Initiate a chunked request to the router
     // This opens the channel for the response to come back
@@ -116,7 +116,7 @@ public class ReverseRequester : IAsyncDisposable
     await _stream.FlushAsync();
 
     // Start a task to read the response headers and body
-    var readResponseTask = Task.Run(async Task<string>? () =>
+    var readResponseTask = Task.Run(async Task<(int, string)>? () =>
     {
       StringWriter requestWriter = new();
 
@@ -131,7 +131,12 @@ public class ReverseRequester : IAsyncDisposable
 
       // These are not part of the request that we're going to run
       var headerLines = ReadHeaders(_stream);
-      for (int i = 0; i < headerLines.Count; i++)
+      int status = 0;
+      if (headerLines.Count > 0)
+      {
+        status = headerLines[0].StartsWith("HTTP") ? int.Parse(headerLines[0].Split(' ')[1]) : 0;
+      }
+      for (int i = 1; i < headerLines.Count; i++)
       {
         var headerLine = headerLines[i];
         requestWriter.Write($"{headerLine}\r\n");
@@ -207,16 +212,17 @@ public class ReverseRequester : IAsyncDisposable
         await requestWriter.WriteAsync(remainingData);
       }
 
-      return requestWriter.ToString();
+      return (status, requestWriter.ToString());
     });
 
     // Wait for the response reading task to complete
     // TODO: We may need to move this await till after we send the request body (our response)
-    string requestString = await readResponseTask;
+    (int status, string requestString) = await readResponseTask;
 
     _logger.LogDebug("Received request from router: {requestString}", requestString);
 
     // TODO: Need to package up the Request data and return it
+    return status;
   }
 
   public async Task SendResponse()
@@ -253,5 +259,6 @@ public class ReverseRequester : IAsyncDisposable
     // Send the last chunk
     await _stream.WriteAsync(Encoding.UTF8.GetBytes("0\r\n\r\n"));
     await _stream.FlushAsync();
+    _stream.Close();
   }
 }

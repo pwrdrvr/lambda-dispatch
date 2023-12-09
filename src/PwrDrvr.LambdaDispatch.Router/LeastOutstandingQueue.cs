@@ -183,4 +183,17 @@ public class LeastOutstandingQueue
     // This may add it the idle (0) or full (maxConcurrentCount) queue
     availableInstances[queueIndex].Enqueue(instance);
   }
+
+  public void ReinstateFullInstance(LambdaInstance instance)
+  {
+    // Remove the instance from the full instances
+    fullInstances.TryRemove(instance.Id, out var removedInstance);
+
+    if (removedInstance != null)
+    {
+      // Add the instance to the queue
+      // This may add it the idle (0) or full (maxConcurrentCount) queue
+      availableInstances[GetFloorQueueIndex(instance.AvailableConnectionCount)].Enqueue(instance);
+    }
+  }
 }

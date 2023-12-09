@@ -85,6 +85,15 @@ public class LambdaConnection
 
   public async Task RunRequest(HttpRequest request, HttpResponse response)
   {
+    // Check if state is wrong
+    if (State != LambdaConnectionState.Open)
+    {
+      throw new InvalidOperationException("Connection is not open");
+    }
+
+    // Set the state to busy
+    State = LambdaConnectionState.Busy;
+
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("Sending incoming request headers to Lambda");
 

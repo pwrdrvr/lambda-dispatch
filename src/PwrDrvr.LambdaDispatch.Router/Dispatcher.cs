@@ -45,14 +45,12 @@ public class Dispatcher
     _logger.LogDebug("Adding request to the Dispatcher");
 
     // If no queue and idle lambdas, try to get an idle lambda and dispatch immediately
-    if (_pendingRequestCount == 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaInstance))
+    if (_pendingRequestCount == 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
     {
-      _logger.LogDebug("Dispatching added request to Lambda, immediately");
+      _logger.LogDebug("Dispatching incoming request immediately to LambdaId: {Id}", lambdaConnection.Instance.Id);
 
       // Dispatch the request to the lambda
-      await lambdaInstance.RunRequest(incomingRequest, incomingResponse);
-
-      // Release the task
+      await lambdaConnection.RunRequest(incomingRequest, incomingResponse);
 
       return;
     }

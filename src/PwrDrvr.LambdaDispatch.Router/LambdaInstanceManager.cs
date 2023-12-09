@@ -5,6 +5,8 @@ using System.Diagnostics.CodeAnalysis;
 
 public class LambdaInstanceManager
 {
+  private readonly ILogger<LambdaInstanceManager> _logger = LoggerInstance.CreateLogger<LambdaInstanceManager>();
+
   private readonly LeastOutstandingQueue _leastOutstandingQueue;
 
   private volatile int _runningCount = 0;
@@ -64,7 +66,15 @@ public class LambdaInstanceManager
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      return instance.AddConnection(request, response, immediateDispatch);
+      var connection = instance.AddConnection(request, response, immediateDispatch);
+
+      // Check where this instance is in the least outstanding queue
+      if (!immediateDispatch)
+      {
+        _leastOutstandingQueue.ReinstateFullInstance(instance);
+      }
+
+      return connection;
     }
 
     Console.WriteLine($"Connection added to Lambda Instance {lambdaId} that does not exist - closing with 1001");
@@ -89,7 +99,11 @@ public class LambdaInstanceManager
   public async Task CheckCapacity()
   {
     // Check if we should start a new instance
-    if (_desiredCount == 0 || _runningCount < _desiredCount)
+    if (_desiredCount == 0)
+    {
+      await this.StartNewInstance(true);
+    }
+    else if (_runningCount < _desiredCount)
     {
       await this.StartNewInstance();
     }
@@ -99,10 +113,13 @@ public class LambdaInstanceManager
   /// Start a new LambdaInstance and increment the desired count
   /// </summary>
   /// <returns></returns>
-  public async Task StartNewInstance()
+  public async Task StartNewInstance(bool incrementDesiredCount = false)
   {
     // If we get called we're starting a new instance
-    Interlocked.Increment(ref _desiredCount);
+    if (incrementDesiredCount)
+    {
+      Interlocked.Increment(ref _desiredCount);
+    }
 
     // Start a new LambdaInstance and add it to the list
     var instance = new LambdaInstance(_maxConcurrentCount);
@@ -112,6 +129,8 @@ public class LambdaInstanceManager
 
     instance.OnOpen += (instance) =>
     {
+      _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
+
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
       Interlocked.Increment(ref _runningCount);
@@ -122,6 +141,8 @@ public class LambdaInstanceManager
 
     instance.OnInvocationComplete += async (instance) =>
     {
+      _logger.LogInformation("LambdaInstance {instanceId} invocation complete", instance.Id);
+
       Interlocked.Decrement(ref _runningCount);
 
       // Remove this instance from the collection
