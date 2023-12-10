@@ -167,9 +167,9 @@ public class LambdaInstanceManager
 
     instance.OnInvocationComplete += async (instance) =>
     {
-      _logger.LogInformation("LambdaInstance {instanceId} invocation complete", instance.Id);
-
       Interlocked.Decrement(ref _runningCount);
+
+      _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredCount {_desiredCount}, _runningCount {_runningCount} (after decrement)", instance.Id, _desiredCount, _runningCount);
 
       // Remove this instance from the collection
       _instances.TryRemove(instance.Id, out _);

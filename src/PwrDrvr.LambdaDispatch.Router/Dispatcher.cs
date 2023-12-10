@@ -57,13 +57,13 @@ public class Dispatcher
       try
       {
         await lambdaConnection.RunRequest(incomingRequest, incomingResponse);
-
-        // Update number of instances that we want
-        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
       }
       finally
       {
         Interlocked.Decrement(ref _runningRequestCount);
+
+        // Update number of instances that we want
+        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
       }
       return;
     }
@@ -136,6 +136,9 @@ public class Dispatcher
 
         // Signal the pending request that it's been completed
         pendingRequest.ResponseFinishedTCS.SetResult();
+
+         // Update number of instances that we want
+        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
       }
 
       return result;
