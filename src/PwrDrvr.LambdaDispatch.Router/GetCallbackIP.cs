@@ -20,14 +20,20 @@ public class GetCallbackIP
     try
     {
       var response = await client.GetStringAsync("http://169.254.170.2/v2/metadata", cts.Token);
+      Console.WriteLine(response);
       var metadata = JsonDocument.Parse(response).RootElement;
-      var networks = metadata.GetProperty("Networks");
-      foreach (var network in networks.EnumerateArray())
+      // On ECS there is an extra Containers parent that is not in EC2
+      var containers = metadata.GetProperty("Containers");
+      foreach (var container in containers.EnumerateArray())
       {
-        if (network.GetProperty("NetworkMode").GetString() == "awsvpc")
+        var networks = container.GetProperty("Networks");
+        foreach (var network in networks.EnumerateArray())
         {
-          callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5001/api/chunked";
-          return callbackUrl;
+          if (network.GetProperty("NetworkMode").GetString() == "awsvpc")
+          {
+            callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5001/api/chunked";
+            return callbackUrl;
+          }
         }
       }
     }
