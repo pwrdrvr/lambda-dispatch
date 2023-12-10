@@ -14,7 +14,11 @@ public class Program
                 logging.ClearProviders();
                 logging.AddAWSProvider();
                 logging.AddConsole();
+#if DEBUG
                 logging.SetMinimumLevel(LogLevel.Debug); // Set the minimum log level here
+#else
+                logging.SetMinimumLevel(LogLevel.Information); // Set the minimum log level here
+#endif
             })
             .ConfigureWebHostDefaults(webBuilder =>
             {

@@ -89,14 +89,20 @@ public class Function
             }));
         }
 
+        // TODO: Setup a timeout according to that specified in the payload
+        // Note: the code below is only going to work cleanly under constant load
+        await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(TimeSpan.FromSeconds(45)));
+        cts.Cancel();
         await Task.WhenAll(tasks);
 
-        // TODO: Setup a timeout according to that specified in the payload
-
-        // TODO: We can send HTTP semantics over the chunked response and request
-        // line delimited headers, and a blank line to indicate the end of the headers, then the body
-
-        // We can reuse the sockets too, just closing the request/response bodies not the connection
+        // TODO: Send a `Connection: close` header as the first header on the response
+        // to the Router to tell it to close the connection.
+        // If the Router sees that before it has dispatched a request, then it will
+        // close the connection and use another one.
+        // But if it selected that connection and sent a request already, then it will
+        // read and discard that header and then process the response as normal.
+        // This allows us to drain stop without causing a race condition leading
+        // to dropped requests.
 
         var response = new WaiterResponse { Id = request.Id };
 

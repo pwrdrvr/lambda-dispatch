@@ -8,7 +8,11 @@ public class LoggerInstance
   private static ILoggerFactory _loggerFactory = LoggerFactory.Create(builder =>
     {
       builder
+#if DEBUG
           .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Debug)
+#else
+          .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Information)
+#endif
           .AddConsole();
     });
 
