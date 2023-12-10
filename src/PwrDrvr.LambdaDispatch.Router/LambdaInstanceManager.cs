@@ -110,12 +110,10 @@ public class LambdaInstanceManager
     var desiredCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
 
     // Set the desired count
-    _desiredCount = desiredCount;
-
-    while (_runningCount + _startingCount < _desiredCount)
+    while (_runningCount + _startingCount < desiredCount)
     {
       // Start a new instance
-      await this.StartNewInstance();
+      await this.StartNewInstance(true);
     }
   }
 
