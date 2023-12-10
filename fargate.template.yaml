@@ -100,6 +100,8 @@ Resources:
           FromPort: 0
           ToPort: 65535
           CidrIp: !GetAtt MyVPC.CidrBlock
+        - IpProtocol: '-1'
+          DestinationPrefixListId: 'pl-7ba54012' # US East 2 S3 Prefix List
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5002

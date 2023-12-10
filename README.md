@@ -100,6 +100,12 @@ aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-
 aws cloudformation update-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
 ```
 
+## curl the Router
+
+```
+curl http://lambda-ECSFa-99YoLua7GcRe-1054486381.us-east-2.elb.amazonaws.com/fact
+```
+
 ## Count Lines of Code
 
 ```bash
