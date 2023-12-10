@@ -3,6 +3,8 @@ using Amazon.Lambda.Model;
 using PwrDrvr.LambdaDispatch.Messages;
 using System.Text.Json;
 using System.Text;
+using Microsoft.AspNetCore.Http.Features;
+using System.Net.Http;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -55,6 +57,14 @@ public class LambdaConnection
 
   public LambdaConnection(HttpRequest request, HttpResponse response, LambdaInstance instance)
   {
+    // HttpRequestFeature foo = new HttpRequestFeature();
+
+    // System.Net.Http.HttpRequestMessage bar = new System.Net.Http.HttpRequestMessage();
+    // bar.Headers.Add("X-Lambda-Id", instance.Id);
+    // bar.Content = new StreamContent(request.BodyReader.AsStream());
+
+    // HttpParser.ParseRequestLine(feature, requestLineBuffer, out var method, out var requestUrl, out var version, out var badRequest)
+    // Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http.HttpParser parser = new Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http.HttpParser();
     Request = request;
     Response = response;
     Instance = instance;
@@ -83,6 +93,46 @@ public class LambdaConnection
     });
   }
 
+  public async Task ProxyRequestToLambda(HttpRequest incomingRequest)
+  {
+      // Send the incoming Request on the lambda's Response
+    _logger.LogDebug("Sending incoming request headers to Lambda");
+
+    // TODO: Write the request line
+    await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{incomingRequest.Method} {incomingRequest.Path} {incomingRequest.Protocol}\r\n"));
+
+    // Send the headers to the Lambda
+    foreach (var header in incomingRequest.Headers)
+    {
+      await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
+    }
+
+    // Only copy the request body if the request has a body
+    if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding") && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
+    {
+      {
+        await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+      }
+
+      _logger.LogDebug("Sending incoming request body to Lambda");
+
+      // Send the body to the Lambda
+      await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter.AsStream());
+      await incomingRequest.BodyReader.CompleteAsync();
+
+      _logger.LogDebug("Finished sending incoming request body to Lambda");
+    }
+
+    // Mark that the Request has been sent on the LambdaInstances
+    await this.Response.BodyWriter.CompleteAsync();
+
+    // Get the response from the lambda request and relay it back to the caller
+    _logger.LogDebug("Finished sending entire request to Lambda");
+  }
+
+  /// <summary>
+  /// Run the request on the Lambda
+  /// </summary>
   public async Task RunRequest(HttpRequest request, HttpResponse response)
   {
     // Check if state is wrong
@@ -94,40 +144,11 @@ public class LambdaConnection
     // Set the state to busy
     State = LambdaConnectionState.Busy;
 
-    // Send the incoming Request on the lambda's Response
-    _logger.LogDebug("Sending incoming request headers to Lambda");
-
-    // TODO: Write the request line
-    await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{request.Method} {request.Path} {request.Protocol}\r\n"));
-
-    // Send the headers to the Lambda
-    foreach (var header in request.Headers)
-    {
-      await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
-    }
-
-    // Only copy the request body if the request has a body
-    if (request.ContentLength > 0 || (request.Headers.ContainsKey("Transfer-Encoding") && request.Headers["Transfer-Encoding"] == "chunked"))
-    {
-      {
-        await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
-      }
-
-      _logger.LogDebug("Sending incoming request body to Lambda");
-
-      // Send the body to the Lambda
-      await request.BodyReader.CopyToAsync(this.Response.BodyWriter.AsStream());
-      await request.BodyReader.CompleteAsync();
-
-      _logger.LogDebug("Finished sending incoming request body to Lambda");
-    }
-
-    // Mark that the Request has been sent on the LambdaInstances
-    await this.Response.BodyWriter.CompleteAsync();
-
-    // Get the response from the lambda request and relay it back to the caller
-    _logger.LogDebug("Finished sending entire request to Lambda");
-
+    //
+    // Send the incoming request to the Lambda
+    //
+    this.ProxyRequestToLambda(request);
+  
     //
     //
     // Read response from Lambda and relay back to caller
@@ -188,14 +209,17 @@ public class LambdaConnection
       response.Headers[parts[0]] = parts[1];
     }
 
+#if true
     while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
     {
       _logger.LogDebug("Got body line from lambda: {line}", line);
       await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(line));
       await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
     }
-
-    // await lambdaInstance.Request.BodyReader.CopyToAsync(response.BodyWriter.AsStream());
+#else
+    // Note: this probably will not work as some data has been buffered in the StreamReader
+    lambdaResponseReader.BaseStream.CopyToAsync(response.BodyWriter.AsStream());
+#endif
 
     _logger.LogDebug("Copied response body from Lambda");
 

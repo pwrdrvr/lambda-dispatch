@@ -33,6 +33,9 @@ public class Dispatcher
   private volatile int _pendingRequestCount = 0;
   private readonly ConcurrentQueue<PendingRequest> _pendingRequests = new();
 
+  // We need to keep a count of the running requests so we can set the desired count
+  private volatile int _runningRequestCount = 0;
+
   public Dispatcher(ILogger<Dispatcher> logger)
   {
     _logger = logger;
@@ -49,9 +52,19 @@ public class Dispatcher
     {
       _logger.LogDebug("Dispatching incoming request immediately to LambdaId: {Id}", lambdaConnection.Instance.Id);
 
-      // Dispatch the request to the lambda
-      await lambdaConnection.RunRequest(incomingRequest, incomingResponse);
+      Interlocked.Increment(ref _runningRequestCount);
 
+      try
+      {
+        await lambdaConnection.RunRequest(incomingRequest, incomingResponse);
+
+        // Update number of instances that we want
+        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+      }
+      finally
+      {
+        Interlocked.Decrement(ref _runningRequestCount);
+      }
       return;
     }
 
@@ -63,8 +76,8 @@ public class Dispatcher
     _pendingRequests.Enqueue(pendingRequest);
     Interlocked.Increment(ref _pendingRequestCount);
 
-    // Check if anyone is listening
-    await _lambdaInstanceManager.CheckCapacity();
+    // Update number of instances that we want
+    await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
 
     // Wait for the request to be dispatched or to timeout
     // await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
@@ -109,13 +122,21 @@ public class Dispatcher
 
       // If we got a connection, dispatch the request
       // Dispatch the request to the lambda
-      await connection.RunRequest(pendingRequest.Request, pendingRequest.Response);
+      Interlocked.Increment(ref _runningRequestCount);
+      try
+      {
+        await connection.RunRequest(pendingRequest.Request, pendingRequest.Response);
+      }
+      finally
+      {
+        Interlocked.Decrement(ref _runningRequestCount);
 
-      result.ImmediatelyDispatched = true;
-      result.Connection = connection;
+        result.ImmediatelyDispatched = true;
+        result.Connection = connection;
 
-      // Signal the pending request that it's been dispatched
-      pendingRequest.ResponseFinishedTCS.SetResult();
+        // Signal the pending request that it's been completed
+        pendingRequest.ResponseFinishedTCS.SetResult();
+      }
 
       return result;
     }

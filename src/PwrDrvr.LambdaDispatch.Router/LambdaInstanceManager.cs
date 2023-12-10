@@ -13,6 +13,8 @@ public class LambdaInstanceManager
 
   private volatile int _desiredCount = 0;
 
+  private volatile int _startingCount = 0;
+
   private readonly int _maxConcurrentCount;
 
   /// <summary>
@@ -96,6 +98,27 @@ public class LambdaInstanceManager
     return null;
   }
 
+  // TODO: This should project excess capacity and not use 100% of max capacity at all times
+  // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
+  public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
+  {
+    var cleanPendingRequests = Math.Max(pendingRequests, 0);
+    var cleanRunningRequests = Math.Max(runningRequests, 0);
+
+    // Calculate the desired count
+    var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
+    var desiredCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
+
+    // Set the desired count
+    _desiredCount = desiredCount;
+
+    while (_runningCount + _startingCount < _desiredCount)
+    {
+      // Start a new instance
+      await this.StartNewInstance();
+    }
+  }
+
   public async Task CheckCapacity()
   {
     // Check if we should start a new instance
@@ -121,6 +144,8 @@ public class LambdaInstanceManager
       Interlocked.Increment(ref _desiredCount);
     }
 
+    Interlocked.Increment(ref _startingCount);
+
     // Start a new LambdaInstance and add it to the list
     var instance = new LambdaInstance(_maxConcurrentCount);
 
@@ -129,6 +154,9 @@ public class LambdaInstanceManager
 
     instance.OnOpen += (instance) =>
     {
+      // We always decrement the starting count
+      Interlocked.Decrement(ref _startingCount);
+
       _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
 
       // We need to keep track of how many Lambdas are running
