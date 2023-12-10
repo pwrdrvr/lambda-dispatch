@@ -102,6 +102,8 @@ public class LambdaInstanceManager
   // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
   public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
   {
+    _logger.LogInformation("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredCount, _startingCount);
+
     var cleanPendingRequests = Math.Max(pendingRequests, 0);
     var cleanRunningRequests = Math.Max(runningRequests, 0);
 
@@ -109,32 +111,27 @@ public class LambdaInstanceManager
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
     var desiredCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
 
-    // Set the desired count
+    // Start instances if needed
     while (_runningCount + _startingCount < desiredCount)
     {
       // Start a new instance
       await this.StartNewInstance(true);
     }
-  }
 
-  public async Task CheckCapacity()
-  {
-    // Check if we should start a new instance
-    if (_desiredCount == 0)
-    {
-      await this.StartNewInstance(true);
+    // Stop instances if needed
+    while (_runningCount + _startingCount > desiredCount)
+      // Check if we should signal one Lambda to close
+      await _leastOutstandingQueue.CloseMostIdleInstance();
     }
-    else if (_runningCount < _desiredCount)
-    {
-      await this.StartNewInstance();
-    }
+
+    _logger.LogInformation("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredCount, _startingCount);
   }
 
   /// <summary>
   /// Start a new LambdaInstance and increment the desired count
   /// </summary>
   /// <returns></returns>
-  public async Task StartNewInstance(bool incrementDesiredCount = false)
+  private async Task StartNewInstance(bool incrementDesiredCount = false)
   {
     // If we get called we're starting a new instance
     if (incrementDesiredCount)
