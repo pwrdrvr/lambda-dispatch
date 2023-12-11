@@ -15,7 +15,7 @@ RUN dotnet restore src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Rout
 # Copy everything from the current directory to the working directory in the image
 COPY . ./
 
-# Restore dependencies and build the project
+# Build the project
 RUN dotnet publish src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Router.csproj -c Release --self-contained true --runtime linux-arm64 -o out
 
 # Use the Amazon Linux 2023 image as the runtime environment

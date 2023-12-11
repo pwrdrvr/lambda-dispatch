@@ -8,11 +8,18 @@ RUN apt install -y clang zlib1g-dev
 # Set the working directory
 WORKDIR /app
 
+# Copy just files needed for dotnet restore
+COPY *.sln ./
+COPY src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj ./src/PwrDrvr.LambdaDispatch.LambdaLB/
+COPY src/PwrDrvr.LambdaDispatch.Messages/PwrDrvr.LambdaDispatch.Messages.csproj ./src/PwrDrvr.LambdaDispatch.Messages/
+
+# Restore dependencies
+RUN dotnet restore src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj
+
 # Copy everything from the current directory to the working directory in the image
 COPY . ./
 
-# Restore dependencies and build the project
-RUN dotnet restore
+# Build the project
 RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime linux-arm64 -o out
 
 # Use the Amazon Linux 2023 image as the runtime environment
