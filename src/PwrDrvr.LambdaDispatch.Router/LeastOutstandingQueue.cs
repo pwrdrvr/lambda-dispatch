@@ -71,35 +71,35 @@ public class LeastOutstandingQueue
     return queueList;
   }
 
-  public async Task CloseMostIdleInstance()
-  {
-    for (var i = 0; i < availableInstances.Length - 1; i++)
-    {
-      if (availableInstances[i].TryDequeue(out var instance))
-      {
-        // We got an instance with, what we think, is the least outstanding requests
-        // But, the instance may actually be closed or full due to disconnects
-        // So we'll check that here
-        if (instance.State != LambdaInstanceState.Open)
-        {
-          // The instance is not open, so we'll drop it on the floor and move on
-          continue;
-        }
-        if (instance.AvailableConnectionCount == 0)
-        {
-          // The instance is full, so we'll put it in the full instances
-          fullInstances.TryAdd(instance.Id, instance);
-          continue;
-        }
+  // public async Task CloseMostIdleInstance()
+  // {
+  //   for (var i = 0; i < availableInstances.Length - 1; i++)
+  //   {
+  //     if (availableInstances[i].TryDequeue(out var instance))
+  //     {
+  //       // We got an instance with, what we think, is the least outstanding requests
+  //       // But, the instance may actually be closed or full due to disconnects
+  //       // So we'll check that here
+  //       if (instance.State != LambdaInstanceState.Open)
+  //       {
+  //         // The instance is not open, so we'll drop it on the floor and move on
+  //         continue;
+  //       }
+  //       if (instance.AvailableConnectionCount == 0)
+  //       {
+  //         // The instance is full, so we'll put it in the full instances
+  //         fullInstances.TryAdd(instance.Id, instance);
+  //         continue;
+  //       }
 
-        // Note: this is the only time we own this instance
+  //       // Note: this is the only time we own this instance
 
-        // Close this instance
-        await instance.Close();
-        break;
-      }
-    }
-  }
+  //       // Close this instance
+  //       await instance.Close();
+  //       break;
+  //     }
+  //   }
+  // }
 
   /// <summary>
   /// Get the instance with the least outstanding requests, approximately
@@ -177,19 +177,15 @@ public class LeastOutstandingQueue
   /// <param name="instance"></param>
   public void AddInstance(LambdaInstance instance)
   {
-    int queueIndex = GetFloorQueueIndex(instance.AvailableConnectionCount);
-
     // Add the instance to the queue
     // This may add it the idle (0) or full (maxConcurrentCount) queue
-    availableInstances[queueIndex].Enqueue(instance);
+    availableInstances[GetFloorQueueIndex(instance.AvailableConnectionCount)].Enqueue(instance);
   }
 
   public void ReinstateFullInstance(LambdaInstance instance)
   {
     // Remove the instance from the full instances
-    fullInstances.TryRemove(instance.Id, out var removedInstance);
-
-    if (removedInstance != null)
+    if (fullInstances.TryRemove(instance.Id, out var _))
     {
       // Add the instance to the queue
       // This may add it the idle (0) or full (maxConcurrentCount) queue
