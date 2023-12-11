@@ -95,7 +95,7 @@ public class LambdaConnection
 
   public async Task ProxyRequestToLambda(HttpRequest incomingRequest)
   {
-      // Send the incoming Request on the lambda's Response
+    // Send the incoming Request on the lambda's Response
     _logger.LogDebug("Sending incoming request headers to Lambda");
 
     // TODO: Write the request line
@@ -147,8 +147,8 @@ public class LambdaConnection
     //
     // Send the incoming request to the Lambda
     //
-    this.ProxyRequestToLambda(request);
-  
+    await this.ProxyRequestToLambda(request);
+
     //
     //
     // Read response from Lambda and relay back to caller
