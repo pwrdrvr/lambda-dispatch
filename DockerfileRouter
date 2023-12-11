@@ -4,11 +4,18 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-env
 # Set the working directory
 WORKDIR /app
 
+# Copy just files needed for dotnet restore
+COPY *.sln ./
+COPY src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Router.csproj ./src/PwrDrvr.LambdaDispatch.Router/
+COPY src/PwrDrvr.LambdaDispatch.Messages/PwrDrvr.LambdaDispatch.Messages.csproj ./src/PwrDrvr.LambdaDispatch.Messages/
+
+# Restore dependencies
+RUN dotnet restore src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Router.csproj
+
 # Copy everything from the current directory to the working directory in the image
 COPY . ./
 
 # Restore dependencies and build the project
-RUN dotnet restore
 RUN dotnet publish src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Router.csproj -c Release --self-contained true --runtime linux-arm64 -o out
 
 # Use the Amazon Linux 2023 image as the runtime environment
