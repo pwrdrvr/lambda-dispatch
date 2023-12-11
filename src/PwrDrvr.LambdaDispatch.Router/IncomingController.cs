@@ -20,6 +20,9 @@ public class IncomingController : ControllerBase
   [AcceptVerbs("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
   public async Task HandleRequest()
   {
-    await dispatcher.AddRequest(Request, Response);
+    using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer))
+    {
+      await dispatcher.AddRequest(Request, Response);
+    }
   }
 }

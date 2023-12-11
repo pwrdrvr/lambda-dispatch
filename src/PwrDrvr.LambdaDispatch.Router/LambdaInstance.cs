@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Mvc;
 using Amazon.Lambda;
 using Amazon.Lambda.Model;
 using PwrDrvr.LambdaDispatch.Messages;
@@ -92,6 +91,8 @@ public class LambdaInstance
   /// </summary>
   private volatile int availableConnectionCount = 0;
 
+  private volatile int openConnectionCount = 0;
+
   public int OutstandingRequestCount => maxConcurrentCount - availableConnectionCount;
 
   public int AvailableConnectionCount => availableConnectionCount;
@@ -142,6 +143,9 @@ public class LambdaInstance
     {
       throw new InvalidOperationException("Cannot add a connection to a Lambda Instance that is not open");
     }
+
+    Interlocked.Increment(ref openConnectionCount);
+    MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
 
     var connection = new LambdaConnection(request, response, this);
 
@@ -206,8 +210,9 @@ public class LambdaInstance
   /// <param name="isBusy"></param>
   public void ConnectionClosed(bool isBusy)
   {
-    // If the connection was busy then it was not counted as available
+    Interlocked.Decrement(ref openConnectionCount);
 
+    // If the connection was busy then it was not counted as available
     if (!isBusy && State == LambdaInstanceState.Open)
     {
       // Connection was not busy, so it was available
@@ -279,6 +284,8 @@ public class LambdaInstance
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
+    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInstanceCount);
+
     // Throw if the instance is already open or closed
     if (State != LambdaInstanceState.Initial)
     {
@@ -312,6 +319,8 @@ public class LambdaInstance
     invokeTask.ContinueWith(t =>
     {
       this.State = LambdaInstanceState.Closing;
+
+      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInstanceCount);
 
       // NOTE: The Lambda will return via the callback to indicate that it's shutting down
       // but it will linger until we close the responses to it's requests
