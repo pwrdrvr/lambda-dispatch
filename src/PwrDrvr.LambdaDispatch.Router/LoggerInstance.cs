@@ -13,7 +13,12 @@ public class LoggerInstance
 #else
           .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Information)
 #endif
-          .AddConsole();
+          .AddSimpleConsole(options =>
+          {
+            // options.IncludeScopes = true;
+            options.SingleLine = true;
+            options.TimestampFormat = "HH:mm:ss.fff ";
+          });
     });
 
   public static ILogger<T> CreateLogger<T>()

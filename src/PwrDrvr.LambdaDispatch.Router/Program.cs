@@ -4,6 +4,9 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        Console.WriteLine($"Before ThreadPool ThreadCount: {ThreadPool.ThreadCount}");
+        ThreadPool.SetMinThreads(20, 20);
+        Console.WriteLine($"After ThreadPool ThreadCount: {ThreadPool.ThreadCount}");
         CreateHostBuilder(args).Build().Run();
     }
 
@@ -13,7 +16,12 @@ public class Program
             {
                 logging.ClearProviders();
                 logging.AddAWSProvider();
-                logging.AddConsole();
+                logging.AddSimpleConsole(options =>
+                {
+                    // options.IncludeScopes = true;
+                    options.SingleLine = true;
+                    options.TimestampFormat = "HH:mm:ss.fff ";
+                });
 #if DEBUG
                 logging.SetMinimumLevel(LogLevel.Debug); // Set the minimum log level here
 #else

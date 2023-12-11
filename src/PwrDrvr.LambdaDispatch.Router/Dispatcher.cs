@@ -141,7 +141,7 @@ public class Dispatcher
 
       if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
       {
-        _logger.LogWarning("Dispatching pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
+        _logger.LogWarning("Dispatching (foreground) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
       }
 
       // Register the connection with the lambda
@@ -201,6 +201,11 @@ public class Dispatcher
         {
           pendingRequest.RecordDispatchTime();
           _logger.LogDebug("Dispatching pending request");
+
+          if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
+          {
+            _logger.LogWarning("Dispatching (background) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
+          }
 
           MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
           MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);

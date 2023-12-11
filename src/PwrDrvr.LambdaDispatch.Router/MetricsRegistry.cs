@@ -20,25 +20,26 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
   public async Task WriteAsync(Stream output, MetricsDataValueSource metricsData, CancellationToken cancellationToken = default)
   {
     using var sw = new StreamWriter(output);
+    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff ");
 
     foreach (var gauge in metricsData.Contexts.SelectMany(context => context.Gauges))
     {
-      await sw.WriteLineAsync($"{gauge.Name}: {gauge.Value} {gauge.Unit}");
+      await sw.WriteLineAsync($"{timestamp} {gauge.Name}: {gauge.Value} {gauge.Unit}");
     }
 
     foreach (var counter in metricsData.Contexts.SelectMany(context => context.Counters))
     {
-      await sw.WriteLineAsync($"{counter.Name}: {counter.Value.Count} {counter.Unit}");
+      await sw.WriteLineAsync($"{timestamp} {counter.Name}: {counter.Value.Count} {counter.Unit}");
     }
 
     foreach (var histogram in metricsData.Contexts.SelectMany(context => context.Histograms))
     {
-      await sw.WriteLineAsync($"{histogram.Name}: {histogram.Value.Count} count {Math.Round(histogram.Value.LastValue, 1)} last {Math.Round(histogram.Value.Mean, 1)} mean {Math.Round(histogram.Value.Min, 1)} min {Math.Round(histogram.Value.Max, 1)} max {histogram.Unit}");
+      await sw.WriteLineAsync($"{timestamp} {histogram.Name}: {histogram.Value.Count} count {Math.Round(histogram.Value.LastValue, 1)} last {Math.Round(histogram.Value.Mean, 1)} mean {Math.Round(histogram.Value.Min, 1)} min {Math.Round(histogram.Value.Max, 1)} max {histogram.Unit}");
     }
 
     foreach (var timer in metricsData.Contexts.SelectMany(context => context.Timers))
     {
-      await sw.WriteLineAsync($"{timer.Name}: {timer.Value.Histogram.Count} count {Math.Round(timer.Value.Histogram.LastValue, 1)} last {Math.Round(timer.Value.Histogram.Mean, 1)} mean {Math.Round(timer.Value.Histogram.Min, 1)} min {Math.Round(timer.Value.Histogram.Max, 1)} max {timer.Unit}");
+      await sw.WriteLineAsync($"{timestamp} {timer.Name}: {timer.Value.Histogram.Count} count {Math.Round(timer.Value.Histogram.LastValue, 1)} last {Math.Round(timer.Value.Histogram.Mean, 1)} mean {Math.Round(timer.Value.Histogram.Min, 1)} min {Math.Round(timer.Value.Histogram.Max, 1)} max {timer.Unit}");
     }
   }
 }
