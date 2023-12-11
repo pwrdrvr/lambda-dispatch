@@ -99,19 +99,19 @@ public class LambdaInstanceManager
       desiredCount = 0;
     }
 
-    // Try to set the new desired count
-    // If we end up setting this to a smaller number we won't
-    // stop the instances right away, but only when they disconnect
-    Interlocked.Exchange(ref _desiredInstanceCount, desiredCount);
-
     // Start instances if needed
-    // We might stop if another thread updates this to be smaller while we loop
-    while (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
+    while (_runningInstanceCount + _startingInstanceCount < desiredCount)
     {
       // Start a new instance
       await this.StartNewInstance(true);
     }
 
+    // Try to set the new desired count
+    while (_desiredInstanceCount > desiredCount)
+    {
+      // Decrement the desired count
+      Interlocked.Decrement(ref _desiredInstanceCount);
+    }
 
     _logger.LogInformation("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredInstanceCount, _startingInstanceCount);
   }
