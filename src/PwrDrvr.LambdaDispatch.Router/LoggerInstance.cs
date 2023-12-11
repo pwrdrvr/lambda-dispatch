@@ -5,7 +5,7 @@ using AWS.Logger;
 
 public class LoggerInstance
 {
-  private static ILoggerFactory _loggerFactory = LoggerFactory.Create(builder =>
+  private static readonly ILoggerFactory _loggerFactory = LoggerFactory.Create(builder =>
     {
       builder
 #if DEBUG

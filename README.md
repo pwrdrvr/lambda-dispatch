@@ -92,7 +92,7 @@ docker tag lambda-dispatch-lambdalb:latest 220761759939.dkr.ecr.us-east-2.amazon
 docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
 ```
 
-## Deploy the Fargate Template
+## Deploy the Fargate and Lambda Template
 
 ```bash
 aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM

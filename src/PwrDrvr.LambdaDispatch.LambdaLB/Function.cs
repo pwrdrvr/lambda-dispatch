@@ -65,6 +65,8 @@ public class Function
         List<Task> tasks = new List<Task>();
         for (int i = 0; i < request.NumberOfChannels; i++)
         {
+            // Required to get a unique variable that identifies the task
+            int taskNumber = i;
             tasks.Add(Task.Run(async () =>
             {
                 while (!token.IsCancellationRequested)
@@ -76,16 +78,16 @@ public class Function
                     {
                         // Stop the other tasks from looping
                         cts.Cancel();
-                        _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", i);
+                        _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
                         return;
                     }
 
                     await reverseRequester.SendResponse();
 
-                    _logger.LogInformation("Sent response to Router {i}", i);
+                    _logger.LogInformation("Sent response to Router {i}", taskNumber);
                 }
 
-                _logger.LogInformation("Exiting task {i}", i);
+                _logger.LogInformation("Exiting task {i}", taskNumber);
             }));
         }
 
