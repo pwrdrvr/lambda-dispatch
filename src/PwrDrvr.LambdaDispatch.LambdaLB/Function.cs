@@ -57,7 +57,14 @@ public class Function
     /// <returns></returns>
     public static async Task<WaiterResponse> FunctionHandler(WaiterRequest request, ILambdaContext context)
     {
+        _logger.LogInformation("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
         _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
+
+        if (ThreadPool.ThreadCount < request.NumberOfChannels)
+        {
+            _logger.LogInformation("Increasing thread pool size to {NumberOfChannels}", request.NumberOfChannels);
+            ThreadPool.SetMinThreads(request.NumberOfChannels, request.NumberOfChannels);
+        }
 
         CancellationTokenSource cts = new CancellationTokenSource();
         CancellationToken token = cts.Token;
@@ -71,20 +78,27 @@ public class Function
             {
                 while (!token.IsCancellationRequested)
                 {
-                    await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
-                    var status = await reverseRequester.GetRequest();
-
-                    if (status == 1001)
+                    try
                     {
-                        // Stop the other tasks from looping
-                        cts.Cancel();
-                        _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
-                        return;
+                        await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
+                        var status = await reverseRequester.GetRequest();
+
+                        if (status == 1001)
+                        {
+                            // Stop the other tasks from looping
+                            cts.Cancel();
+                            _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
+                            return;
+                        }
+
+                        await reverseRequester.SendResponse();
+
+                        _logger.LogInformation("Sent response to Router {i}", taskNumber);
                     }
-
-                    await reverseRequester.SendResponse();
-
-                    _logger.LogInformation("Sent response to Router {i}", taskNumber);
+                    catch
+                    {
+                        _logger.LogError("Exception caught in task {i}", taskNumber);
+                    }
                 }
 
                 _logger.LogInformation("Exiting task {i}", taskNumber);
