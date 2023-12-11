@@ -40,22 +40,6 @@ public class LambdaInstanceManager
     return gotConnection;
   }
 
-  /// <summary>
-  /// Decrement the desired count
-  /// 
-  /// This will not immediately stop an instance
-  /// </summary>
-  public async Task DecrementDesiredCount()
-  {
-    Interlocked.Decrement(ref _desiredCount);
-
-    // Check if we should signal one Lambda to close
-    if (_runningCount > _desiredCount)
-    {
-      await _leastOutstandingQueue.CloseMostIdleInstance();
-    }
-  }
-
   public bool ValidateLambdaId(string lambdaId)
   {
     return _instances.ContainsKey(lambdaId);
@@ -111,6 +95,12 @@ public class LambdaInstanceManager
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
     var desiredCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
 
+    // Special case for 0 pending or running
+    if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
+    {
+      desiredCount = 0;
+    }
+
     // Start instances if needed
     while (_runningCount + _startingCount < desiredCount)
     {
@@ -120,6 +110,7 @@ public class LambdaInstanceManager
 
     // Stop instances if needed
     while (_runningCount + _startingCount > desiredCount)
+    {
       // Check if we should signal one Lambda to close
       await _leastOutstandingQueue.CloseMostIdleInstance();
     }
@@ -176,7 +167,7 @@ public class LambdaInstanceManager
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
 
-      if (_runningCount < _desiredCount)
+      if (_runningCount + _startingCount < _desiredCount)
       {
         // We need to start a new instance
         await this.StartNewInstance();

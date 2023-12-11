@@ -96,6 +96,8 @@ public class LambdaInstance
 
   public int AvailableConnectionCount => availableConnectionCount;
 
+  private int signaledStarting = 0;
+
   public LambdaInstance(int maxConcurrentCount)
   {
     this.maxConcurrentCount = maxConcurrentCount;
@@ -128,7 +130,7 @@ public class LambdaInstance
     }
 
     // Signal that we are ready if this the first connection
-    if (State == LambdaInstanceState.Starting)
+    if (State == LambdaInstanceState.Starting && Interlocked.Exchange(ref signaledStarting, 1) == 0)
     {
       State = LambdaInstanceState.Open;
 
