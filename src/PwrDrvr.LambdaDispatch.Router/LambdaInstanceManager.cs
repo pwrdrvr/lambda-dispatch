@@ -110,6 +110,11 @@ public class LambdaInstanceManager
     }
 
     // Try to set the new desired count
+    while (_desiredInstanceCount < desiredInstanceCount)
+    {
+      // Increment the desired count
+      Interlocked.Increment(ref _desiredInstanceCount);
+    }
     while (_desiredInstanceCount > desiredInstanceCount)
     {
       // Decrement the desired count
