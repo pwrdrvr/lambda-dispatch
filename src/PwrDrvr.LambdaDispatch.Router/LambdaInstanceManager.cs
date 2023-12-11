@@ -9,11 +9,11 @@ public class LambdaInstanceManager
 
   private readonly LeastOutstandingQueue _leastOutstandingQueue;
 
-  private volatile int _runningCount = 0;
+  private volatile int _runningInstanceCount = 0;
 
-  private volatile int _desiredCount = 0;
+  private volatile int _desiredInstanceCount = 0;
 
-  private volatile int _startingCount = 0;
+  private volatile int _startingInstanceCount = 0;
 
   private readonly int _maxConcurrentCount;
 
@@ -86,7 +86,7 @@ public class LambdaInstanceManager
   // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
   public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
   {
-    _logger.LogInformation("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredCount, _startingCount);
+    _logger.LogInformation("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredInstanceCount, _startingInstanceCount);
 
     var cleanPendingRequests = Math.Max(pendingRequests, 0);
     var cleanRunningRequests = Math.Max(runningRequests, 0);
@@ -102,20 +102,20 @@ public class LambdaInstanceManager
     }
 
     // Start instances if needed
-    while (_runningCount + _startingCount < desiredCount)
+    while (_runningInstanceCount + _startingInstanceCount < desiredCount)
     {
       // Start a new instance
       await this.StartNewInstance(true);
     }
 
     // Stop instances if needed
-    while (_runningCount + _startingCount > desiredCount)
+    while (_runningInstanceCount + _startingInstanceCount > desiredCount)
     {
       // Check if we should signal one Lambda to close
       await _leastOutstandingQueue.CloseMostIdleInstance();
     }
 
-    _logger.LogInformation("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredCount, _startingCount);
+    _logger.LogInformation("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredInstanceCount, _startingInstanceCount);
   }
 
   /// <summary>
@@ -127,10 +127,10 @@ public class LambdaInstanceManager
     // If we get called we're starting a new instance
     if (incrementDesiredCount)
     {
-      Interlocked.Increment(ref _desiredCount);
+      Interlocked.Increment(ref _desiredInstanceCount);
     }
 
-    Interlocked.Increment(ref _startingCount);
+    Interlocked.Increment(ref _startingInstanceCount);
 
     // Start a new LambdaInstance and add it to the list
     var instance = new LambdaInstance(_maxConcurrentCount);
@@ -141,13 +141,13 @@ public class LambdaInstanceManager
     instance.OnOpen += (instance) =>
     {
       // We always decrement the starting count
-      Interlocked.Decrement(ref _startingCount);
+      Interlocked.Decrement(ref _startingInstanceCount);
 
       _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
 
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
-      Interlocked.Increment(ref _runningCount);
+      Interlocked.Increment(ref _runningInstanceCount);
 
       // Add the instance to the least outstanding queue
       _leastOutstandingQueue.AddInstance(instance);
@@ -155,9 +155,9 @@ public class LambdaInstanceManager
 
     instance.OnInvocationComplete += async (instance) =>
     {
-      Interlocked.Decrement(ref _runningCount);
+      Interlocked.Decrement(ref _runningInstanceCount);
 
-      _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredCount {_desiredCount}, _runningCount {_runningCount} (after decrement)", instance.Id, _desiredCount, _runningCount);
+      _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredCount {_desiredCount}, _runningCount {_runningCount} (after decrement)", instance.Id, _desiredInstanceCount, _runningInstanceCount);
 
       // Remove this instance from the collection
       _instances.TryRemove(instance.Id, out _);
@@ -167,7 +167,7 @@ public class LambdaInstanceManager
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
 
-      if (_runningCount + _startingCount < _desiredCount)
+      if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
       {
         // We need to start a new instance
         await this.StartNewInstance();
