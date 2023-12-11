@@ -84,36 +84,39 @@ public class LambdaInstanceManager
   // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
   public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
   {
-    _logger.LogInformation("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredInstanceCount, _startingInstanceCount);
+    _logger.LogInformation("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
     var cleanPendingRequests = Math.Max(pendingRequests, 0);
     var cleanRunningRequests = Math.Max(runningRequests, 0);
 
     // Calculate the desired count
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-    var desiredCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
+    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
 
     // Special case for 0 pending or running
     if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
     {
-      desiredCount = 0;
+      desiredInstanceCount = 0;
     }
 
+    _logger.LogInformation("UpdateDesiredCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+
     // Start instances if needed
-    while (_runningInstanceCount + _startingInstanceCount < desiredCount)
+    while (_runningInstanceCount + _startingInstanceCount < desiredInstanceCount)
     {
+      _logger.LogInformation("UpdateDesiredCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
       // Start a new instance
       await this.StartNewInstance(true);
     }
 
     // Try to set the new desired count
-    while (_desiredInstanceCount > desiredCount)
+    while (_desiredInstanceCount > desiredInstanceCount)
     {
       // Decrement the desired count
       Interlocked.Decrement(ref _desiredInstanceCount);
     }
 
-    _logger.LogInformation("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredCount {_desiredCount}, _startingCount {_startingCount}", pendingRequests, runningRequests, _desiredInstanceCount, _startingInstanceCount);
+    _logger.LogInformation("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
   }
 
   /// <summary>
