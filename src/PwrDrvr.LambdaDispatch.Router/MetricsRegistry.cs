@@ -68,9 +68,21 @@ public static class MetricsRegistry
     _scheduler.Start();
   }
 
+  public static void Reset()
+  {
+    Metrics.Manage.Reset();
+  }
+
   public static readonly HistogramOptions DispatchDelay = new()
   {
     Name = "DispatchDelay",
+    MeasurementUnit = Unit.Custom("ms"),
+    Reservoir = () => new DefaultAlgorithmRReservoir(),
+  };
+
+  public static readonly HistogramOptions LambdaOpenDelay = new()
+  {
+    Name = "LambdaOpenDelay",
     MeasurementUnit = Unit.Custom("ms"),
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };

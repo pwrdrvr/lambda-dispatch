@@ -47,6 +47,8 @@ public class LambdaInstance
 {
   private readonly ILogger<LambdaInstance> _logger = LoggerInstance.CreateLogger<LambdaInstance>();
 
+  private readonly DateTime _startTime = DateTime.Now;
+
   /// <summary>
   /// Raised when the Lambda Instance has completed it's invocation
   /// </summary>
@@ -134,6 +136,8 @@ public class LambdaInstance
     if (State == LambdaInstanceState.Starting && Interlocked.Exchange(ref signaledStarting, 1) == 0)
     {
       State = LambdaInstanceState.Open;
+
+      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
 
       // Signal that we are open
       OnOpen?.Invoke(this);
