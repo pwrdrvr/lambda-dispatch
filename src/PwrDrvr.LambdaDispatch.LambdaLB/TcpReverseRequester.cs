@@ -1,13 +1,12 @@
 using System.Net.Sockets;
-using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
-public class ReverseRequester : IAsyncDisposable
+public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
 {
-  private readonly ILogger<ReverseRequester> _logger = LoggerInstance.CreateLogger<ReverseRequester>();
+  private readonly ILogger<TcpReverseRequester> _logger = LoggerInstance.CreateLogger<TcpReverseRequester>();
 
   private readonly string _dispatcherUrl;
 
@@ -25,7 +24,7 @@ public class ReverseRequester : IAsyncDisposable
 
   private readonly Uri _uri;
 
-  public ReverseRequester(string id, string dispatcherUrl)
+  public TcpReverseRequester(string id, string dispatcherUrl)
   {
     _id = id;
     _dispatcherUrl = dispatcherUrl;

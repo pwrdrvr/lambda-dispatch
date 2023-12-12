@@ -80,7 +80,7 @@ public class Function
                 {
                     try
                     {
-                        await using ReverseRequester reverseRequester = new(request.Id, request.DispatcherUrl);
+                        await using var reverseRequester = new TcpReverseRequester(request.Id, request.DispatcherUrl);
                         var status = await reverseRequester.GetRequest();
 
                         if (status == 1001)
