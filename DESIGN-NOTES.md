@@ -20,6 +20,13 @@
 - [ ] Lambda - Proxy - Write Response
   - We have to write the chunk sizes, write the headers in the body, then write the body
   - https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/ChunkedEncodingWriteStream.cs
+- [ ] Lambda - KeepAlive on HTTP
+  - KeepAlive can be used if we:
+    - Read and discard a blank line after the response from the Router
+    - Write a blank line after the request to the Router
+    - We can then reuse the same socket for the next request/response
+    - Use a loop on `GetRequest` before destroying the TcpReverseRequester
+  - This will significantly reduce the socket churn and CPU overhead from that
 
 # Kestrel C# Request/Response Parser
 

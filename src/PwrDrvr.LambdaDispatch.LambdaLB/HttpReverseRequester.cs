@@ -31,7 +31,7 @@ public class HttpReverseRequester : IReverseRequester
     throw new NotImplementedException();
   }
 
-  public Task<int> GetRequest()
+  public Task<(int, HttpRequestMessage)> GetRequest()
   {
     var request = new HttpRequestMessage(HttpMethod.Post, _uri);
     request.Content = new StreamContent(_stream);

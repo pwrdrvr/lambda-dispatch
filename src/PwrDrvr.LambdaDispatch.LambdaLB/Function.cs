@@ -80,24 +80,43 @@ public class Function
                 {
                     try
                     {
+                        // Each reverse requester can handle many requests/responses
+                        // Since we support HTTP 1.1 keep-alive
                         await using var reverseRequester = new TcpReverseRequester(request.Id, request.DispatcherUrl);
-                        var status = await reverseRequester.GetRequest();
 
-                        if (status == 1001)
+                        while (!token.IsCancellationRequested)
                         {
-                            // Stop the other tasks from looping
-                            cts.Cancel();
-                            _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
-                            return;
+                            try
+                            {
+                                (var outerStatus, var requestMessage) = await reverseRequester.GetRequest();
+
+                                // The OuterStatus is the status returned by the Router on it's Response
+                                // This is NOT the status of the Lambda function's Response
+                                if (outerStatus == 1001)
+                                {
+                                    // Stop the other tasks from looping
+                                    cts.Cancel();
+                                    _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
+                                    return;
+                                }
+
+                                await reverseRequester.SendResponse();
+
+                                _logger.LogInformation("Sent response to Router {i}", taskNumber);
+                            }
+                            catch (EndOfStreamException)
+                            {
+                                _logger.LogInformation("End of stream caught in task {i}", taskNumber);
+                                // We do not cancel, we just loop around and make a new request
+                                // If the new request gets a 1001 status, then we will stop the loop
+                                break;
+                            }
                         }
-
-                        await reverseRequester.SendResponse();
-
-                        _logger.LogInformation("Sent response to Router {i}", taskNumber);
                     }
                     catch
                     {
                         _logger.LogError("Exception caught in task {i}", taskNumber);
+                        cts.Cancel();
                     }
                 }
 
@@ -107,8 +126,10 @@ public class Function
 
         // TODO: Setup a timeout according to that specified in the payload
         // Note: the code below is only going to work cleanly under constant load
+#if !DEBUG
         await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(TimeSpan.FromSeconds(45)));
         cts.Cancel();
+#endif
         await Task.WhenAll(tasks);
 
         // TODO: Send a `Connection: close` header as the first header on the response

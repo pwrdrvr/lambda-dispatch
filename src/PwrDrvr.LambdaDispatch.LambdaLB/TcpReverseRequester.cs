@@ -62,13 +62,15 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
     return int.Parse(chunkSizeString, System.Globalization.NumberStyles.HexNumber);
   }
 
-  private List<string> ReadHeaders(Stream stream)
+  private static List<string> ReadOuterResponseHeaders(Stream stream)
   {
     var headerStream = new MemoryStream();
     int b;
     int lastByte = -1;
+    bool readAnyBytes = false;
     while ((b = stream.ReadByte()) != -1)
     {
+      readAnyBytes = true;
       headerStream.WriteByte((byte)b);
 
       // Check for \r\n on a line by itself (i.e., \r\n\r\n)
@@ -87,6 +89,12 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
       lastByte = b;
     }
 
+    if (!readAnyBytes && b == -1)
+    {
+      stream.Close();
+      throw new EndOfStreamException("Connection was gracefully closed");
+    }
+
     var headerBytes = headerStream.ToArray();
     var headerString = Encoding.UTF8.GetString(headerBytes);
     var headers = new List<string>(headerString.Split(new[] { "\r\n" }, StringSplitOptions.None));
@@ -101,7 +109,7 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
   /// and we will receive the request as the response "body"
   /// </summary>
   /// <returns></returns>
-  public async Task<int> GetRequest()
+  public async Task<(int, HttpRequestMessage)> GetRequest()
   {
     // Initiate a chunked request to the router
     // This opens the channel for the response to come back
@@ -129,7 +137,7 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
       //
 
       // These are not part of the request that we're going to run
-      var headerLines = ReadHeaders(_stream);
+      var headerLines = ReadOuterResponseHeaders(_stream);
       int status = 0;
       if (headerLines.Count > 0)
       {
@@ -170,6 +178,11 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
         if (chunkSize == 0)
         {
           _logger.LogDebug("Chunk size is 0, breaking loop");
+          // Read the trailing \r\n line that ends the response body
+          // This allows us to start reading a new response on the next call
+          // This should *always* be sent even if the connection is being closed
+          // We do not really care about the status of this read
+          await _stream.ReadAsync(new byte[2], 0, 2);
           break;
         }
 
@@ -221,7 +234,7 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
     // _logger.LogDebug("Received request from router: {requestString}", requestString);
 
     // TODO: Need to package up the Request data and return it
-    return status;
+    return (status, new HttpRequestMessage());
   }
 
   public async Task SendResponse()
@@ -256,8 +269,10 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
       await _stream.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
     }
     // Send the last chunk
+    // Including blank line after the last chunk
+    // This is required to signal the end of the request body of the outer request
+    // This allows us to reuse the connection for the next request
     await _stream.WriteAsync(Encoding.UTF8.GetBytes("0\r\n\r\n"));
     await _stream.FlushAsync();
-    _stream.Close();
   }
 }
