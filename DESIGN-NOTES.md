@@ -3,11 +3,11 @@
 - [ ] Router - Incoming - Read Request (writes response to Lambda, sending the request)
   - The request is already parsed by Kestrel
   - We just need to write out the headers, a blank line, then the body
-  - We don't even have to figure out the chunk lengths as Kestrel is doing that for us
-- [ ] Router - Callback - Read Request (receives response from Lambda, writes resposne to incoming)
+  - Incoming/Outgoing: We don't even have to figure out the chunk lengths as Kestrel is doing that for us
+- [ ] Router - Callback - Read Request (receives response from Lambda, writes response to incoming)
   - The response is written via Kestrel
   - The chunk lengths are already parsed by Kestrel and removed from the body
-  - We can write directly to the response as we read from the Callback Request
+  - We can write directly to the Incoming response as we read from the Callback Request
   - We can possibly use a CopyToAsync to write the body
   - The only tricky bit is not using StreamReader for the headers
   - This should look most like the ResponseParser in Kestrel
