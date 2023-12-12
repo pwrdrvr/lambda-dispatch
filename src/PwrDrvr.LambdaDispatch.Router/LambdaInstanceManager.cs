@@ -148,7 +148,7 @@ public class LambdaInstanceManager
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))
     {
-      throw new Exception("Failed to add instance to collection");
+      throw new Exception("Failed to add instance to collection - key already exists");
     }
 
     instance.OnOpen += (instance) =>

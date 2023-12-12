@@ -101,6 +101,8 @@ public class LambdaInstance
 
   private int signaledStarting = 0;
 
+  private int signalClosing = 0;
+
   public LambdaInstance(int maxConcurrentCount)
   {
     this.maxConcurrentCount = maxConcurrentCount;
@@ -143,10 +145,13 @@ public class LambdaInstance
       OnOpen?.Invoke(this);
     }
 
-    if (State != LambdaInstanceState.Open)
-    {
-      throw new InvalidOperationException("Cannot add a connection to a Lambda Instance that is not open");
-    }
+    // This is a race condition - it can absolutely happen because the instance
+    // can be marked as closing at anytime, including between marking the instance open just above
+    // and this line
+    // if (State != LambdaInstanceState.Open)
+    // {
+    //   throw new InvalidOperationException("Cannot add a connection to a Lambda Instance that is not open");
+    // }
 
     Interlocked.Increment(ref openConnectionCount);
     MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
@@ -179,13 +184,16 @@ public class LambdaInstance
 
     if (State != LambdaInstanceState.Open)
     {
-      throw new InvalidOperationException("Cannot get a connection from a Lambda Instance that is not open");
+      Console.WriteLine("Connection requested from Lambda Instance that is not open");
+      return false;
     }
 
     // Loop through the connections until we find one that is available
     while (connectionQueue.TryDequeue(out var dequeuedConnection))
     {
       // The connection should only be Closed unexpectedly, not Busy
+      // This should not be a race condition as only one thread should
+      // dequeue the connection and handle it
       if (dequeuedConnection.State == LambdaConnectionState.Busy)
       {
         Interlocked.Decrement(ref availableConnectionCount);
@@ -235,10 +243,11 @@ public class LambdaInstance
   /// </summary>
   public async Task Close()
   {
-    // Throw if the instance is already closed
-    if (State == LambdaInstanceState.Closed || State == LambdaInstanceState.Closing)
+    // Ignore if already closing
+    if (Interlocked.Exchange(ref signalClosing, 1) == 1)
     {
-      throw new InvalidOperationException("Cannot close a Lambda Instance that is already closed or closing");
+      // Already closing
+      return;
     }
 
     State = LambdaInstanceState.Closing;
@@ -291,6 +300,8 @@ public class LambdaInstance
     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInstanceCount);
 
     // Throw if the instance is already open or closed
+    // This isn't a race condition because there should only be a single call
+    // to this ever, before anything async starts (haven't even invoked the Lambda yet)
     if (State != LambdaInstanceState.Initial)
     {
       throw new InvalidOperationException("Cannot start a Lambda Instance that is not in the initial state");
