@@ -111,7 +111,7 @@ public class Dispatcher
   {
     DispatcherAddConnectionResult result = new();
 
-    _logger.LogInformation("Adding Connection for Lambda {lambdaID} to the Dispatcher", lambdaId);
+    _logger.LogDebug("Adding Connection for Lambda {lambdaID} to the Dispatcher", lambdaId);
 
     // Validate that the Lambda ID is valid
     if (string.IsNullOrWhiteSpace(lambdaId))
@@ -238,7 +238,7 @@ public class Dispatcher
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(200));
+      await Task.Delay(TimeSpan.FromMilliseconds(50));
     }
   }
 }
