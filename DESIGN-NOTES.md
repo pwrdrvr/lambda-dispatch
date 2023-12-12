@@ -14,10 +14,12 @@
 - [ ] Lambda - Incoming - Read Request
   - System.Net.Http.HttpRequestMessage can be used to represent the parsed request
   - We have to read the chunk sizes, read the headers in the body, then read the body while removing the chunk sizes from the body
-  - The acutal request could be chunked too in which case there would be chunking within chunking which is fine
+  - The actual request could be chunked too in which case there would be chunking within chunking which is fine
   - Could we use Kestrels classes to parse the request?
-- [ ] Lambda - Proxy - Read Response
+  - https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/ChunkedEncodingReadStream.cs
+- [ ] Lambda - Proxy - Write Response
   - We have to write the chunk sizes, write the headers in the body, then write the body
+  - https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/ChunkedEncodingWriteStream.cs
 
 # Kestrel C# Request/Response Parser
 
