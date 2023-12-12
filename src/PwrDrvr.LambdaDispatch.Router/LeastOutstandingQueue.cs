@@ -31,17 +31,29 @@ public class LeastOutstandingQueue
     this.maxConcurrentCount = maxConcurrentCount;
 
     availableInstances = InitQueues(maxConcurrentCount);
+
+    Task.Run(RebalanceQueue);
   }
 
-  private int GetFloorQueueIndex(int count)
+  /// <summary>
+  /// Get the index of the queue for the given outstanding request count
+  /// </summary>
+  /// <param name="outstandingRequestcount"></param>
+  /// <returns></returns>
+  private int GetFloorQueueIndex(int outstandingRequestcount)
   {
-    if (count < 0 || count > maxConcurrentCount)
+    if (outstandingRequestcount < 0)
     {
-      throw new ArgumentOutOfRangeException(nameof(count), $"Count must be between 0 and {maxConcurrentCount}");
+      return 0;
+    }
+
+    if (outstandingRequestcount > maxConcurrentCount)
+    {
+      return maxConcurrentCount - 1;
     }
 
     // TODO: If we use primes, just find the highest prime that is less than or equal to count
-    return count;
+    return outstandingRequestcount;
   }
 
   /// <summary>
@@ -59,8 +71,8 @@ public class LeastOutstandingQueue
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be less than 10");
     }
 
-    // We add 2 because we want to use `0` for idle and `maxConcurrentCount` for full
-    var queueList = new ConcurrentQueue<LambdaInstance>[maxConcurrentCount + 2];
+    // If an instance has maxConcurrentCount outstanding it goes in the full list
+    var queueList = new ConcurrentQueue<LambdaInstance>[maxConcurrentCount];
 
     // Initialize the queues
     for (var i = 0; i < queueList.Length; i++)
@@ -113,9 +125,12 @@ public class LeastOutstandingQueue
 
     // Get the instance with the least outstanding requests
     // Skip the "full" instances
-    for (var i = 0; i < availableInstances.Length - 1; i++)
+    for (var i = 0; i < availableInstances.Length; i++)
     {
-      if (availableInstances[i].TryDequeue(out var instance))
+      //
+      // We may loop through and move many items if they are not usable
+      //
+      while (availableInstances[i].TryDequeue(out var instance))
       {
         // We got an instance with, what we think, is the least outstanding requests
         // But, the instance may actually be closed or full due to disconnects
@@ -145,9 +160,9 @@ public class LeastOutstandingQueue
           continue;
         }
 
-        if (instance.OutstandingRequestCount == maxConcurrentCount - 1)
+        if (instance.OutstandingRequestCount >= maxConcurrentCount)
         {
-          // The instance is going to be full after we dispatch to it
+          // This instance is full now (the outstanding request count was incremented on dequeue)
           fullInstances.TryAdd(instance.Id, instance);
         }
         else
@@ -177,9 +192,19 @@ public class LeastOutstandingQueue
   /// <param name="instance"></param>
   public void AddInstance(LambdaInstance instance)
   {
+
+    var proposedIndex = GetFloorQueueIndex(instance.OutstandingRequestCount);
+
+    // If the instance is full, put it in the full instances
+    if (proposedIndex == maxConcurrentCount)
+    {
+      fullInstances.TryAdd(instance.Id, instance);
+      return;
+    }
+
     // Add the instance to the queue
     // This may add it the idle (0) or full (maxConcurrentCount) queue
-    availableInstances[GetFloorQueueIndex(instance.AvailableConnectionCount)].Enqueue(instance);
+    availableInstances[proposedIndex].Enqueue(instance);
   }
 
   public void ReinstateFullInstance(LambdaInstance instance)
@@ -189,7 +214,45 @@ public class LeastOutstandingQueue
     {
       // Add the instance to the queue
       // This may add it the idle (0) or full (maxConcurrentCount) queue
-      availableInstances[GetFloorQueueIndex(instance.AvailableConnectionCount)].Enqueue(instance);
+      availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+    }
+  }
+
+  private async Task RebalanceQueue()
+  {
+    while (true)
+    {
+      // Get the instance with the least outstanding requests
+      // Skip the "full" instances
+      for (var i = availableInstances.Length; i >= 0; i--)
+      {
+        // Process all the items
+        while (availableInstances[i].TryDequeue(out var instance))
+        {
+          if (instance.State != LambdaInstanceState.Open)
+          {
+            // The instance is not open, so we'll drop it on the floor and move on
+            continue;
+          }
+
+          if (instance.AvailableConnectionCount == 0)
+          {
+            // The instance is full, so we'll put it in the full instances
+            fullInstances.TryAdd(instance.Id, instance);
+            continue;
+          }
+
+          // Note: this is the only time we own this instance
+          // Once we put it back in a queue it's mutable by other threads
+
+          // The instance is not going to be full after we dispatch to it
+          // So we can put it back in the queue
+          availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+        }
+      }
+
+      // Wait for a short period before checking again
+      await Task.Delay(TimeSpan.FromMilliseconds(100));
     }
   }
 }
