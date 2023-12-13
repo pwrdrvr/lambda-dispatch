@@ -53,7 +53,7 @@ public static class MetricsRegistry
 
   private static readonly AppMetricsTaskScheduler _scheduler = new(
 #if DEBUG
-    TimeSpan.FromSeconds(5),
+    TimeSpan.FromSeconds(15),
 #else
     TimeSpan.FromMinutes(1),
 #endif
