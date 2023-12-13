@@ -33,6 +33,11 @@ public class LeastOutstandingQueue
     availableInstances = InitQueues(maxConcurrentCount);
 
     Task.Run(RebalanceQueue);
+
+    // Create a timer that calls LogQueueSizes every 15 seconds
+    var timer = new System.Timers.Timer(15000);
+    timer.Elapsed += (sender, e) => LogQueueSizes();
+    timer.Start();
   }
 
   /// <summary>
@@ -224,7 +229,7 @@ public class LeastOutstandingQueue
     {
       // Get the instance with the least outstanding requests
       // Skip the "full" instances
-      for (var i = availableInstances.Length; i >= 0; i--)
+      for (var i = availableInstances.Length - 1; i >= 0; i--)
       {
         // Process all the items
         while (availableInstances[i].TryDequeue(out var instance))
@@ -253,6 +258,37 @@ public class LeastOutstandingQueue
 
       // Wait for a short period before checking again
       await Task.Delay(TimeSpan.FromMilliseconds(100));
+    }
+  }
+
+  private void LogQueueSizes()
+  {
+    // Print the number of availalble and in use threadpool threads
+    ThreadPool.GetAvailableThreads(out var availableWorkerThreads, out var availableCompletionPortThreads);
+    ThreadPool.GetMaxThreads(out var maxWorkerThreads, out var maxCompletionPortThreads);
+    ThreadPool.GetMinThreads(out var minWorkerThreads, out var minCompletionPortThreads);
+    Console.WriteLine($"Available worker threads: {availableWorkerThreads} of {maxWorkerThreads} (min: {minWorkerThreads})");
+    Console.WriteLine($"Available completion port threads: {availableCompletionPortThreads} of {maxCompletionPortThreads} (min: {minCompletionPortThreads})");
+
+    // Log the size of each queue in availableInstances
+    for (var i = 0; i < availableInstances.Length; i++)
+    {
+      Console.WriteLine($"Queue {i} size: {availableInstances[i].Count}");
+
+      // Print the OutstandingRequestCount of the items in the queue
+      foreach (var instance in availableInstances[i])
+      {
+        Console.WriteLine($"Instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}");
+      }
+    }
+
+    // Log the size of fullInstances
+    Console.WriteLine($"Full instances size: {fullInstances.Count}");
+
+    // Log the AvailableConnectionCount of each instance in fullInstances
+    foreach (var instance in fullInstances.Values)
+    {
+      Console.WriteLine($"Full instance {instance.Id} available connections: {instance.AvailableConnectionCount}");
     }
   }
 }
