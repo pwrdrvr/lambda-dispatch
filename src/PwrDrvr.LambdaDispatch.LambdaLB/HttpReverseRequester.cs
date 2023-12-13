@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -118,6 +119,7 @@ public class HttpReverseRequester
 
       // Read the headers
       string? requestHeaderLine;
+      var contentHeaders = new List<(string, string)>();
       while (!string.IsNullOrEmpty(requestHeaderLine = await reader.ReadLineAsync()))
       {
         // Split the header into key and value
@@ -125,12 +127,27 @@ public class HttpReverseRequester
         var key = parts[0];
         var value = parts[1];
 
-        receivedRequest.Headers.Add(key, value);
+        if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
+        {
+          contentHeaders.Add((key, value));
+          // The Host header is not allowed to be set by the client
+          // DotNet will throw `System.InvalidOperationException` if you try to set it
+        }
+        else
+        {
+          receivedRequest.Headers.Add(key, value);
+        }
       }
 
       // Set the request body
       // TODO: The StreamReader will have stolen and buffered some of the underlying stream data
       receivedRequest.Content = new StreamContent(reader.BaseStream);
+
+      // Add all the content headers
+      foreach (var (key, value) in contentHeaders)
+      {
+        receivedRequest.Content.Headers.Add(key, value);
+      }
     }
 
     return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
