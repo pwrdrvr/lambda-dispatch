@@ -51,7 +51,8 @@ public class HttpReverseRequester
 
     _client = new HttpClient(_handler)
     {
-      DefaultRequestVersion = new Version(2, 0)
+      DefaultRequestVersion = new Version(2, 0),
+      Timeout = TimeSpan.FromMinutes(15),
     };
   }
 

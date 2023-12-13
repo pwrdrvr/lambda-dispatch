@@ -90,25 +90,42 @@ public class Function
                         {
                             try
                             {
-                                (var outerStatus, var receivedRequest, var requestForReponse, var requestStreamForResponse, var duplexContent)
+                                _logger.LogDebug("Getting request from Router {i}", taskNumber);
+                                (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
                                     = await reverseRequester.GetRequest();
+
+                                _logger.LogDebug("Got request from Router {i}", taskNumber);
 
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == 409)
                                 {
+                                    // Discard the data on the request body proxied from the response
+                                    receivedRequest.Content.Dispose();
+                                    receivedRequest.Dispose();
+
+                                    // Gotta clean up the connection
+                                    requestStreamForResponse.Close();
+                                    duplexContent.Complete();
+                                    requestForResponse.Dispose();
+
                                     // Stop the other tasks from looping
                                     cts.Cancel();
                                     _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
                                     return;
                                 }
 
+                                // Read the bytes off the request body, if any
+                                // TODO: This is not always a string
+                                var requestBody = await receivedRequest.Content.ReadAsStringAsync();
+                                receivedRequest.Content.Dispose();
+
                                 var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                                 {
                                     Content = new StringContent("Hello World!"),
                                 };
 
-                                await reverseRequester.SendResponse(response, requestForReponse, requestStreamForResponse, duplexContent);
+                                await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent);
 
                                 _logger.LogInformation("Sent response to Router {i}", taskNumber);
                             }
@@ -118,6 +135,19 @@ public class Function
                                 // We do not cancel, we just loop around and make a new request
                                 // If the new request gets a 409 status, then we will stop the loop
                                 break;
+                            }
+                            catch (HttpRequestException ex)
+                            {
+                                _logger.LogError(ex, "HttpRequestException caught in task {i}", taskNumber);
+
+                                // If the address is invalid or connections are being terminated then we stop
+                                cts.Cancel();
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Exception caught in task {i}", taskNumber);
+
+                                // TODO: Should we stop?
                             }
                         }
                     }
