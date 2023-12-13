@@ -200,9 +200,14 @@ public class Dispatcher
   {
     while (true)
     {
+      if (_pendingRequestCount > 0)
+      {
+        _logger.LogDebug("ProcessPendingRequests - pendingRequestCount: {pendingRequestCount}", _pendingRequestCount);
+      }
+
       // If there should be pending requests, try to get a connection then grab a request
       // If we can't get a pending request, put the connection back
-      if (_pendingRequestCount > 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
+      while (_pendingRequestCount > 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
       {
         if (_pendingRequests.TryDequeue(out var pendingRequest))
         {
@@ -245,7 +250,7 @@ public class Dispatcher
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(50));
+      await Task.Delay(TimeSpan.FromMilliseconds(100));
     }
   }
 }

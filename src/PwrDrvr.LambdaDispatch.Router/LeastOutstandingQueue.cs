@@ -35,11 +35,7 @@ public class LeastOutstandingQueue
     availableInstances = InitQueues(maxConcurrentCount);
 
     Task.Run(RebalanceQueue);
-
-    // Create a timer that calls LogQueueSizes every 15 seconds
-    var timer = new System.Timers.Timer(15000);
-    timer.Elapsed += (sender, e) => LogQueueSizes();
-    timer.Start();
+    Task.Run(LogQueueSizes);
   }
 
   /// <summary>
@@ -229,6 +225,8 @@ public class LeastOutstandingQueue
   {
     while (true)
     {
+      _logger.LogInformation("Rebalancing queue");
+
       // Get the instance with the least outstanding requests
       // Skip the "full" instances
       for (var i = availableInstances.Length - 1; i >= 0; i--)
@@ -298,38 +296,44 @@ public class LeastOutstandingQueue
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(250));
+      await Task.Delay(TimeSpan.FromMilliseconds(1000));
     }
   }
 
-  private void LogQueueSizes()
+  private async Task LogQueueSizes()
   {
-    // Print the number of availalble and in use threadpool threads
-    ThreadPool.GetAvailableThreads(out var availableWorkerThreads, out var availableCompletionPortThreads);
-    ThreadPool.GetMaxThreads(out var maxWorkerThreads, out var maxCompletionPortThreads);
-    ThreadPool.GetMinThreads(out var minWorkerThreads, out var minCompletionPortThreads);
-    _logger.LogInformation("Available worker threads: {availableWorkerThreads} of {maxWorkerThreads} (min: {minWorkerThreads})", availableWorkerThreads, maxWorkerThreads, minWorkerThreads);
-    _logger.LogInformation("Available completion port threads: {availableCompletionPortThreads} of {maxCompletionPortThreads} (min: {minCompletionPortThreads})", availableCompletionPortThreads, maxCompletionPortThreads, minCompletionPortThreads);
-
-    // Log the size of each queue in availableInstances
-    for (var i = 0; i < availableInstances.Length; i++)
+    while (true)
     {
-      _logger.LogInformation("Queue {i} size: {count}", i, availableInstances[i].Count);
+      // Print the number of availalble and in use threadpool threads
+      ThreadPool.GetAvailableThreads(out var availableWorkerThreads, out var availableCompletionPortThreads);
+      ThreadPool.GetMaxThreads(out var maxWorkerThreads, out var maxCompletionPortThreads);
+      ThreadPool.GetMinThreads(out var minWorkerThreads, out var minCompletionPortThreads);
+      _logger.LogInformation("Available worker threads: {availableWorkerThreads} of {maxWorkerThreads} (min: {minWorkerThreads})", availableWorkerThreads, maxWorkerThreads, minWorkerThreads);
+      _logger.LogInformation("Available completion port threads: {availableCompletionPortThreads} of {maxCompletionPortThreads} (min: {minCompletionPortThreads})", availableCompletionPortThreads, maxCompletionPortThreads, minCompletionPortThreads);
 
-      // Print the OutstandingRequestCount of the items in the queue
-      foreach (var instance in availableInstances[i])
+      // Log the size of each queue in availableInstances
+      for (var i = 0; i < availableInstances.Length; i++)
       {
-        _logger.LogInformation("Instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
+        _logger.LogInformation("Queue {i} size: {count}", i, availableInstances[i].Count);
+
+        // Print the OutstandingRequestCount of the items in the queue
+        foreach (var instance in availableInstances[i])
+        {
+          _logger.LogInformation("Instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
+        }
       }
-    }
 
-    // Log the size of fullInstances
-    _logger.LogInformation("Full instances size: {fullInstances.Count}", fullInstances.Count);
+      // Log the size of fullInstances
+      _logger.LogInformation("Full instances size: {fullInstances.Count}", fullInstances.Count);
 
-    // Log the AvailableConnectionCount of each instance in fullInstances
-    foreach (var instance in fullInstances.Values)
-    {
-      _logger.LogInformation("Full instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
+      // Log the AvailableConnectionCount of each instance in fullInstances
+      foreach (var instance in fullInstances.Values)
+      {
+        _logger.LogInformation("Full instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
+      }
+
+      // Wait a bit
+      await Task.Delay(TimeSpan.FromSeconds(10));
     }
   }
 }

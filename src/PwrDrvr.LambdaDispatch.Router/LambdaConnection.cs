@@ -238,6 +238,8 @@ public class LambdaConnection
     _logger.LogDebug("Copied response body from Lambda");
 
     await response.BodyWriter.CompleteAsync();
+    await response.Body.DisposeAsync();
+    await this.Request.Body.DisposeAsync();
 
     // Mark that the Response has been sent on the LambdaInstance
     this.TCS.SetResult();
