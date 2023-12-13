@@ -59,6 +59,8 @@ public class LambdaInstance
   /// </summary>
   public event Action<LambdaInstance>? OnOpen;
 
+  public bool WasOpened { get; private set; } = false;
+
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
 #if DEBUG
@@ -66,10 +68,15 @@ public class LambdaInstance
   {
     // ServiceURL = "http://localhost:5051"
     // If in a devcontainer you need to use this:
-    ServiceURL = "http://host.docker.internal:5051"
+    ServiceURL = "http://host.docker.internal:5051",
+    Timeout = TimeSpan.FromMinutes(15),
+    MaxErrorRetry = 0
   });
 #else
-  public static readonly AmazonLambdaClient LambdaClient = new();
+  public static readonly AmazonLambdaClient LambdaClient = new(new AmazonLambdaConfig{
+    Timeout = TimeSpan.FromMinutes(15),
+    MaxErrorRetry = 0
+  });
 #endif
 
   private readonly int maxConcurrentCount;
@@ -142,6 +149,7 @@ public class LambdaInstance
       MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
 
       // Signal that we are open
+      WasOpened = true;
       OnOpen?.Invoke(this);
     }
 
@@ -269,9 +277,9 @@ public class LambdaInstance
       {
         connection.Response.StatusCode = 409;
         await connection.Response.StartAsync();
-        connection.Response.Body.Close();
+        await connection.Response.Body.DisposeAsync();
         await connection.Response.CompleteAsync();
-        connection.Request.Body.Close();
+        await connection.Request.Body.DisposeAsync();
       }
       catch (Exception ex)
       {
@@ -333,8 +341,6 @@ public class LambdaInstance
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
     invokeTask.ContinueWith(t =>
     {
-      this.State = LambdaInstanceState.Closing;
-
       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInstanceCount);
 
       // NOTE: The Lambda will return via the callback to indicate that it's shutting down

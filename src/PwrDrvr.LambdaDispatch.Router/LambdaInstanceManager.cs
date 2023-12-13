@@ -68,8 +68,8 @@ public class LambdaInstanceManager
     {
       response.StatusCode = 409;
       await response.CompleteAsync();
-      response.Body.Close();
-      request.Body.Close();
+      await response.Body.DisposeAsync();
+      await request.Body.DisposeAsync();
     }
     catch (Exception ex)
     {
@@ -170,15 +170,25 @@ public class LambdaInstanceManager
 
     instance.OnInvocationComplete += async (instance) =>
     {
-      Interlocked.Decrement(ref _runningInstanceCount);
-      MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+      // Only decrement the count if this instance was ever opened
+      if (instance.WasOpened)
+      {
+        Interlocked.Decrement(ref _runningInstanceCount);
+        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+      }
+      else
+      {
+        _logger.LogInformation("LambdaInstance {instanceId} was never opened, replacing", instance.Id);
+        Interlocked.Decrement(ref _startingInstanceCount);
+      }
 
-      _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredCount {_desiredCount}, _runningCount {_runningCount} (after decrement)", instance.Id, _desiredInstanceCount, _runningInstanceCount);
+      _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount} (after decrement)", instance.Id, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
       // Remove this instance from the collection
       _instances.TryRemove(instance.Id, out _);
 
       // The instance will already be marked as closing
+      await instance.Close();
 
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
