@@ -82,13 +82,14 @@ public class Function
                     {
                         // Each reverse requester can handle many requests/responses
                         // Since we support HTTP 1.1 keep-alive
-                        await using var reverseRequester = new TcpReverseRequester(request.Id, request.DispatcherUrl);
+                        await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl);
 
                         while (!token.IsCancellationRequested)
                         {
                             try
                             {
-                                (var outerStatus, var requestMessage) = await reverseRequester.GetRequest();
+                                (var outerStatus, var receivedRequest, var requestForReponse, var requestStreamForResponse)
+                                    = await reverseRequester.GetRequest();
 
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
@@ -100,7 +101,12 @@ public class Function
                                     return;
                                 }
 
-                                await reverseRequester.SendResponse();
+                                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                                {
+                                    Content = new StringContent("Hello World!"),
+                                };
+
+                                await reverseRequester.SendResponse(response, requestForReponse, requestStreamForResponse);
 
                                 _logger.LogInformation("Sent response to Router {i}", taskNumber);
                             }
