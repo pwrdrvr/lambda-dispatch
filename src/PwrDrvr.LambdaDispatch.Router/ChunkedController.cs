@@ -78,7 +78,7 @@ public class ChunkedController : ControllerBase
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
             logger.LogInformation("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id header: {lambdaId}", lambdaId);
-            Response.StatusCode = 1001;
+            Response.StatusCode = 409;
             Response.ContentType = "text/plain";
             await Response.WriteAsync("No LambdaInstance found for X-Lambda-Id header");
           }

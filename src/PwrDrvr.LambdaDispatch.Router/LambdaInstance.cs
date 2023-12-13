@@ -117,12 +117,12 @@ public class LambdaInstance
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
-      _logger.LogError("Connection added to Lambda Instance that is closing or closed - closing with 1001");
+      _logger.LogError("Connection added to Lambda Instance that is closing or closed - closing with 409");
 
       // Close the connection
       try
       {
-        response.StatusCode = 1001;
+        response.StatusCode = 409;
         response.Body.Close();
         request.Body.Close();
       }
@@ -267,7 +267,7 @@ public class LambdaInstance
       // Close the connection
       try
       {
-        connection.Response.StatusCode = 1001;
+        connection.Response.StatusCode = 409;
         await connection.Response.StartAsync();
         connection.Response.Body.Close();
         await connection.Response.CompleteAsync();

@@ -60,17 +60,19 @@ public class Function
         _logger.LogInformation("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
         _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
 
-        if (ThreadPool.ThreadCount < request.NumberOfChannels)
+        var NumberOfChannels = request.NumberOfChannels;
+
+        if (ThreadPool.ThreadCount < NumberOfChannels)
         {
-            _logger.LogInformation("Increasing thread pool size to {NumberOfChannels}", request.NumberOfChannels);
-            ThreadPool.SetMinThreads(request.NumberOfChannels, request.NumberOfChannels);
+            _logger.LogInformation("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
+            ThreadPool.SetMinThreads(NumberOfChannels, NumberOfChannels);
         }
 
         CancellationTokenSource cts = new CancellationTokenSource();
         CancellationToken token = cts.Token;
 
         List<Task> tasks = new List<Task>();
-        for (int i = 0; i < request.NumberOfChannels; i++)
+        for (int i = 0; i < NumberOfChannels; i++)
         {
             // Required to get a unique variable that identifies the task
             int taskNumber = i;
@@ -88,12 +90,12 @@ public class Function
                         {
                             try
                             {
-                                (var outerStatus, var receivedRequest, var requestForReponse, var requestStreamForResponse)
+                                (var outerStatus, var receivedRequest, var requestForReponse, var requestStreamForResponse, var duplexContent)
                                     = await reverseRequester.GetRequest();
 
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
-                                if (outerStatus == 1001)
+                                if (outerStatus == 409)
                                 {
                                     // Stop the other tasks from looping
                                     cts.Cancel();
@@ -106,7 +108,7 @@ public class Function
                                     Content = new StringContent("Hello World!"),
                                 };
 
-                                await reverseRequester.SendResponse(response, requestForReponse, requestStreamForResponse);
+                                await reverseRequester.SendResponse(response, requestForReponse, requestStreamForResponse, duplexContent);
 
                                 _logger.LogInformation("Sent response to Router {i}", taskNumber);
                             }
@@ -114,7 +116,7 @@ public class Function
                             {
                                 _logger.LogInformation("End of stream caught in task {i}", taskNumber);
                                 // We do not cancel, we just loop around and make a new request
-                                // If the new request gets a 1001 status, then we will stop the loop
+                                // If the new request gets a 409 status, then we will stop the loop
                                 break;
                             }
                         }

@@ -69,9 +69,9 @@ public class HttpReverseRequester
   /// <returns>
   /// outer status code, requestToRun, requestForResponse
   /// </returns>
-  public async Task<(int, HttpRequestMessage, HttpRequestMessage, MemoryStream)> GetRequest()
+  public async Task<(int, HttpRequestMessage, HttpRequestMessage, Stream, HttpDuplexContent)> GetRequest()
   {
-    var requestStreamForResponse = new MemoryStream();
+    var duplexContent = new HttpDuplexContent();
 
     var request = new HttpRequestMessage(HttpMethod.Post, _uri)
     {
@@ -79,17 +79,30 @@ public class HttpReverseRequester
     };
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
-    request.Headers.Add("Content-Type", "application/octet-stream");
-    request.Content = new StreamContent(requestStreamForResponse);
+    request.Content = duplexContent;
 
     var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+    // Get the stream that we can write the response to
+    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync();
+
+    // HH: This is from the dotnet example, but they do not await the SendAsync that
+    // returns when the response headers are read. I don't think we need this
+    // since we await it.
+    // Flush the content stream. Otherwise, the request headers are not guaranteed to be sent.
+    // await requestStreamForResponse.FlushAsync();
+
+    if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+    {
+      return ((int)response.StatusCode, null!, null!, null!, null!);
+    }
 
     //
     // Read the actual request off the Response from the router
     //
     var receivedRequest = new HttpRequestMessage();
 
-    using (var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8, leaveOpen: true))
+    using (var reader = new StreamReader(await response.Content.ReadAsStreamAsync(), Encoding.UTF8, leaveOpen: true))
     {
       // Read the request line
       var firstLine = await reader.ReadLineAsync();
@@ -119,24 +132,32 @@ public class HttpReverseRequester
       receivedRequest.Content = new StreamContent(reader.BaseStream);
     }
 
-    return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse);
+    return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
   }
 
   /// <summary>
   /// Send the response on the request to the Router
   /// </summary>
   /// <returns></returns>
-  public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, MemoryStream requestStreamForResponse)
+  public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, Stream requestStreamForResponse, HttpDuplexContent duplexContent)
   {
+    // Write the status line
+    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n"));
     // Copy the headers
     foreach (var header in response.Headers)
     {
-      requestStreamForResponse.Write(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
+      await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
     }
-    requestStreamForResponse.Write(Encoding.UTF8.GetBytes("\r\n"));
+    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Lambda-Id: " + _id + "\r\n"));
+    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Server: PwrDrvr.LambdaDispatch.LambdaLB\r\n"));
+    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
 
     // Copy the body from the request to the response
     await response.Content.CopyToAsync(requestStreamForResponse);
+    // await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Hello World!\r\n"));
+    await requestStreamForResponse.FlushAsync();
     requestStreamForResponse.Close();
+    duplexContent.Complete();
+    requestForResponse.Dispose();
   }
 }

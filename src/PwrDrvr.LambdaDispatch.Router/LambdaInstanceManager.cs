@@ -61,12 +61,12 @@ public class LambdaInstanceManager
       return connection;
     }
 
-    Console.WriteLine($"Connection added to Lambda Instance {lambdaId} that does not exist - closing with 1001");
+    Console.WriteLine($"Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409");
 
     // Close the connection
     try
     {
-      response.StatusCode = 1001;
+      response.StatusCode = 409;
       await response.CompleteAsync();
       response.Body.Close();
       request.Body.Close();
