@@ -45,7 +45,7 @@ namespace PwrDrvr.LambdaDispatch.Router
                 });
             });
 
-            app.MapWhen(context => context.Request.HttpContext.Connection.LocalPort == 5001, builder =>  // Control interface
+            app.MapWhen(context => context.Request.HttpContext.Connection.LocalPort == 5001 || context.Request.HttpContext.Connection.LocalPort == 5003, builder =>  // Control interface
             {
                 builder.UseRouting();
                 builder.UseEndpoints(endpoints =>

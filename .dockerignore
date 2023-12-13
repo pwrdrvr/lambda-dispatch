@@ -1,2 +1,8 @@
 bin/
 obj/
+Dockerfile*
+*.md
+.git
+.gitignore
+docker-compose*
+*.template.yaml

@@ -8,6 +8,8 @@
 
 out
 
+certs/
+
 # User-specific files
 *.rsuser
 *.suo

@@ -12,15 +12,17 @@
   - The only tricky bit is not using StreamReader for the headers
   - This should look most like the ResponseParser in Kestrel
 - [ ] Lambda - Incoming - Read Request
+  - [ ] HttpClient supports response before request for HTTP2 and HTTP3
   - System.Net.Http.HttpRequestMessage can be used to represent the parsed request
   - We have to read the chunk sizes, read the headers in the body, then read the body while removing the chunk sizes from the body
   - The actual request could be chunked too in which case there would be chunking within chunking which is fine
   - Could we use Kestrels classes to parse the request?
   - https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/ChunkedEncodingReadStream.cs
 - [ ] Lambda - Proxy - Write Response
+  - [ ] HttpClient supports response before request for HTTP2 and HTTP3
   - We have to write the chunk sizes, write the headers in the body, then write the body
   - https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/ChunkedEncodingWriteStream.cs
-- [ ] Lambda - KeepAlive on HTTP
+- [x] Lambda - KeepAlive on HTTP
   - KeepAlive can be used if we:
     - Read and discard a blank line after the response from the Router
     - Write a blank line after the request to the Router
