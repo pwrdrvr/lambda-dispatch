@@ -38,6 +38,7 @@ public class Function
     /// </summary>
     private static async Task Main()
     {
+        _logger.LogInformation("Lambda Started");
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()
@@ -59,6 +60,8 @@ public class Function
     {
         _logger.LogInformation("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
         _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
+
+        using var scope = _logger.BeginScope("LambdaId: {LambdaId}", request.Id);
 
         var NumberOfChannels = request.NumberOfChannels;
 
@@ -103,9 +106,9 @@ public class Function
                             // receivedRequest.Dispose();
 
                             // Gotta clean up the connection
-                            requestStreamForResponse.Close();
-                            duplexContent.Complete();
-                            requestForResponse.Dispose();
+                            requestStreamForResponse?.Close();
+                            duplexContent?.Complete();
+                            requestForResponse?.Dispose();
 
                             // Stop the other tasks from looping
                             cts.Cancel();
@@ -125,7 +128,7 @@ public class Function
 
                         await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent);
 
-                        _logger.LogInformation("Sent response to Router {i}", taskNumber);
+                        _logger.LogInformation("Sent response to Router {i}, LambdaId {lambdaId}", taskNumber, request.Id);
                     }
                     catch (EndOfStreamException)
                     {
@@ -136,16 +139,23 @@ public class Function
                     }
                     catch (HttpRequestException ex)
                     {
-                        _logger.LogError(ex, "HttpRequestException caught in task {i}", taskNumber);
+                        if (!cts.IsCancellationRequested)
+                        {
+                            _logger.LogError(ex, "HttpRequestException caught in task {i}", taskNumber);
 
-                        // If the address is invalid or connections are being terminated then we stop
-                        cts.Cancel();
+                            // If the address is invalid or connections are being terminated then we stop
+                            cts.Cancel();
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Exception caught in task {i}", taskNumber);
+                        if (!cts.IsCancellationRequested)
+                        {
+                            _logger.LogError(ex, "Exception caught in task {i}", taskNumber);
 
-                        // TODO: Should we stop?
+                            // TODO: Should we stop?
+                            cts.Cancel();
+                        }
                     }
                 }
 
