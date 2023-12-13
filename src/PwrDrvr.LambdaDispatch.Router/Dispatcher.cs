@@ -57,6 +57,13 @@ public class Dispatcher
     Task.Run(ProcessPendingRequests);
   }
 
+  public async Task CloseInstance(string instanceId)
+  {
+    _logger.LogDebug("Closing instance {instanceId}", instanceId);
+
+    await _lambdaInstanceManager.CloseInstance(instanceId);
+  }
+
   // Add a new request, dispatch immediately if able
   public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
   {

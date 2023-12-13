@@ -63,21 +63,27 @@ public class LambdaInstance
 
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
-#if DEBUG
-  public static readonly AmazonLambdaClient LambdaClient = new(new AmazonLambdaConfig
+
+  private static AmazonLambdaConfig CreateConfig()
   {
-    // ServiceURL = "http://localhost:5051"
-    // If in a devcontainer you need to use this:
-    ServiceURL = "http://host.docker.internal:5051",
-    Timeout = TimeSpan.FromMinutes(15),
-    MaxErrorRetry = 0
-  });
-#else
-  public static readonly AmazonLambdaClient LambdaClient = new(new AmazonLambdaConfig{
-    Timeout = TimeSpan.FromMinutes(15),
-    MaxErrorRetry = 0
-  });
-#endif
+    // Set env var AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051
+    // When testing with LambdaTestTool hosted outside of the dev container
+    var serviceUrl = System.Environment.GetEnvironmentVariable("AWS_LAMBDA_SERVICE_URL");
+    var config = new AmazonLambdaConfig
+    {
+      Timeout = TimeSpan.FromMinutes(15),
+      MaxErrorRetry = 0
+    };
+
+    if (!string.IsNullOrEmpty(serviceUrl))
+    {
+      config.ServiceURL = serviceUrl;
+    }
+
+    return config;
+  }
+
+  public static readonly AmazonLambdaClient LambdaClient = new(CreateConfig());
 
   private readonly int maxConcurrentCount;
 
@@ -120,22 +126,25 @@ public class LambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public LambdaConnection? AddConnection(HttpRequest request, HttpResponse response, bool immediateDispatch = false)
+  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, bool immediateDispatch = false)
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
-      _logger.LogError("Connection added to Lambda Instance that is closing or closed - closing with 409");
+      _logger.LogWarning("Connection added to Lambda Instance that is closing or closed - closing with 409");
 
       // Close the connection
       try
       {
         response.StatusCode = 409;
-        response.Body.Close();
-        request.Body.Close();
+        await response.StartAsync();
+        await response.Body.DisposeAsync();
+        await response.CompleteAsync();
+        await request.Body.CopyToAsync(Stream.Null);
+        await request.Body.DisposeAsync();
       }
       catch (Exception ex)
       {
-        _logger.LogError("Exception closing down connection to Lambda: {Message}", ex.Message);
+        _logger.LogError(ex, "AddConnection - Exception closing down connection to LambdaId: {LambdaId}", Id);
       }
 
       return null;
@@ -186,13 +195,13 @@ public class LambdaInstance
 
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
-      Console.WriteLine("Connection requested from Lambda Instance that is closing or closed");
+      _logger.LogWarning("Connection requested from Lambda Instance that is closing or closed, LambdaId: {LambdaId}", Id);
       return false;
     }
 
     if (State != LambdaInstanceState.Open)
     {
-      Console.WriteLine("Connection requested from Lambda Instance that is not open");
+      _logger.LogWarning("Connection requested from Lambda Instance that is not open, LambdaId: {LambdaId}", Id);
       return false;
     }
 
@@ -243,6 +252,43 @@ public class LambdaInstance
     // Our invoke should cause maxConcurrentCount connections to be established
   }
 
+  public async Task ReleaseConnections()
+  {
+    // Mark that we are closing
+    State = LambdaInstanceState.Closing;
+
+    // Close all the connections that are not in use
+    for (int i = 0; i < 5; i++)
+    {
+      while (connectionQueue.TryDequeue(out var connection))
+      {
+        // If the connection is Closed we discard it (can happen on abnormal close during idle)
+        if (connection.State == LambdaConnectionState.Closed)
+        {
+          continue;
+        }
+
+        // Decrement the available connection count
+        Interlocked.Decrement(ref availableConnectionCount);
+
+        // Close the connection
+        try
+        {
+          await connection.Discard();
+        }
+        catch (Exception ex)
+        {
+          _logger.LogError(ex, "ReleaseConnections - Exception closing down connection to LambdaId: {LambdaId}", Id);
+        }
+      }
+
+      await Task.Delay(1000);
+    }
+
+    // NOTE: Some connections may still be open, but they will be closed when
+    // their in flight request is finished
+  }
+
   /// <summary>
   /// Close all available connections to the Lambda Instance
   /// 
@@ -275,16 +321,11 @@ public class LambdaInstance
       // Close the connection
       try
       {
-        connection.Response.StatusCode = 409;
-        await connection.Response.StartAsync();
-        await connection.Response.Body.DisposeAsync();
-        await connection.Response.CompleteAsync();
-        await connection.Request.Body.DisposeAsync();
+        await connection.Discard();
       }
       catch (Exception ex)
       {
-        Console.WriteLine("Exception closing down connection to Lambda");
-        Console.WriteLine(ex.Message);
+        _logger.LogError(ex, "Close - Exception closing down connection to LambdaId: {LambdaId}", Id);
       }
     }
 

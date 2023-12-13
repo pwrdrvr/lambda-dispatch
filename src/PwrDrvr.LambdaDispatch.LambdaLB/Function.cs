@@ -86,33 +86,24 @@ public class Function
             int taskNumber = i;
             tasks.Add(Task.Run(async () =>
             {
-                _logger.LogInformation("Starting task {i}, for LambdaId {lambdaId}", taskNumber, request.Id);
+                _logger.LogInformation("Starting task {i}", taskNumber);
                 while (!token.IsCancellationRequested)
                 {
                     try
                     {
-                        _logger.LogDebug("Getting request from Router {i}", taskNumber);
+                        _logger.LogInformation("Getting request from Router {i}", taskNumber);
                         (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
                             = await reverseRequester.GetRequest();
 
-                        _logger.LogDebug("Got request from Router {i}", taskNumber);
+                        _logger.LogInformation("Got request from Router {i}", taskNumber);
 
                         // The OuterStatus is the status returned by the Router on it's Response
                         // This is NOT the status of the Lambda function's Response
                         if (outerStatus == 409)
                         {
-                            // Discard the data on the request body proxied from the response
-                            // receivedRequest.Content.Dispose();
-                            // receivedRequest.Dispose();
-
-                            // Gotta clean up the connection
-                            requestStreamForResponse?.Close();
-                            duplexContent?.Complete();
-                            requestForResponse?.Dispose();
-
                             // Stop the other tasks from looping
                             cts.Cancel();
-                            _logger.LogInformation("Router told us to close our connection and not re-ooen it {i}", taskNumber);
+                            _logger.LogInformation("Router told us to close our connection and not re-open it {i}", taskNumber);
                             return;
                         }
 
@@ -128,7 +119,7 @@ public class Function
 
                         await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent);
 
-                        _logger.LogInformation("Sent response to Router {i}, LambdaId {lambdaId}", taskNumber, request.Id);
+                        _logger.LogInformation("Sent response to Router {i}", taskNumber);
                     }
                     catch (EndOfStreamException)
                     {
@@ -167,8 +158,16 @@ public class Function
         // TODO: Setup a timeout according to that specified in the payload
         // Note: the code below is only going to work cleanly under constant load
 #if !DEBUG
-        await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(TimeSpan.FromSeconds(45)));
+        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(45));
+        var finishedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
+
+        // This just prevents looping around again
         cts.Cancel();
+
+        // Ask the Router to close our instance and connections
+        if (finishedTask == timeoutTask) {
+            await reverseRequester.CloseInstance();
+        }
 #endif
         await Task.WhenAll(tasks);
 

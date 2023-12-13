@@ -50,7 +50,7 @@ public class LambdaInstanceManager
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var connection = instance.AddConnection(request, response, immediateDispatch);
+      var connection = await instance.AddConnection(request, response, immediateDispatch);
 
       // Check where this instance is in the least outstanding queue
       if (!immediateDispatch)
@@ -61,20 +61,21 @@ public class LambdaInstanceManager
       return connection;
     }
 
-    Console.WriteLine($"Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409");
+    _logger.LogWarning("AddConnectionForLambda - Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409", lambdaId);
 
     // Close the connection
     try
     {
       response.StatusCode = 409;
-      await response.CompleteAsync();
+      await response.StartAsync();
       await response.Body.DisposeAsync();
+      await response.CompleteAsync();
+      await request.Body.CopyToAsync(Stream.Null);
       await request.Body.DisposeAsync();
     }
     catch (Exception ex)
     {
-      Console.WriteLine("Exception closing down connection to Lambda");
-      Console.WriteLine(ex.Message);
+      _logger.LogError(ex, "AddConnectionForLambda - Exception closing down connection to LambdaId: {LambdaId}", lambdaId);
     }
 
     return null;
@@ -106,7 +107,7 @@ public class LambdaInstanceManager
     {
       _logger.LogDebug("UpdateDesiredCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
       // Start a new instance
-      await this.StartNewInstance(true);
+      await this.StartNewInstance(false);
     }
 
     // Try to set the new desired count
@@ -185,10 +186,14 @@ public class LambdaInstanceManager
       _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount} (after decrement)", instance.Id, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
       // Remove this instance from the collection
-      _instances.TryRemove(instance.Id, out _);
+      _instances.TryRemove(instance.Id, out var instanceFromList);
 
       // The instance will already be marked as closing
-      await instance.Close();
+      if (instanceFromList != null)
+      {
+        await instanceFromList.Close();
+        return;
+      }
 
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
@@ -202,5 +207,27 @@ public class LambdaInstanceManager
 
     // This is only async because of the ENI IP lookup
     await instance.Start();
+  }
+
+  /// <summary>
+  /// Allow an instance to gracefully deregister itself
+  /// </summary>
+  /// <param name="instanceId"></param>
+  /// <returns></returns>
+  public async Task CloseInstance(string instanceId)
+  {
+    _logger.LogInformation("Closing instance {instanceId}", instanceId);
+
+    if (_instances.TryGetValue(instanceId, out var instance))
+    {
+      // The instance is going to get cleaned up by the OnInvocationComplete handler
+      // Counts will be decremented, the instance will be replaced, etc.
+      // We just need to get the Lambda to return from the invoke
+      await instance.ReleaseConnections();
+    }
+    else
+    {
+      _logger.LogInformation("Instance {instanceId} not found during close", instanceId);
+    }
   }
 }

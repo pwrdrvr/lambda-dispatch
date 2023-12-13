@@ -87,6 +87,26 @@ public class LambdaConnection
     });
   }
 
+  public async Task Discard()
+  {
+    if (State == LambdaConnectionState.Closed)
+    {
+      return;
+    }
+
+    State = LambdaConnectionState.Closed;
+
+    // Close the connection
+    Response.StatusCode = 409;
+    await Response.StartAsync();
+    await Response.Body.DisposeAsync();
+    await Response.CompleteAsync();
+    await Request.Body.CopyToAsync(Stream.Null);
+    await Request.Body.DisposeAsync();
+
+    this.TCS.SetResult();
+  }
+
   public async Task ProxyRequestToLambda(HttpRequest incomingRequest)
   {
     // Send the incoming Request on the lambda's Response

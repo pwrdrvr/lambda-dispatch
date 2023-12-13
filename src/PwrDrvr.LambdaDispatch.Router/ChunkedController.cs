@@ -20,6 +20,15 @@ public class ChunkedController : ControllerBase
     this.logger = logger;
   }
 
+  [HttpGet]
+  [Route("close/{instanceId}")]
+  public async Task<IActionResult> CloseInstance(string instanceId)
+  {
+    await dispatcher.CloseInstance(instanceId);
+
+    return Ok();
+  }
+
   [DisableRequestTimeout]
   [HttpPost]
   [DisableRequestSizeLimit]
@@ -74,17 +83,32 @@ public class ChunkedController : ControllerBase
         // Register this Lambda with the Dispatcher
         var result = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId);
 
-        if (result.LambdaIDNotFound || result.Connection == null)
+        if (result.LambdaIDNotFound)
         {
           try
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
             logger.LogInformation("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id header: {lambdaId}", lambdaId);
+            // Only in this case can we close the response because it hasn't been started
             Response.StatusCode = 409;
             Response.ContentType = "text/plain";
-            await Request.Body.DisposeAsync();
             await Response.WriteAsync("No LambdaInstance found for X-Lambda-Id header");
             await Response.Body.DisposeAsync();
+          }
+          catch (Exception ex)
+          {
+            logger.LogError(ex, "Router.ChunkedController.Post - Exception");
+          }
+          return;
+        }
+        else if (result.Connection == null)
+        {
+          try
+          {
+            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
+            logger.LogInformation("Router.ChunkedController.Post - LambdaInstance found for X-Lambda-Id header: {lambdaId} but it is already closed", lambdaId);
+
+            // In this case the connection should already have been cleaned up
           }
           catch (Exception ex)
           {

@@ -18,6 +18,8 @@ public interface ILeastOutstandingItem
 /// </summary>
 public class LeastOutstandingQueue
 {
+  private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
+
   public int MaxConcurrentCount { get; }
 
   private readonly int maxConcurrentCount;
@@ -231,8 +233,16 @@ public class LeastOutstandingQueue
       // Skip the "full" instances
       for (var i = availableInstances.Length - 1; i >= 0; i--)
       {
+        // Get approximate size so we know when to stop
+        // If we don't do this we'll go into a 100% CPU loop
+        var approximateCount = 0;
+        if (!availableInstances[i].TryGetNonEnumeratedCount(out var count))
+        {
+          approximateCount = availableInstances[i].Count;
+        }
+
         // Process all the items
-        while (availableInstances[i].TryDequeue(out var instance))
+        while (approximateCount-- > 0 && availableInstances[i].TryDequeue(out var instance))
         {
           if (instance.State != LambdaInstanceState.Open)
           {
@@ -256,8 +266,39 @@ public class LeastOutstandingQueue
         }
       }
 
+      // Process the full instance dictionary
+      foreach (var lambdaId in fullInstances.Keys)
+      {
+        // Get the instance
+        if (!fullInstances.TryGetValue(lambdaId, out var instance))
+        {
+          // The instance is gone, so we'll drop it on the floor and move on
+          continue;
+        }
+
+        if (instance.State != LambdaInstanceState.Open)
+        {
+          // The instance is not open, so we'll drop it on the floor and move on
+          continue;
+        }
+
+        if (instance.AvailableConnectionCount == 0)
+        {
+          // The instance is full, so we'll put it back in the full instances
+          fullInstances.TryAdd(instance.Id, instance);
+          continue;
+        }
+
+        // Note: this is the only time we own this instance
+        // Once we put it back in a queue it's mutable by other threads
+
+        // The instance is not going to be full after we dispatch to it
+        // So we can put it back in the queue
+        availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+      }
+
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(100));
+      await Task.Delay(TimeSpan.FromMilliseconds(250));
     }
   }
 
@@ -267,28 +308,28 @@ public class LeastOutstandingQueue
     ThreadPool.GetAvailableThreads(out var availableWorkerThreads, out var availableCompletionPortThreads);
     ThreadPool.GetMaxThreads(out var maxWorkerThreads, out var maxCompletionPortThreads);
     ThreadPool.GetMinThreads(out var minWorkerThreads, out var minCompletionPortThreads);
-    Console.WriteLine($"Available worker threads: {availableWorkerThreads} of {maxWorkerThreads} (min: {minWorkerThreads})");
-    Console.WriteLine($"Available completion port threads: {availableCompletionPortThreads} of {maxCompletionPortThreads} (min: {minCompletionPortThreads})");
+    _logger.LogInformation("Available worker threads: {availableWorkerThreads} of {maxWorkerThreads} (min: {minWorkerThreads})", availableWorkerThreads, maxWorkerThreads, minWorkerThreads);
+    _logger.LogInformation("Available completion port threads: {availableCompletionPortThreads} of {maxCompletionPortThreads} (min: {minCompletionPortThreads})", availableCompletionPortThreads, maxCompletionPortThreads, minCompletionPortThreads);
 
     // Log the size of each queue in availableInstances
     for (var i = 0; i < availableInstances.Length; i++)
     {
-      Console.WriteLine($"Queue {i} size: {availableInstances[i].Count}");
+      _logger.LogInformation("Queue {i} size: {count}", i, availableInstances[i].Count);
 
       // Print the OutstandingRequestCount of the items in the queue
       foreach (var instance in availableInstances[i])
       {
-        Console.WriteLine($"Instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}");
+        _logger.LogInformation("Instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
       }
     }
 
     // Log the size of fullInstances
-    Console.WriteLine($"Full instances size: {fullInstances.Count}");
+    _logger.LogInformation("Full instances size: {fullInstances.Count}", fullInstances.Count);
 
     // Log the AvailableConnectionCount of each instance in fullInstances
     foreach (var instance in fullInstances.Values)
     {
-      Console.WriteLine($"Full instance {instance.Id} available connections: {instance.AvailableConnectionCount}");
+      _logger.LogInformation("Full instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
     }
   }
 }

@@ -22,6 +22,11 @@ public class IncomingController : ControllerBase
   {
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer))
     {
+      if (Request.Path.StartsWithSegments("/api/chunked"))
+      {
+        throw new InvalidOperationException("Got /api/chunked request on user controller");
+      }
+
       await dispatcher.AddRequest(Request, Response);
     }
   }

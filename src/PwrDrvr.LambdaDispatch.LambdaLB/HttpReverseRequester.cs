@@ -96,6 +96,13 @@ public class HttpReverseRequester
 
     if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
     {
+      // Gotta clean up the connection
+      await requestStreamForResponse.DisposeAsync();
+      duplexContent?.Complete();
+      await response.Content.CopyToAsync(Stream.Null);
+      response.Dispose();
+      request.Dispose();
+
       return ((int)response.StatusCode, null!, null!, null!, null!);
     }
 
@@ -177,5 +184,31 @@ public class HttpReverseRequester
     requestStreamForResponse.Close();
     duplexContent.Complete();
     requestForResponse.Dispose();
+  }
+
+  public async Task CloseInstance()
+  {
+    _logger.LogInformation("Starting close of instance: {id}", _id);
+    var uri = new UriBuilder(_dispatcherUrl)
+    {
+      Path = $"/api/chunked/close/{_id}",
+    }.Uri;
+    var request = new HttpRequestMessage(HttpMethod.Get, uri)
+    {
+      Version = new Version(2, 0)
+    };
+    request.Headers.Host = "lambdadispatch.local:5003";
+    request.Headers.Add("X-Lambda-Id", _id);
+
+    var response = await _client.SendAsync(request);
+
+    if (response.StatusCode != System.Net.HttpStatusCode.OK)
+    {
+      _logger.LogError("Error closing instance: {id}, {statusCode}", _id, response.StatusCode);
+    }
+    else
+    {
+      _logger.LogInformation("Closed instance: {id}, {statusCode}", _id, response.StatusCode);
+    }
   }
 }
