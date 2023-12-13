@@ -34,22 +34,15 @@ public class ChunkedController : ControllerBase
           logger.LogDebug("Router.ChunkedController.Post - No X-Lambda-Id header");
           Response.StatusCode = 400;
           Response.ContentType = "text/plain";
+          await Request.Body.DisposeAsync();
           await Response.WriteAsync("No X-Lambda-Id header");
+          await Response.Body.DisposeAsync();
           return;
         }
 
         var lambdaId = lambdaIdMulti.ToString();
 
         logger.LogDebug("Router.ChunkedController.Post - A Lambda has connected with Id: {lambdaId}", lambdaId);
-
-        // Response.Headers["Transfer-Encoding"] = "chunked";
-        // This is our content type for the body that will contain a request
-        // and (optional) request body
-        Response.ContentType = "application/octet-stream";
-        // This is our status code for the response
-        Response.StatusCode = 200;
-        // If you set this it hangs... it's implied that the transfer-encoding is chunked
-        // and is already handled by the server
 
         // Print when we start the response
         Response.OnStarting(() =>
@@ -64,6 +57,15 @@ public class ChunkedController : ControllerBase
           logger.LogDebug("Finished response");
           return Task.CompletedTask;
         });
+
+        // Response.Headers["Transfer-Encoding"] = "chunked";
+        // This is our content type for the body that will contain a request
+        // and (optional) request body
+        Response.ContentType = "application/octet-stream";
+        // This is our status code for the response
+        Response.StatusCode = 200;
+        // If you set this it hangs... it's implied that the transfer-encoding is chunked
+        // and is already handled by the server
 
         // TODO: Lookup the LambdaInstance for this request
         // Based on the X-Lambda-Id header
@@ -80,7 +82,9 @@ public class ChunkedController : ControllerBase
             logger.LogInformation("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id header: {lambdaId}", lambdaId);
             Response.StatusCode = 409;
             Response.ContentType = "text/plain";
+            await Request.Body.DisposeAsync();
             await Response.WriteAsync("No LambdaInstance found for X-Lambda-Id header");
+            await Response.Body.DisposeAsync();
           }
           catch (Exception ex)
           {
