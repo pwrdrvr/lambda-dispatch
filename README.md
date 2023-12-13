@@ -112,3 +112,19 @@ curl http://lambda-ECSFa-99YoLua7GcRe-1054486381.us-east-2.elb.amazonaws.com/fac
 npm i -g cloc
 cloc --exclude-dir=bin,obj --exclude-ext=csproj,sln,json,md .
 ```
+
+## Performance Analysis
+
+Install PerfView to analyze the `.nettrace` files: https://github.com/microsoft/perfview
+
+https://www.speedscope.app/
+
+```bash
+dotnet tool install --global dotnet-trace
+
+dotnet-trace collect -p <PID> --providers Microsoft-Windows-DotNETRuntime
+
+dotnet-trace collect -p <PID> --providers Microsoft-DotNETCore-SampleProfiler
+
+dotnet-trace convert --format speedscope trace.nettrace
+```

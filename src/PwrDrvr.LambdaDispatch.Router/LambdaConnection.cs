@@ -227,8 +227,7 @@ public class LambdaConnection
     while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
     {
       _logger.LogDebug("Got body line from lambda: {line}", line);
-      await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(line));
-      await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+      await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{line}\r\n"));
     }
 #else
     // Note: this probably will not work as some data has been buffered in the StreamReader
