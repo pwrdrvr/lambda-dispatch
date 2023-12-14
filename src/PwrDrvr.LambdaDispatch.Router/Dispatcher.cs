@@ -57,11 +57,11 @@ public class Dispatcher
     Task.Run(ProcessPendingRequests);
   }
 
-  public async Task CloseInstance(string instanceId)
+  public void CloseInstance(string instanceId)
   {
     _logger.LogDebug("Closing instance {instanceId}", instanceId);
 
-    await _lambdaInstanceManager.CloseInstance(instanceId);
+    _lambdaInstanceManager.CloseInstance(instanceId);
   }
 
   // Add a new request, dispatch immediately if able
@@ -117,7 +117,7 @@ public class Dispatcher
   }
 
   // Add a new lambda, dispatch to it immediately if a request is waiting
-  public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId)
+  public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId)
   {
     DispatcherAddConnectionResult result = new();
 
@@ -156,7 +156,7 @@ public class Dispatcher
       }
 
       // Register the connection with the lambda
-      var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, true);
+      var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, true);
 
       if (connection == null)
       {
@@ -198,7 +198,7 @@ public class Dispatcher
     // from the queue but then not be able to dispatch it.
     // We wouldn't be able to put the request back at the head of the queue
     // so it would lose it's spot
-    result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId);
+    result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
 
     return result;
   }
@@ -254,8 +254,10 @@ public class Dispatcher
         }
         else
         {
+          _logger.LogInformation("ProcessPendingRequests - No pending requests, putting connection back");
+
           // We didn't get a pending request, so put the connection back
-          await _lambdaInstanceManager.AddConnectionForLambda(lambdaConnection.Request, lambdaConnection.Response, lambdaConnection.Instance.Id);
+          await _lambdaInstanceManager.ReenqueueUnusedConnection(lambdaConnection, lambdaConnection.Instance.Id);
         }
       }
 

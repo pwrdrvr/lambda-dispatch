@@ -71,7 +71,7 @@ public class HttpReverseRequester
   /// <returns>
   /// outer status code, requestToRun, requestForResponse
   /// </returns>
-  public async Task<(int, HttpRequestMessage, HttpRequestMessage, Stream, HttpDuplexContent)> GetRequest()
+  public async Task<(int, HttpRequestMessage, HttpRequestMessage, Stream, HttpDuplexContent)> GetRequest(string channelId)
   {
     var duplexContent = new HttpDuplexContent();
 
@@ -81,6 +81,7 @@ public class HttpReverseRequester
     };
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
+    request.Headers.Add("X-Channel-Id", channelId);
     request.Content = duplexContent;
 
     var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -164,7 +165,7 @@ public class HttpReverseRequester
   /// Send the response on the request to the Router
   /// </summary>
   /// <returns></returns>
-  public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, Stream requestStreamForResponse, HttpDuplexContent duplexContent)
+  public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, Stream requestStreamForResponse, HttpDuplexContent duplexContent, string channelId)
   {
     // Write the status line
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n"));
@@ -174,6 +175,7 @@ public class HttpReverseRequester
       await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
     }
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Lambda-Id: " + _id + "\r\n"));
+    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Channel-Id: " + channelId + "\r\n"));
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Server: PwrDrvr.LambdaDispatch.LambdaLB\r\n"));
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
 

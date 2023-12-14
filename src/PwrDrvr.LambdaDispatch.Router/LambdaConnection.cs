@@ -49,7 +49,7 @@ public class LambdaConnection
   /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
-  public LambdaConnection(HttpRequest request, HttpResponse response, LambdaInstance instance)
+  public LambdaConnection(HttpRequest request, HttpResponse response, LambdaInstance instance, string channelId)
   {
     // HttpRequestFeature foo = new HttpRequestFeature();
 
@@ -133,12 +133,14 @@ public class LambdaConnection
       // Send the body to the Lambda
       await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter.AsStream());
       await incomingRequest.BodyReader.CompleteAsync();
+      await incomingRequest.Body.DisposeAsync();
 
       _logger.LogDebug("Finished sending incoming request body to Lambda");
     }
 
     // Mark that the Request has been sent on the LambdaInstances
     await this.Response.BodyWriter.CompleteAsync();
+    await this.Response.Body.DisposeAsync();
 
     // Get the response from the lambda request and relay it back to the caller
     _logger.LogDebug("Finished sending entire request to Lambda");

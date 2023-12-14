@@ -34,7 +34,7 @@ namespace PwrDrvr.LambdaDispatch.Tests
       var queue = new LeastOutstandingQueue(_maxConcurrentCount);
       var instance = new LambdaInstance(_maxConcurrentCount);
 
-      var connection = instance.AddConnection(null, null);
+      var connection = instance.AddConnection(null, null, "");
 
       queue.AddInstance(instance);
 

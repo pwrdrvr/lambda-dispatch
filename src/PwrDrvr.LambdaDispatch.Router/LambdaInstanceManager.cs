@@ -43,14 +43,33 @@ public class LambdaInstanceManager
     return _instances.ContainsKey(lambdaId);
   }
 
-  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, bool immediateDispatch = false)
+  public async Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var connection = await instance.AddConnection(request, response, immediateDispatch);
+      await instance.ReenqueueUnusedConnection(connection);
+
+      // Put this instance back into rotation if it was busy
+      _leastOutstandingQueue.ReinstateFullInstance(instance);
+    }
+    else
+    {
+      _logger.LogWarning("ReenqueueUnusedConnection - Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409", lambdaId);
+    }
+
+  }
+
+  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false)
+  {
+    // Get the instance for the lambda
+    if (_instances.TryGetValue(lambdaId, out var instance))
+    {
+      // Add the connection to the instance
+      // The instance will eventually get rebalanced in the least outstanding queue
+      var connection = await instance.AddConnection(request, response, channelId, immediateDispatch);
 
       // Check where this instance is in the least outstanding queue
       if (!immediateDispatch)
@@ -214,7 +233,7 @@ public class LambdaInstanceManager
   /// </summary>
   /// <param name="instanceId"></param>
   /// <returns></returns>
-  public async Task CloseInstance(string instanceId)
+  public void CloseInstance(string instanceId)
   {
     _logger.LogInformation("Closing instance {instanceId}", instanceId);
 
@@ -223,7 +242,7 @@ public class LambdaInstanceManager
       // The instance is going to get cleaned up by the OnInvocationComplete handler
       // Counts will be decremented, the instance will be replaced, etc.
       // We just need to get the Lambda to return from the invoke
-      await instance.ReleaseConnections();
+      instance.ReleaseConnections();
     }
     else
     {

@@ -89,11 +89,14 @@ public class Function
                 _logger.LogInformation("Starting task {i}", taskNumber);
                 while (!token.IsCancellationRequested)
                 {
+                    var channelId = Guid.NewGuid().ToString();
+                    using var channelScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
+
                     try
                     {
                         _logger.LogInformation("Getting request from Router {i}", taskNumber);
                         (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
-                            = await reverseRequester.GetRequest();
+                            = await reverseRequester.GetRequest(channelId);
 
                         _logger.LogInformation("Got request from Router {i}", taskNumber);
 
@@ -117,13 +120,13 @@ public class Function
                             Content = new StringContent("Hello World!"),
                         };
 
-                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent);
+                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
 
                         _logger.LogInformation("Sent response to Router {i}", taskNumber);
                     }
                     catch (EndOfStreamException)
                     {
-                        _logger.LogInformation("End of stream caught in task {i}", taskNumber);
+                        _logger.LogError("End of stream exception caught in task {i}", taskNumber);
                         // We do not cancel, we just loop around and make a new request
                         // If the new request gets a 409 status, then we will stop the loop
                         break;
@@ -149,7 +152,6 @@ public class Function
                         }
                     }
                 }
-
 
                 _logger.LogInformation("Exiting task {i}", taskNumber);
             }));

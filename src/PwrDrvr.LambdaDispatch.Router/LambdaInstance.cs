@@ -131,7 +131,7 @@ public class LambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, bool immediateDispatch = false)
+  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false)
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
@@ -178,7 +178,7 @@ public class LambdaInstance
     Interlocked.Increment(ref openConnectionCount);
     MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
 
-    var connection = new LambdaConnection(request, response, this);
+    var connection = new LambdaConnection(request, response, this, channelId);
 
     // Only make this connection visible if we're not going to immediately use it for a queued request
     if (!immediateDispatch)
@@ -260,38 +260,45 @@ public class LambdaInstance
     // Our invoke should cause maxConcurrentCount connections to be established
   }
 
-  public async Task ReleaseConnections()
+  public void ReleaseConnections()
   {
     // Mark that we are closing
     State = LambdaInstanceState.Closing;
 
-    // Close all the connections that are not in use
-    for (int i = 0; i < 5; i++)
+    // We do this in the background so the Lambda can exit as soon as the last
+    // connection to it is closed
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+    Task.Run(async () =>
     {
-      while (connectionQueue.TryDequeue(out var connection))
+      // Close all the connections that are not in use
+      for (int i = 0; i < 5; i++)
       {
-        // If the connection is Closed we discard it (can happen on abnormal close during idle)
-        if (connection.State == LambdaConnectionState.Closed)
+        while (connectionQueue.TryDequeue(out var connection))
         {
-          continue;
+          // If the connection is Closed we discard it (can happen on abnormal close during idle)
+          if (connection.State == LambdaConnectionState.Closed)
+          {
+            continue;
+          }
+
+          // Decrement the available connection count
+          Interlocked.Decrement(ref availableConnectionCount);
+
+          // Close the connection
+          try
+          {
+            await connection.Discard();
+          }
+          catch (Exception ex)
+          {
+            _logger.LogError(ex, "ReleaseConnections - Exception closing down connection to LambdaId: {LambdaId}", Id);
+          }
         }
 
-        // Decrement the available connection count
-        Interlocked.Decrement(ref availableConnectionCount);
-
-        // Close the connection
-        try
-        {
-          await connection.Discard();
-        }
-        catch (Exception ex)
-        {
-          _logger.LogError(ex, "ReleaseConnections - Exception closing down connection to LambdaId: {LambdaId}", Id);
-        }
+        await Task.Delay(1000);
       }
-
-      await Task.Delay(1000);
-    }
+    });
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
     // NOTE: Some connections may still be open, but they will be closed when
     // their in flight request is finished
@@ -411,5 +418,21 @@ public class LambdaInstance
       }
     });
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+  }
+
+  public async Task ReenqueueUnusedConnection(LambdaConnection connection)
+  {
+    // If the lambda is closing then we don't re-enqueue the connection
+    if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
+    {
+      await connection.Discard();
+      return;
+    }
+
+    // Increment the available connection count
+    Interlocked.Increment(ref availableConnectionCount);
+
+    // Re-enqueue the connection
+    connectionQueue.Enqueue(connection);
   }
 }

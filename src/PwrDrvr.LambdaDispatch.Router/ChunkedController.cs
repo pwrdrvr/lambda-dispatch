@@ -22,9 +22,9 @@ public class ChunkedController : ControllerBase
 
   [HttpGet]
   [Route("close/{instanceId}")]
-  public async Task<IActionResult> CloseInstance(string instanceId)
+  public IActionResult CloseInstance(string instanceId)
   {
-    await dispatcher.CloseInstance(instanceId);
+    dispatcher.CloseInstance(instanceId);
 
     return Ok();
   }
@@ -49,9 +49,16 @@ public class ChunkedController : ControllerBase
           return;
         }
 
-        var lambdaId = lambdaIdMulti.ToString();
+        // Get the channel id
+        if (!Request.Headers.TryGetValue("X-Channel-Id", out Microsoft.Extensions.Primitives.StringValues channelIdMulti) || channelIdMulti.Count != 1)
+        {
+          logger.LogDebug("Router.ChunkedController.Post - No X-Channel-Id header");
+        }
 
-        logger.LogDebug("Router.ChunkedController.Post - A Lambda has connected with Id: {lambdaId}", lambdaId);
+        var lambdaId = lambdaIdMulti.ToString();
+        var channelId = channelIdMulti.ToString();
+
+        logger.LogDebug("Router.ChunkedController.Post - Connection from LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
         // Print when we start the response
         Response.OnStarting(() =>
@@ -81,7 +88,7 @@ public class ChunkedController : ControllerBase
         // We should have this LambdaInstance in a dictionary keyed by the X-Lambda-Id header
 
         // Register this Lambda with the Dispatcher
-        var result = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId);
+        var result = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId, channelId);
 
         if (result.LambdaIDNotFound)
         {

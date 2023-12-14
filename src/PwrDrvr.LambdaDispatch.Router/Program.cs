@@ -60,7 +60,7 @@ public class Program
                     serverOptions.ListenAnyIP(5002);
                     serverOptions.ListenAnyIP(5003, listenOptions =>
                     {
-                        listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"), "");
+                        listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"));
                     });
                 });
                 webBuilder.UseStartup<Startup>();
