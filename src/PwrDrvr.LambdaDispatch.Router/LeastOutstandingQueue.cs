@@ -50,7 +50,10 @@ public class LeastOutstandingQueue
       return 0;
     }
 
-    if (outstandingRequestcount > maxConcurrentCount)
+    // If max is 10, and there are 10 outstanding requests,
+    // we can't just return 10 as that will exceed the array bounds
+    // Technically this should be left in the full dictionary
+    if (outstandingRequestcount >= maxConcurrentCount)
     {
       return maxConcurrentCount - 1;
     }
@@ -215,9 +218,21 @@ public class LeastOutstandingQueue
     // Remove the instance from the full instances
     if (fullInstances.TryRemove(instance.Id, out var _))
     {
-      // Add the instance to the queue
-      // This may add it the idle (0) or full (maxConcurrentCount) queue
-      availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+      var index = GetFloorQueueIndex(instance.OutstandingRequestCount);
+
+      if (index == maxConcurrentCount)
+      {
+        // The instance is full, so we'll put it back in the full instances
+        fullInstances.TryAdd(instance.Id, instance);
+        return;
+      }
+
+      // Add the instance to a non-full queue
+      try { availableInstances[index].Enqueue(instance); }
+      catch (IndexOutOfRangeException ex)
+      {
+        _logger.LogError("Exception adding instance to queue, proposed index: {index}, array length {arrayLength}", index, availableInstances.Length);
+      }
     }
   }
 
@@ -333,7 +348,7 @@ public class LeastOutstandingQueue
       }
 
       // Wait a bit
-      await Task.Delay(TimeSpan.FromSeconds(10));
+      await Task.Delay(TimeSpan.FromMinutes(1));
     }
   }
 }
