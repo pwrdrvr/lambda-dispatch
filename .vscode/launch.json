@@ -5,11 +5,27 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": ".NET Core Attach",
+      "type": "coreclr",
+      "request": "attach"
+    },
+    {
       "name": "LambdaLB bootstrap (console)",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
       "program": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Debug/net8.0/bootstrap",
+      "args": [],
+      "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB",
+      "stopAtEntry": false,
+      "console": "internalConsole"
+    },
+    {
+      "name": "LambdaLB bootstrap (console) - Release",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-release",
+      "program": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/bootstrap",
       "args": [],
       "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB",
       "stopAtEntry": false,
