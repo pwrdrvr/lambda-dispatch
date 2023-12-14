@@ -71,6 +71,9 @@ Resources:
             - ContainerPort: 5001 # IncomingRequest port
               HostPort: 5001
               Protocol: tcp
+            - ContainerPort: 5003 # IncomingRequest port
+              HostPort: 5003
+              Protocol: tcp
 
   ECSFargateService:
     Type: AWS::ECS::Service
@@ -118,6 +121,10 @@ Resources:
         - IpProtocol: tcp
           FromPort: 5001
           ToPort: 5001
+          CidrIp: !GetAtt MyVPC.CidrBlock
+        - IpProtocol: tcp
+          FromPort: 5003
+          ToPort: 5003
           CidrIp: !GetAtt MyVPC.CidrBlock
 
   MyVPC:
