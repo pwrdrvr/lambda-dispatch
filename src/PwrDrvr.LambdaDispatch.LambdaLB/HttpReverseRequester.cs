@@ -1,5 +1,3 @@
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -7,7 +5,7 @@ namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
 public class HttpReverseRequester
 {
-  private readonly ILogger<HttpReverseRequester> _logger = LoggerInstance.CreateLogger<HttpReverseRequester>();
+  private readonly ILogger<HttpReverseRequester> _logger;
 
   private readonly string _id;
   private readonly string _dispatcherUrl;
@@ -16,10 +14,11 @@ public class HttpReverseRequester
 
   private readonly HttpClient _client;
 
-  private readonly HttpClientHandler _handler;
+  private readonly HttpClientHandler? _handler;
 
-  public HttpReverseRequester(string id, string dispatcherUrl)
+  public HttpReverseRequester(string id, string dispatcherUrl, HttpClient httpClient = null, ILogger<HttpReverseRequester> logger = null)
   {
+    _logger = logger ?? LoggerInstance.CreateLogger<HttpReverseRequester>();
     _id = id;
     _dispatcherUrl = dispatcherUrl;
 
@@ -30,31 +29,38 @@ public class HttpReverseRequester
       Scheme = "https",
     }.Uri;
 
-    _handler = new HttpClientHandler();
-    _handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
+    if (httpClient == null)
     {
-      // If the certificate is a valid, signed certificate, return true.
-      if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
+      _handler = new HttpClientHandler();
+      _handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
       {
-        return true;
-      }
+        // If the certificate is a valid, signed certificate, return true.
+        if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
+        {
+          return true;
+        }
 
-      // If it's a self-signed certificate for the specific host, return true.
-      // TODO: Get the CN name to allow
-      if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
+        // If it's a self-signed certificate for the specific host, return true.
+        // TODO: Get the CN name to allow
+        if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
+        {
+          return true;
+        }
+
+        // In all other cases, return false.
+        return false;
+      };
+
+      _client = new HttpClient(_handler)
       {
-        return true;
-      }
-
-      // In all other cases, return false.
-      return false;
-    };
-
-    _client = new HttpClient(_handler)
+        DefaultRequestVersion = new Version(2, 0),
+        Timeout = TimeSpan.FromMinutes(15),
+      };
+    }
+    else
     {
-      DefaultRequestVersion = new Version(2, 0),
-      Timeout = TimeSpan.FromMinutes(15),
-    };
+      _client = httpClient;
+    }
   }
 
   public ValueTask DisposeAsync()
