@@ -200,6 +200,7 @@ public class LambdaInstanceManager
       {
         _logger.LogInformation("LambdaInstance {instanceId} was never opened, replacing", instance.Id);
         Interlocked.Decrement(ref _startingInstanceCount);
+        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
       }
 
       _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount} (after decrement)", instance.Id, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
