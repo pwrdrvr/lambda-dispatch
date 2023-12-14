@@ -55,7 +55,7 @@ public static class MetricsRegistry
 #if DEBUG
     TimeSpan.FromSeconds(15),
 #else
-    TimeSpan.FromMinutes(1),
+    TimeSpan.FromSeconds(10),
 #endif
     async () =>
     {
@@ -112,6 +112,18 @@ public static class MetricsRegistry
   public static readonly CounterOptions ImmediateDispatchCount = new()
   {
     Name = "ImmediateDispatchCount",
+    MeasurementUnit = Unit.Custom("requests"),
+  };
+
+  public static readonly CounterOptions QueuedRequests = new()
+  {
+    Name = "QueuedRequests",
+    MeasurementUnit = Unit.Custom("requests"),
+  };
+
+  public static readonly CounterOptions RunningRequests = new()
+  {
+    Name = "RunningRequests",
     MeasurementUnit = Unit.Custom("requests"),
   };
 

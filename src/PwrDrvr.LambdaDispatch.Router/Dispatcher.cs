@@ -80,6 +80,7 @@ public class Dispatcher
       MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
 
       Interlocked.Increment(ref _runningRequestCount);
+      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
       try
       {
@@ -88,6 +89,7 @@ public class Dispatcher
       finally
       {
         Interlocked.Decrement(ref _runningRequestCount);
+        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
 
         // Update number of instances that we want
         await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
@@ -102,6 +104,7 @@ public class Dispatcher
     var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
     _pendingRequests.Enqueue(pendingRequest);
     Interlocked.Increment(ref _pendingRequestCount);
+    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
 
     // Update number of instances that we want
     await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
@@ -141,6 +144,7 @@ public class Dispatcher
     {
       _logger.LogDebug("Dispatching pending request to Lambda {lambdaId}", lambdaId);
       Interlocked.Decrement(ref _pendingRequestCount);
+      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
       pendingRequest.RecordDispatchTime();
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
@@ -159,12 +163,14 @@ public class Dispatcher
         _logger.LogError("Failed adding the connection to the Lambda {lambdaId}, putting the request back in the queue", lambdaId);
         _pendingRequests.Enqueue(pendingRequest);
         Interlocked.Increment(ref _pendingRequestCount);
+        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
         return result;
       }
 
       // If we got a connection, dispatch the request
       // Dispatch the request to the lambda
       Interlocked.Increment(ref _runningRequestCount);
+      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
       try
       {
         await connection.RunRequest(pendingRequest.Request, pendingRequest.Response);
@@ -172,6 +178,7 @@ public class Dispatcher
       finally
       {
         Interlocked.Decrement(ref _runningRequestCount);
+        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
 
         result.ImmediatelyDispatched = true;
         result.Connection = connection;
@@ -223,9 +230,11 @@ public class Dispatcher
           MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
 
           Interlocked.Decrement(ref _pendingRequestCount);
+          MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
 
           // Try to get a connection and process the request
           Interlocked.Increment(ref _runningRequestCount);
+          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
           try
           {
@@ -234,6 +243,7 @@ public class Dispatcher
           finally
           {
             Interlocked.Decrement(ref _runningRequestCount);
+            MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
 
             // Signal the pending request that it's been completed
             pendingRequest.ResponseFinishedTCS.SetResult();

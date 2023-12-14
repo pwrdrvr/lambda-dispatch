@@ -44,6 +44,7 @@ public class Program
 #if DEBUG
                 logging.SetMinimumLevel(LogLevel.Debug); // Set the minimum log level here
 #else
+                logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
                 logging.SetMinimumLevel(LogLevel.Information); // Set the minimum log level here
 #endif
             })

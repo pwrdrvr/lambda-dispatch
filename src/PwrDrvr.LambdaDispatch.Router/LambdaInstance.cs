@@ -61,6 +61,11 @@ public class LambdaInstance
 
   public bool WasOpened { get; private set; } = false;
 
+  /// <summary>
+  /// WARNING: This is going to enumerate the items in the queue to count them
+  /// </summary>
+  public int QueueApproximateCount => connectionQueue.Count;
+
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
 
@@ -229,6 +234,9 @@ public class LambdaInstance
       connection = dequeuedConnection;
       return true;
     }
+
+    // No available connections
+    _logger.LogInformation("No available connections for LambdaId: {LambdaId}, AvailableConnectionsCount: {AvailableConnectionCount}, QueueApproximateCount: {QueueApproximateCount}", Id, AvailableConnectionCount, QueueApproximateCount);
 
     return false;
   }
