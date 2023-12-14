@@ -87,10 +87,9 @@ public class LambdaInstanceManager
     {
       response.StatusCode = 409;
       await response.StartAsync();
-      await response.Body.DisposeAsync();
+      await response.WriteAsync("Lambda instance does not exist");
       await response.CompleteAsync();
       await request.Body.CopyToAsync(Stream.Null);
-      await request.Body.DisposeAsync();
     }
     catch (Exception ex)
     {

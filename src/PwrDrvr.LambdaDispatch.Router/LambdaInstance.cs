@@ -135,17 +135,15 @@ public class LambdaInstance
   {
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
-      _logger.LogWarning("Connection added to Lambda Instance that is closing or closed - closing with 409");
+      _logger.LogWarning("Connection added to Lambda Instance that is closing or closed - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
 
       // Close the connection
       try
       {
         response.StatusCode = 409;
         await response.StartAsync();
-        await response.Body.DisposeAsync();
         await response.CompleteAsync();
         await request.Body.CopyToAsync(Stream.Null);
-        await request.Body.DisposeAsync();
       }
       catch (Exception ex)
       {

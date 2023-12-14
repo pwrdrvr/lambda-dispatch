@@ -1,15 +1,55 @@
-namespace PwrDrvr.LambdaDispatch.Router;
+namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
 using System.IO;
 using System.Text;
 using App.Metrics;
 using App.Metrics.Counter;
+using App.Metrics.Filters;
 using App.Metrics.Formatters;
+using App.Metrics.Formatters.Ascii;
 using App.Metrics.Gauge;
-using App.Metrics.Histogram;
-using App.Metrics.ReservoirSampling.Uniform;
-using App.Metrics.Scheduling;
+using App.Metrics.Reporting;
 using App.Metrics.Timer;
+using Microsoft.Extensions.Logging;
+
+public class LoggerMetricsReporter : IReportMetrics
+{
+  private readonly ILogger _logger = LoggerInstance.CreateLogger<LoggerMetricsReporter>();
+
+  public IFilterMetrics Filter { get; set; }
+  public TimeSpan FlushInterval { get; set; }
+  public IMetricsOutputFormatter Formatter { get; set; }
+
+  private readonly IMetricsOutputFormatter _defaultMetricsOutputFormatter = new MetricsTextOutputFormatter();
+
+  public LoggerMetricsReporter()
+  {
+    FlushInterval = AppMetricsConstants.Reporting.DefaultFlushInterval;
+    Formatter = _defaultMetricsOutputFormatter;
+  }
+
+  public void ReportContext(MetricsDataValueSource context)
+  {
+    var formatter = new MetricsTextOutputFormatter();
+    using var stream = new MemoryStream();
+    using var writer = new StreamWriter(stream);
+    formatter.WriteAsync(stream, context);
+    writer.Flush();
+    stream.Position = 0;
+    using var reader = new StreamReader(stream);
+    var report = reader.ReadToEnd();
+    _logger.LogInformation(report);
+  }
+
+  public void Dispose()
+  {
+  }
+
+  public Task<bool> FlushAsync(MetricsDataValueSource metricsData, CancellationToken cancellationToken = default)
+  {
+    throw new NotImplementedException();
+  }
+}
 
 public class CompactMetricsFormatter : IMetricsOutputFormatter
 {
@@ -46,34 +86,77 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 public static class MetricsRegistry
 {
   public static readonly IMetricsRoot Metrics = new MetricsBuilder()
-    .OutputMetrics.Using<CompactMetricsFormatter>()
-    .Report.ToConsole()
+    .Report.ToConsole(options =>
+    {
+      options.FlushInterval = TimeSpan.FromSeconds(10);
+      options.MetricsOutputFormatter = new CompactMetricsFormatter();
+    })
+    .Report.Using<LoggerMetricsReporter>()
     .Build();
 
-  private static readonly AppMetricsTaskScheduler _scheduler = new(
-    TimeSpan.FromSeconds(10),
-    async () =>
-    {
-      await Task.WhenAll(Metrics.ReportRunner.RunAllAsync());
-    });
+  // This causes console logger to deadlock
+  // private static readonly AppMetricsTaskScheduler _scheduler = new(
+  //   TimeSpan.FromSeconds(10),
+  //   async () =>
+  //   {
+  //     await Task.WhenAll(Metrics.ReportRunner.RunAllAsync());
+  //   });
+
+  // private static readonly App.Metrics.Extensions.Collectors.HostedServices.SystemUsageCollectorHostedService _systemUsageCollectorHostedService = new(Metrics, new App.Metrics.Extensions.Collectors.MetricsSystemUsageCollectorOptions()
+  // {
+  //   CollectIntervalMilliseconds = 1000
+  // });
+
+  // private static readonly App.Metrics.Extensions.Collectors.HostedServices.GcEventsCollectorHostedService _gcEventsCollectorHostedService = new(Metrics, new App.Metrics.Extensions.Collectors.MetricsGcEventsCollectorOptions()
+  // {
+  //   CollectIntervalMilliseconds = 1000
+  // });
 
   static MetricsRegistry()
   {
-    // Start the console logger
-    _scheduler.Start();
+    App.Metrics.Logging.LogProvider.IsDisabled = true;
+    // These cause the app to deadlock too
+    // Start the collectors
+    // _gcEventsCollectorHostedService.StartAsync(CancellationToken.None);
+    // _systemUsageCollectorHostedService.StartAsync(CancellationToken.None);
   }
 
-  public static readonly HistogramOptions DispatchDelay = new()
+  public static readonly TimerOptions ChannelWaitDuration = new()
   {
-    Name = "DispatchDelay",
+    Name = "ChannelWaitDuration",
     MeasurementUnit = Unit.Custom("ms"),
-    Reservoir = () => new DefaultAlgorithmRReservoir(),
+    DurationUnit = TimeUnit.Milliseconds,
+    RateUnit = TimeUnit.Seconds,
+  };
+
+  public static readonly CounterOptions ChannelsOpen = new()
+  {
+    Name = "ChannelsOpen",
+    MeasurementUnit = Unit.Items
+  };
+
+  public static readonly CounterOptions ChannelsClosed = new()
+  {
+    Name = "ChannelsClosed",
+    MeasurementUnit = Unit.Items
   };
 
   public static readonly CounterOptions RequestCount = new()
   {
     Name = "RequestCount",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests,
+  };
+
+  public static readonly CounterOptions RequestConflictCount = new()
+  {
+    Name = "RequestConflictCount",
+    MeasurementUnit = Unit.Requests,
+  };
+
+  public static readonly CounterOptions RespondedCount = new()
+  {
+    Name = "RespondedCount",
+    MeasurementUnit = Unit.Requests,
   };
 
   public static readonly TimerOptions IncomingRequestTimer = new()
@@ -81,76 +164,12 @@ public static class MetricsRegistry
     Name = "IncomingRequestTimer",
     MeasurementUnit = Unit.Custom("ms"),
     DurationUnit = TimeUnit.Milliseconds,
-    RateUnit = TimeUnit.Milliseconds,
+    RateUnit = TimeUnit.Seconds,
   };
 
-  public static readonly TimerOptions LambdaRequestTimer = new()
+  public static readonly GaugeOptions LastWakeupTime = new()
   {
-    Name = "LambdaRequestTimer",
+    Name = "LastWakeupTime",
     MeasurementUnit = Unit.Custom("ms"),
-    DurationUnit = TimeUnit.Milliseconds,
-    RateUnit = TimeUnit.Milliseconds,
-  };
-
-  public static readonly CounterOptions ImmediateDispatchCount = new()
-  {
-    Name = "ImmediateDispatchCount",
-    MeasurementUnit = Unit.Custom("requests"),
-  };
-
-  public static readonly CounterOptions PendingDispatchCount = new()
-  {
-    Name = "PendingDispatchCount",
-    MeasurementUnit = Unit.Custom("requests"),
-  };
-
-  public static readonly CounterOptions PendingDispatchForegroundCount = new()
-  {
-    Name = "PendingDispatchForegroundCount",
-    MeasurementUnit = Unit.Custom("requests"),
-  };
-
-  public static readonly CounterOptions PendingDispatchBackgroundCount = new()
-  {
-    Name = "PendingDispatchBackgroundCount",
-    MeasurementUnit = Unit.Custom("requests"),
-  };
-
-  public static readonly CounterOptions LambdaInstanceCount = new()
-  {
-    Name = "LambdaInstanceCount",
-    MeasurementUnit = Unit.Custom("instances"),
-  };
-
-  public static readonly GaugeOptions LambdaInstanceStartingCount = new()
-  {
-    Name = "LambdaInstanceStartingCount",
-    MeasurementUnit = Unit.Custom("instances"),
-  };
-
-  public static readonly GaugeOptions LambdaInstanceRunningCount = new()
-  {
-    Name = "LambdaInstanceRunningCount",
-    MeasurementUnit = Unit.Custom("instances"),
-  };
-
-  public static readonly GaugeOptions LambdaInstanceDesiredCount = new()
-  {
-    Name = "LambdaInstanceDesiredCount",
-    MeasurementUnit = Unit.Custom("instances"),
-  };
-
-  public static readonly HistogramOptions LambdaInstanceOpenConnections = new()
-  {
-    Name = "LambdaInstanceOpenConnections",
-    MeasurementUnit = Unit.Custom("requests"),
-    Reservoir = () => new DefaultAlgorithmRReservoir(),
-  };
-
-  public static readonly HistogramOptions LambdaInstanceRunningRequests = new()
-  {
-    Name = "LambdaInstanceRunningRequests",
-    MeasurementUnit = Unit.Custom("requests"),
-    Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 }

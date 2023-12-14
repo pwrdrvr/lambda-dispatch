@@ -45,6 +45,11 @@ public class LambdaConnection
   public LambdaInstance Instance { get; private set; }
 
   /// <summary>
+  /// The channel id for this connection
+  /// </summary>
+  public string ChannelId { get; private set; }
+
+  /// <summary>
   /// Task that completes when the connection is closed
   /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
@@ -62,6 +67,7 @@ public class LambdaConnection
     Request = request;
     Response = response;
     Instance = instance;
+    ChannelId = channelId;
 
     // Set the state to open
     State = LambdaConnectionState.Open;
@@ -99,10 +105,9 @@ public class LambdaConnection
     // Close the connection
     Response.StatusCode = 409;
     await Response.StartAsync();
-    await Response.Body.DisposeAsync();
+    await Response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
     await Response.CompleteAsync();
     await Request.Body.CopyToAsync(Stream.Null);
-    await Request.Body.DisposeAsync();
 
     this.TCS.SetResult();
   }
@@ -133,14 +138,13 @@ public class LambdaConnection
       // Send the body to the Lambda
       await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter.AsStream());
       await incomingRequest.BodyReader.CompleteAsync();
-      await incomingRequest.Body.DisposeAsync();
 
       _logger.LogDebug("Finished sending incoming request body to Lambda");
     }
 
     // Mark that the Request has been sent on the LambdaInstances
     await this.Response.BodyWriter.CompleteAsync();
-    await this.Response.Body.DisposeAsync();
+    await Response.CompleteAsync();
 
     // Get the response from the lambda request and relay it back to the caller
     _logger.LogDebug("Finished sending entire request to Lambda");

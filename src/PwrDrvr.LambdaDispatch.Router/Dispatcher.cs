@@ -133,7 +133,7 @@ public class Dispatcher
 
     if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId))
     {
-      _logger.LogError("Lambda ID is not known: {lambdaId}", lambdaId);
+      _logger.LogError("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       result.LambdaIDNotFound = true;
       return result;
     }
@@ -142,7 +142,7 @@ public class Dispatcher
     // Get the pending request
     if (_pendingRequests.TryDequeue(out var pendingRequest))
     {
-      _logger.LogDebug("Dispatching pending request to Lambda {lambdaId}", lambdaId);
+      _logger.LogDebug("Dispatching pending request to LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       Interlocked.Decrement(ref _pendingRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
       pendingRequest.RecordDispatchTime();
@@ -152,7 +152,7 @@ public class Dispatcher
 
       if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
       {
-        _logger.LogWarning("Dispatching (foreground) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
+        _logger.LogWarning("Dispatching (foreground) pending request that has been waiting for {duration} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", pendingRequest.Duration.TotalMilliseconds, lambdaId, channelId);
       }
 
       // Register the connection with the lambda
@@ -160,7 +160,7 @@ public class Dispatcher
 
       if (connection == null)
       {
-        _logger.LogError("Failed adding the connection to the Lambda {lambdaId}, putting the request back in the queue", lambdaId);
+        _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
         _pendingRequests.Enqueue(pendingRequest);
         Interlocked.Increment(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
@@ -193,11 +193,9 @@ public class Dispatcher
       return result;
     }
 
-    // Note: we cannot immediatley dispatch here because we do not know if the 
-    // lambdaId exists, so there are cases that would cause us to pull a request
-    // from the queue but then not be able to dispatch it.
-    // We wouldn't be able to put the request back at the head of the queue
-    // so it would lose it's spot
+    //
+    // There was no pending request to immediately dispatch, so just add the connection
+    //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
 
     return result;

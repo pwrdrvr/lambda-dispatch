@@ -47,25 +47,28 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 public static class MetricsRegistry
 {
   public static readonly IMetricsRoot Metrics = new MetricsBuilder()
-    .OutputMetrics.Using<CompactMetricsFormatter>()
-    .Report.ToConsole()
+    .Report.ToConsole(options =>
+    {
+      options.FlushInterval = TimeSpan.FromSeconds(10);
+      options.MetricsOutputFormatter = new CompactMetricsFormatter();
+    })
     .Build();
 
-  private static readonly AppMetricsTaskScheduler _scheduler = new(
-#if DEBUG
-    TimeSpan.FromSeconds(15),
-#else
-    TimeSpan.FromSeconds(10),
-#endif
-    async () =>
-    {
-      await Task.WhenAll(Metrics.ReportRunner.RunAllAsync());
-    });
+  //   private static readonly AppMetricsTaskScheduler _scheduler = new(
+  // #if DEBUG
+  //     TimeSpan.FromSeconds(15),
+  // #else
+  //     TimeSpan.FromSeconds(10),
+  // #endif
+  //     async () =>
+  //     {
+  //       await Task.WhenAll(Metrics.ReportRunner.RunAllAsync());
+  //     });
 
   static MetricsRegistry()
   {
     // Start the console logger
-    _scheduler.Start();
+    // _scheduler.Start();
   }
 
   public static void Reset()
@@ -90,7 +93,7 @@ public static class MetricsRegistry
   public static readonly CounterOptions RequestCount = new()
   {
     Name = "RequestCount",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly TimerOptions IncomingRequestTimer = new()
@@ -112,80 +115,80 @@ public static class MetricsRegistry
   public static readonly CounterOptions ImmediateDispatchCount = new()
   {
     Name = "ImmediateDispatchCount",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly CounterOptions QueuedRequests = new()
   {
     Name = "QueuedRequests",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly CounterOptions RunningRequests = new()
   {
     Name = "RunningRequests",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly CounterOptions PendingDispatchCount = new()
   {
     Name = "PendingDispatchCount",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly CounterOptions PendingDispatchForegroundCount = new()
   {
     Name = "PendingDispatchForegroundCount",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly CounterOptions PendingDispatchBackgroundCount = new()
   {
     Name = "PendingDispatchBackgroundCount",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests
   };
 
   public static readonly CounterOptions LambdaInstanceCount = new()
   {
     Name = "LambdaInstanceCount",
-    MeasurementUnit = Unit.Custom("instances"),
+    MeasurementUnit = Unit.Items,
   };
 
   public static readonly GaugeOptions LambdaInstanceStartingCount = new()
   {
     Name = "LambdaInstanceStartingCount",
-    MeasurementUnit = Unit.Custom("instances"),
+    MeasurementUnit = Unit.Items,
   };
 
   public static readonly GaugeOptions LambdaInstanceRunningCount = new()
   {
     Name = "LambdaInstanceRunningCount",
-    MeasurementUnit = Unit.Custom("instances"),
+    MeasurementUnit = Unit.Items,
   };
 
   public static readonly GaugeOptions LambdaInstanceDesiredCount = new()
   {
     Name = "LambdaInstanceDesiredCount",
-    MeasurementUnit = Unit.Custom("instances"),
+    MeasurementUnit = Unit.Items,
   };
 
   public static readonly CounterOptions LambdaConnectionRejectedCount = new()
   {
     Name = "LambdaConnectionRejectedCount",
-    MeasurementUnit = Unit.Custom("connections"),
+    MeasurementUnit = Unit.Connections,
   };
 
   public static readonly HistogramOptions LambdaInstanceOpenConnections = new()
   {
     Name = "LambdaInstanceOpenConnections",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests,
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
   public static readonly HistogramOptions LambdaInstanceRunningRequests = new()
   {
     Name = "LambdaInstanceRunningRequests",
-    MeasurementUnit = Unit.Custom("requests"),
+    MeasurementUnit = Unit.Requests,
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 }

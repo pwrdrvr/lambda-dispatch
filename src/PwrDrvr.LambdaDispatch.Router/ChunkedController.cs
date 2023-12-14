@@ -43,9 +43,10 @@ public class ChunkedController : ControllerBase
           logger.LogDebug("Router.ChunkedController.Post - No X-Lambda-Id header");
           Response.StatusCode = 400;
           Response.ContentType = "text/plain";
-          await Request.Body.DisposeAsync();
+          await Response.StartAsync();
           await Response.WriteAsync("No X-Lambda-Id header");
-          await Response.Body.DisposeAsync();
+          await Response.CompleteAsync();
+          await Request.Body.CopyToAsync(Stream.Null);
           return;
         }
 
@@ -95,15 +96,17 @@ public class ChunkedController : ControllerBase
           try
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
-            logger.LogInformation("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id header: {lambdaId}", lambdaId);
+            logger.LogWarning("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing", lambdaId, channelId);
             // Only in this case can we close the response because it hasn't been started
-            await Request.Body.CopyToAsync(Stream.Null);
-            await Request.Body.DisposeAsync();
+            // Have to write the response body first since the Lambda
+            // is blocking on reading the Response before they will stop sending the Request
             Response.StatusCode = 409;
             Response.ContentType = "text/plain";
-            await Response.WriteAsync("No LambdaInstance found for X-Lambda-Id header");
-            await Response.Body.DisposeAsync();
+            await Response.StartAsync();
+            await Response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing");
             await Response.CompleteAsync();
+            await Request.Body.CopyToAsync(Stream.Null);
+            logger.LogWarning("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closed", lambdaId, channelId);
           }
           catch (Exception ex)
           {

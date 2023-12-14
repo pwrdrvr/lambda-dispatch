@@ -103,13 +103,14 @@ public class HttpReverseRequester
 
     if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
     {
+      _logger.LogWarning("CLOSING - Got a 409 on the outer request LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+      // Discard the response first since that's normally what we do
       // Gotta clean up the connection
-      await requestStreamForResponse.DisposeAsync();
-      duplexContent?.Complete();
       await response.Content.CopyToAsync(Stream.Null);
-      response.Dispose();
-      request.Dispose();
+      // This is going to let the request be closed
+      duplexContent?.Complete();
 
+      _logger.LogWarning("CLOSED - Got a 409 on the outer request LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
       return ((int)response.StatusCode, null!, null!, null!, null!);
     }
 
@@ -189,7 +190,6 @@ public class HttpReverseRequester
     await response.Content.CopyToAsync(requestStreamForResponse);
     // await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Hello World!\r\n"));
     await requestStreamForResponse.FlushAsync();
-    requestStreamForResponse.Close();
     duplexContent.Complete();
     requestForResponse.Dispose();
   }
