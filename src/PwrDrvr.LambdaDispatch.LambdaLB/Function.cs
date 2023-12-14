@@ -94,7 +94,7 @@ public class Function
 
                     try
                     {
-                        _logger.LogInformation("Getting request from Router {i}", taskNumber);
+                        _logger.LogDebug("Getting request from Router {i}", taskNumber);
                         (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
                             = await reverseRequester.GetRequest(channelId);
 
@@ -122,7 +122,7 @@ public class Function
 
                         await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
 
-                        _logger.LogInformation("Sent response to Router {i}", taskNumber);
+                        _logger.LogDebug("Sent response to Router {i}", taskNumber);
                     }
                     catch (EndOfStreamException)
                     {
