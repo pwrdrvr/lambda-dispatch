@@ -106,7 +106,7 @@ public class HttpReverseRequester
       _logger.LogWarning("CLOSING - Got a 409 on the outer request LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
       // Discard the response first since that's normally what we do
       // Gotta clean up the connection
-      await response.Content.CopyToAsync(Stream.Null);
+      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
       // This is going to let the request be closed
       duplexContent?.Complete();
 

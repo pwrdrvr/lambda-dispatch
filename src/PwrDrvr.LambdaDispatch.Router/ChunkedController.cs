@@ -46,7 +46,7 @@ public class ChunkedController : ControllerBase
           await Response.StartAsync();
           await Response.WriteAsync("No X-Lambda-Id header");
           await Response.CompleteAsync();
-          await Request.Body.CopyToAsync(Stream.Null);
+          try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
           return;
         }
 
@@ -105,7 +105,7 @@ public class ChunkedController : ControllerBase
             await Response.StartAsync();
             await Response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing");
             await Response.CompleteAsync();
-            await Request.Body.CopyToAsync(Stream.Null);
+            try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
             logger.LogWarning("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closed", lambdaId, channelId);
           }
           catch (Exception ex)

@@ -107,7 +107,7 @@ public class LambdaConnection
     await Response.StartAsync();
     await Response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
     await Response.CompleteAsync();
-    await Request.Body.CopyToAsync(Stream.Null);
+    try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
 
     this.TCS.SetResult();
   }

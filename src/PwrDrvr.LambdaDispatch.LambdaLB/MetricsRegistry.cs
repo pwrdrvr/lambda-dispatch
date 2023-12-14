@@ -88,7 +88,7 @@ public static class MetricsRegistry
   public static readonly IMetricsRoot Metrics = new MetricsBuilder()
     .Report.ToConsole(options =>
     {
-      options.FlushInterval = TimeSpan.FromSeconds(10);
+      // options.FlushInterval = TimeSpan.FromSeconds(10);
       options.MetricsOutputFormatter = new CompactMetricsFormatter();
     })
     .Report.Using<LoggerMetricsReporter>()

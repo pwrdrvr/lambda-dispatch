@@ -216,14 +216,15 @@ public class LambdaInstance
       // dequeue the connection and handle it
       if (dequeuedConnection.State == LambdaConnectionState.Busy)
       {
-        Interlocked.Decrement(ref availableConnectionCount);
-        throw new InvalidOperationException("Connection should not be busy");
+        _logger.LogError("TryGetConnection - Got a busy connection from queue, LambdaId: {LambdaId}, ChannelId: {ChannelId}", Id, dequeuedConnection.ChannelId);
+        continue;
       }
 
       // If the connection is Closed we discard it (can happen on abnormal close during idle)
       if (dequeuedConnection.State == LambdaConnectionState.Closed)
       {
-        Interlocked.Decrement(ref availableConnectionCount);
+        // A connection that is closed should have triggered the onclose
+        // handler which would have decremented the available connection count
         continue;
       }
 
@@ -234,7 +235,7 @@ public class LambdaInstance
     }
 
     // No available connections
-    _logger.LogInformation("No available connections for LambdaId: {LambdaId}, AvailableConnectionsCount: {AvailableConnectionCount}, QueueApproximateCount: {QueueApproximateCount}", Id, AvailableConnectionCount, QueueApproximateCount);
+    _logger.LogInformation("TryGetConnection - No available connections for LambdaId: {LambdaId}, AvailableConnectionsCount: {AvailableConnectionCount}, QueueApproximateCount: {QueueApproximateCount}", Id, AvailableConnectionCount, QueueApproximateCount);
 
     return false;
   }
@@ -248,7 +249,7 @@ public class LambdaInstance
     Interlocked.Decrement(ref openConnectionCount);
 
     // If the connection was busy then it was not counted as available
-    if (!isBusy && State == LambdaInstanceState.Open)
+    if (!isBusy)
     {
       // Connection was not busy, so it was available
       Interlocked.Decrement(ref availableConnectionCount);
@@ -269,6 +270,7 @@ public class LambdaInstance
     Task.Run(async () =>
     {
       // Close all the connections that are not in use
+      var releasedConnectionCount = 0;
       for (int i = 0; i < 5; i++)
       {
         while (connectionQueue.TryDequeue(out var connection))
@@ -286,6 +288,7 @@ public class LambdaInstance
           try
           {
             await connection.Discard();
+            releasedConnectionCount++;
           }
           catch (Exception ex)
           {
@@ -295,6 +298,10 @@ public class LambdaInstance
 
         await Task.Delay(1000);
       }
+
+      _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
+
+      // The state should be set to Closed when the InvokeAsync returns
     });
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 

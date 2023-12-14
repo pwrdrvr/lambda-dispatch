@@ -68,7 +68,7 @@ public class Function
             _logger.LogInformation("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
             _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
 
-            using var scope = _logger.BeginScope("LambdaId: {LambdaId}", request.Id);
+            using var lambdaIdScope = _logger.BeginScope("LambdaId: {LambdaId}", request.Id);
 
             var NumberOfChannels = request.NumberOfChannels;
 
@@ -93,15 +93,17 @@ public class Function
                 int taskNumber = i;
                 tasks.Add(Task.Run(async () =>
                 {
+                    using var taskNumberScope = _logger.BeginScope("TaskNumber: {TaskNumber}", taskNumber);
+
                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsOpen);
 
                     try
                     {
-                        _logger.LogInformation("Starting task {i}", taskNumber);
+                        _logger.LogInformation("Starting task");
                         while (!token.IsCancellationRequested)
                         {
                             var channelId = Guid.NewGuid().ToString();
-                            using var channelScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
+                            using var channelIdScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
 
                             lastWakeupTime = DateTime.Now;
 
@@ -111,11 +113,12 @@ public class Function
                             {
                                 using var timer = MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer);
 
-                                _logger.LogInformation("Getting request from Router {i}", taskNumber);
+                                _logger.LogInformation("Getting request from Router");
+
                                 (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
                                     = await reverseRequester.GetRequest(channelId);
 
-                                _logger.LogInformation("Got request from Router {i}", taskNumber);
+                                _logger.LogDebug("Got request from Router");
 
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
@@ -125,7 +128,7 @@ public class Function
 
                                     // Stop the other tasks from looping
                                     cts.Cancel();
-                                    _logger.LogInformation("Router told us to close our connection and not re-open it {i}", taskNumber);
+                                    _logger.LogInformation("Router told us to close our connection and not re-open it");
                                     return;
                                 }
 
@@ -145,11 +148,11 @@ public class Function
 
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
 
-                                _logger.LogDebug("Sent response to Router {i}", taskNumber);
+                                _logger.LogDebug("Sent response to Router");
                             }
                             catch (EndOfStreamException)
                             {
-                                _logger.LogError("End of stream exception caught in task {i}", taskNumber);
+                                _logger.LogError("End of stream exception caught in task");
                                 // We do not cancel, we just loop around and make a new request
                                 // If the new request gets a 409 status, then we will stop the loop
                                 break;
@@ -158,7 +161,7 @@ public class Function
                             {
                                 if (!cts.IsCancellationRequested)
                                 {
-                                    _logger.LogError(ex, "HttpRequestException caught in task {i}", taskNumber);
+                                    _logger.LogError(ex, "HttpRequestException caught in task");
 
                                     // If the address is invalid or connections are being terminated then we stop
                                     cts.Cancel();
@@ -168,7 +171,7 @@ public class Function
                             {
                                 if (!cts.IsCancellationRequested)
                                 {
-                                    _logger.LogError(ex, "Exception caught in task {i}", taskNumber);
+                                    _logger.LogError(ex, "Exception caught in task");
 
                                     // TODO: Should we stop?
                                     cts.Cancel();
@@ -176,7 +179,7 @@ public class Function
                             }
                         }
 
-                        _logger.LogInformation("Exiting task {i}", taskNumber);
+                        _logger.LogInformation("Exiting task");
                     }
                     finally
                     {
@@ -190,16 +193,16 @@ public class Function
             // TODO: Setup a timeout according to that specified in the payload
             // Note: the code below is only going to work cleanly under constant load
 #if !DEBUG
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(45));
-        var finishedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(45));
+            var finishedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
 
-        // This just prevents looping around again
-        cts.Cancel();
+            // This just prevents looping around again
+            cts.Cancel();
 
-        // Ask the Router to close our instance and connections when we timed out
-        if (finishedTask == timeoutTask) {
-            await reverseRequester.CloseInstance();
-        }
+            // Ask the Router to close our instance and connections when we timed out
+            if (finishedTask == timeoutTask) {
+                await reverseRequester.CloseInstance();
+            }
 #endif
             await Task.WhenAll(tasks);
 
