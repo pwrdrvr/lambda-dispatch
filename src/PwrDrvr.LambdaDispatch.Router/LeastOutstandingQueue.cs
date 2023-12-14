@@ -240,7 +240,7 @@ public class LeastOutstandingQueue
   {
     while (true)
     {
-      _logger.LogInformation("Rebalancing queue");
+      _logger.LogDebug("Rebalancing queue");
 
       // Get the instance with the least outstanding requests
       // Skip the "full" instances
@@ -291,7 +291,8 @@ public class LeastOutstandingQueue
 
         if (instance.State != LambdaInstanceState.Open)
         {
-          // The instance is not open, so we'll drop it on the floor and move on
+          // The instance is not open so remove it from the full instances
+          fullInstances.TryRemove(instance.Id, out var _);
           continue;
         }
 
