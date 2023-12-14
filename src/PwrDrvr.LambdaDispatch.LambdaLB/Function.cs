@@ -39,6 +39,7 @@ public class Function
     private static async Task Main()
     {
         _logger.LogInformation("Lambda Started");
+        Task.Run(MetricsRegistry.PrintMetrics);
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()

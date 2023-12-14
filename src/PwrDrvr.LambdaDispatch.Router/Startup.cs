@@ -21,6 +21,8 @@ namespace PwrDrvr.LambdaDispatch.Router
             services.AddControllers();
 
             services.AddSingleton<Dispatcher>();
+
+            Task.Run(MetricsRegistry.PrintMetrics);
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

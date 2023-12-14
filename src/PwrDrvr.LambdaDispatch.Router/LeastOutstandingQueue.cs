@@ -335,7 +335,7 @@ public class LeastOutstandingQueue
         // Print the OutstandingRequestCount of the items in the queue
         foreach (var instance in availableInstances[i])
         {
-          _logger.LogInformation("Instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
+          _logger.LogInformation("Instance {instance.Id} state: {instance.State}, OutstandingRequestCount: {instance.OutstandingRequestCount}, AvailableConnectionCount: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
         }
       }
 
@@ -345,7 +345,7 @@ public class LeastOutstandingQueue
       // Log the AvailableConnectionCount of each instance in fullInstances
       foreach (var instance in fullInstances.Values)
       {
-        _logger.LogInformation("Full instance {instance.Id} state: {instance.State}, outstanding requests: {instance.OutstandingRequestCount}, available connections: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
+        _logger.LogInformation("Full instance {instance.Id} state: {instance.State}, OutstandingRequestCount: {instance.OutstandingRequestCount}, AvailableConnectionCount: {instance.AvailableConnectionCount}", instance.Id, instance.State, instance.OutstandingRequestCount, instance.AvailableConnectionCount);
       }
 
       // Wait a bit

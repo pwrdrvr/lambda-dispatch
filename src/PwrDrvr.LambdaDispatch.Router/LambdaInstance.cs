@@ -142,8 +142,9 @@ public class LambdaInstance
       {
         response.StatusCode = 409;
         await response.StartAsync();
+        await response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {Id}, X-Channel-Id: {channelId}, closing");
         await response.CompleteAsync();
-        await request.Body.CopyToAsync(Stream.Null);
+        try { await request.Body.CopyToAsync(Stream.Null); } catch { }
       }
       catch (Exception ex)
       {
@@ -211,6 +212,9 @@ public class LambdaInstance
     // Loop through the connections until we find one that is available
     while (connectionQueue.TryDequeue(out var dequeuedConnection))
     {
+      // We found an available connection
+      Interlocked.Decrement(ref availableConnectionCount);
+
       // The connection should only be Closed unexpectedly, not Busy
       // This should not be a race condition as only one thread should
       // dequeue the connection and handle it
@@ -228,8 +232,6 @@ public class LambdaInstance
         continue;
       }
 
-      // We found an available connection
-      Interlocked.Decrement(ref availableConnectionCount);
       connection = dequeuedConnection;
       return true;
     }
@@ -248,12 +250,8 @@ public class LambdaInstance
   {
     Interlocked.Decrement(ref openConnectionCount);
 
-    // If the connection was busy then it was not counted as available
-    if (!isBusy)
-    {
-      // Connection was not busy, so it was available
-      Interlocked.Decrement(ref availableConnectionCount);
-    }
+    // Do not decrement the availableConnectionCount here because
+    // it will be decremented when the connection is removed from the queue
 
     // Note: the Lambda itself will connect back if it's still running normally
     // Our invoke should cause maxConcurrentCount connections to be established
@@ -275,14 +273,14 @@ public class LambdaInstance
       {
         while (connectionQueue.TryDequeue(out var connection))
         {
+          // Decrement the available connection count
+          Interlocked.Decrement(ref availableConnectionCount);
+
           // If the connection is Closed we discard it (can happen on abnormal close during idle)
           if (connection.State == LambdaConnectionState.Closed)
           {
             continue;
           }
-
-          // Decrement the available connection count
-          Interlocked.Decrement(ref availableConnectionCount);
 
           // Close the connection
           try
@@ -299,7 +297,7 @@ public class LambdaInstance
         await Task.Delay(1000);
       }
 
-      _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
+      _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount: {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
 
       // The state should be set to Closed when the InvokeAsync returns
     });
@@ -329,14 +327,14 @@ public class LambdaInstance
     // Close all the connections that are not in use
     while (connectionQueue.TryDequeue(out var connection))
     {
+      // Decrement the available connection count
+      Interlocked.Decrement(ref availableConnectionCount);
+
       // If the connection is Closed we discard it (can happen on abnormal close during idle)
       if (connection.State == LambdaConnectionState.Closed)
       {
         continue;
       }
-
-      // Decrement the available connection count
-      Interlocked.Decrement(ref availableConnectionCount);
 
       // Close the connection
       try

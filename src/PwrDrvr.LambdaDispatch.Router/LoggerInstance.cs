@@ -16,7 +16,7 @@ public class LoggerInstance
           .AddSimpleConsole(options =>
           {
             // options.IncludeScopes = true;
-            options.SingleLine = true;
+            // options.SingleLine = true;
             options.TimestampFormat = "HH:mm:ss.fff ";
           });
     });
