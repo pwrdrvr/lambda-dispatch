@@ -128,3 +128,19 @@ dotnet-trace collect -p <PID> --providers Microsoft-DotNETCore-SampleProfiler
 
 dotnet-trace convert --format speedscope trace.nettrace
 ```
+
+## Memory Profiling with Son of Strike and lldb
+
+```bash
+dotnet tool install --global dotnet-sos
+dotnet-sos install
+
+lldb process attach --pid <PID>
+plugin load /usr/local/share/dotnet/shared/Microsoft.NETCore.App/<version>/libsosplugin.dylib
+
+sudo apt-get install lldb
+
+AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router > router.log 2>&1
+
+AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token bin/Release/net8.0/bootstrap > lambdalb.log 2>&1
+```
