@@ -3,7 +3,8 @@
     "Lambda Runtime API": {
       "commandName": "Project",
       "environmentVariables": {
-        "AWS_LAMBDA_RUNTIME_API": "host.docker.internal:5051",
+        "AWS_LAMBDA_RUNTIME_API": "localhost:5051",
+        // "AWS_LAMBDA_RUNTIME_API": "host.docker.internal:5051",
         "AWS_PROFILE": "test-profile",
         "AWS_REGION": "us-west-2",
         "AWS_ACCESS_KEY_ID": "test-access-key-id",

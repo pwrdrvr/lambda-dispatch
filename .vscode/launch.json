@@ -68,7 +68,8 @@
         "AWS_ACCESS_KEY_ID": "test-access-key-id",
         "AWS_SECRET_ACCESS_KEY": "test-secret-access-key",
         "AWS_SESSION_TOKEN": "test-session-token",
-        "AWS_LAMBDA_SERVICE_URL": "http://host.docker.internal:5051"
+        "AWS_LAMBDA_SERVICE_URL": "http://localhost:5051"
+        // "AWS_LAMBDA_SERVICE_URL": "http://host.docker.internal:5051"
       }
     },
     {

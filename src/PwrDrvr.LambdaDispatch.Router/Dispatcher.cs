@@ -57,6 +57,15 @@ public class Dispatcher
     Task.Run(ProcessPendingRequests);
   }
 
+  public bool PingInstance(string instanceId)
+  {
+    var found = _lambdaInstanceManager.ValidateLambdaId(instanceId);
+
+    _logger.LogDebug("Pinging instance {instanceId}, found: {found}", instanceId, found);
+
+    return found;
+  }
+
   public void CloseInstance(string instanceId)
   {
     _logger.LogDebug("Closing instance {instanceId}", instanceId);
@@ -145,15 +154,9 @@ public class Dispatcher
       _logger.LogDebug("Dispatching pending request to LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       Interlocked.Decrement(ref _pendingRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-      pendingRequest.RecordDispatchTime();
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
-
-      if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
-      {
-        _logger.LogWarning("Dispatching (foreground) pending request that has been waiting for {duration} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", pendingRequest.Duration.TotalMilliseconds, lambdaId, channelId);
-      }
 
       // Register the connection with the lambda
       var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, true);
@@ -165,6 +168,13 @@ public class Dispatcher
         Interlocked.Increment(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
         return result;
+      }
+
+      // Only at this point are we sure we're going to dispatch
+      pendingRequest.RecordDispatchTime();
+      if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
+      {
+        _logger.LogWarning("Dispatching (foreground) pending request that has been waiting for {duration} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", pendingRequest.Duration.TotalMilliseconds, lambdaId, channelId);
       }
 
       // If we got a connection, dispatch the request
@@ -197,6 +207,12 @@ public class Dispatcher
     // There was no pending request to immediately dispatch, so just add the connection
     //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
+
+    // Start the response
+    // This sends the headers
+    // We might not want to do this because it makes it impossible
+    // to send a 409 later if we can't dispatch
+    await response.StartAsync();
 
     return result;
   }
@@ -260,7 +276,7 @@ public class Dispatcher
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(100));
+      await Task.Delay(TimeSpan.FromMilliseconds(1000));
     }
   }
 }

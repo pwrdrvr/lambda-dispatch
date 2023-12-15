@@ -21,6 +21,20 @@ public class ChunkedController : ControllerBase
   }
 
   [HttpGet]
+  [Route("ping/{instanceId}")]
+  public IActionResult PingInstance(string instanceId)
+  {
+    if (dispatcher.PingInstance(instanceId))
+    {
+      return Ok();
+    }
+    else
+    {
+      return NotFound();
+    }
+  }
+
+  [HttpGet]
   [Route("close/{instanceId}")]
   public IActionResult CloseInstance(string instanceId)
   {
@@ -32,8 +46,11 @@ public class ChunkedController : ControllerBase
   [DisableRequestTimeout]
   [HttpPost]
   [DisableRequestSizeLimit]
-  public async Task Post()
+  [Route("request/{instanceId}")]
+  public async Task Post(string instanceId)
   {
+    logger.LogDebug("Router.ChunkedController.Post - Start: {instanceId}", instanceId);
+
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.LambdaRequestTimer))
     {
       try
@@ -48,6 +65,23 @@ public class ChunkedController : ControllerBase
           await Response.CompleteAsync();
           try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
           return;
+        }
+
+        // Log an error if the request was delayed in reaching us, using the Date header added by HttpClient
+        if (Request.Headers.TryGetValue("Date", out Microsoft.Extensions.Primitives.StringValues dateMulti) && dateMulti.Count == 1)
+        {
+          if (DateTimeOffset.TryParse(dateMulti.ToString(), out DateTimeOffset date))
+          {
+            var delay = DateTimeOffset.UtcNow - date;
+            if (delay > TimeSpan.FromSeconds(5))
+            {
+              logger.LogError("Router.ChunkedController.Post - Request was delayed in receipt by {delay} ms", delay.TotalMilliseconds);
+            }
+          }
+        }
+        else
+        {
+          logger.LogError("Router.ChunkedController.Post - No Date header");
         }
 
         // Get the channel id

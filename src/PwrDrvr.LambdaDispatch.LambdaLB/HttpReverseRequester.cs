@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Security;
+using System.Security.Authentication;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +17,11 @@ public class HttpReverseRequester
 
   private readonly HttpClient _client;
 
+#if false
   private readonly HttpClientHandler? _handler;
+#else
+  private readonly SocketsHttpHandler? _handler;
+#endif
 
   public HttpReverseRequester(string id, string dispatcherUrl, HttpClient httpClient = null, ILogger<HttpReverseRequester> logger = null)
   {
@@ -31,7 +38,12 @@ public class HttpReverseRequester
 
     if (httpClient == null)
     {
+#if false
       _handler = new HttpClientHandler();
+      // _handler.Proxy = new WebProxy("http://localhost:8080");
+      // _handler.UseProxy = true;
+      // // Allow all certificates
+      // _handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
       _handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
       {
         // If the certificate is a valid, signed certificate, return true.
@@ -51,11 +63,47 @@ public class HttpReverseRequester
         return false;
       };
 
-      _client = new HttpClient(_handler)
+      _client = new HttpClient(socketsHttpHandler)
       {
         DefaultRequestVersion = new Version(2, 0),
         Timeout = TimeSpan.FromMinutes(15),
       };
+#else
+      var sslOptions = new SslClientAuthenticationOptions
+      {
+        RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
+        {
+          // If the certificate is a valid, signed certificate, return true.
+          if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
+          {
+            return true;
+          }
+
+          // If it's a self-signed certificate for the specific host, return true.
+          // TODO: Get the CN name to allow
+          if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
+          {
+            return true;
+          }
+
+          // In all other cases, return false.
+          return false;
+        },
+        // CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
+        ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http2 },
+        // If it's a self-signed certificate for the specific host, return true.
+        CipherSuitesPolicy = new CipherSuitesPolicy(new List<TlsCipherSuite> { TlsCipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256 })
+      };
+      _handler = new SocketsHttpHandler { SslOptions = sslOptions };
+      // _handler.Proxy = new WebProxy("http://localhost:8886");
+      // _handler.UseProxy = true;
+      _client = new HttpClient(_handler, true)
+      {
+        DefaultRequestVersion = new Version(2, 0),
+        Timeout = TimeSpan.FromMinutes(15),
+      };
+#endif
+
     }
     else
     {
@@ -66,7 +114,8 @@ public class HttpReverseRequester
   public ValueTask DisposeAsync()
   {
     _client.Dispose();
-    _handler.Dispose();
+    // Handler is owned by client now
+    // _handler?.Dispose();
 
     return ValueTask.CompletedTask;
   }
@@ -81,13 +130,21 @@ public class HttpReverseRequester
   {
     var duplexContent = new HttpDuplexContent();
 
-    var request = new HttpRequestMessage(HttpMethod.Post, _uri)
+    var uri = new UriBuilder(_uri)
+    {
+      Path = $"{_uri.AbsolutePath}/request/{_id}",
+      Port = 5003,
+      Scheme = "https",
+    }.Uri;
+
+    var request = new HttpRequestMessage(HttpMethod.Post, uri)
     {
       Version = new Version(2, 0)
     };
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
     request.Headers.Add("X-Channel-Id", channelId);
+    request.Headers.Add("Date", DateTime.UtcNow.ToString("R"));
     request.Content = duplexContent;
 
     var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -100,17 +157,17 @@ public class HttpReverseRequester
     // since we await it.
     // Flush the content stream. Otherwise, the request headers are not guaranteed to be sent.
     // await requestStreamForResponse.FlushAsync();
-
-    if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+    if (response.StatusCode != HttpStatusCode.OK)
     {
-      _logger.LogWarning("CLOSING - Got a 409 on the outer request LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+      _logger.LogWarning("CLOSING - Got a {status} on the outer request LambdaId: {id}, ChannelId: {channelId}", response.StatusCode, _id, channelId);
       // Discard the response first since that's normally what we do
       // Gotta clean up the connection
       try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+      requestStreamForResponse.Close();
       // This is going to let the request be closed
       duplexContent?.Complete();
 
-      _logger.LogWarning("CLOSED - Got a 409 on the outer request LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+      _logger.LogWarning("CLOSED - Got a {status} on the outer request LambdaId: {id}, ChannelId: {channelId}", response.StatusCode, _id, channelId);
       return ((int)response.StatusCode, null!, null!, null!, null!);
     }
 
@@ -119,53 +176,69 @@ public class HttpReverseRequester
     //
     var receivedRequest = new HttpRequestMessage();
 
-    using (var reader = new StreamReader(await response.Content.ReadAsStreamAsync(), Encoding.UTF8, leaveOpen: true))
+    using (var responseContentReaderForRequest = new StreamReader(await response.Content.ReadAsStreamAsync(), Encoding.UTF8, leaveOpen: true))
     {
-      // Read the request line
-      var firstLine = await reader.ReadLineAsync();
-      if (firstLine == null)
+      try
       {
-        throw new EndOfStreamException("End of stream reached while reading request line");
-      }
-      var partsOfFirstLine = firstLine.Split(' ');
-      receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
-      receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
-      receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
-
-      // Read the headers
-      string? requestHeaderLine;
-      var contentHeaders = new List<(string, string)>();
-      while (!string.IsNullOrEmpty(requestHeaderLine = await reader.ReadLineAsync()))
-      {
-        // Split the header into key and value
-        var parts = requestHeaderLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
-        var key = parts[0];
-        var value = parts[1];
-
-        if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
+        // Read the request line
+        var firstLine = await responseContentReaderForRequest.ReadLineAsync();
+        if (firstLine == null)
         {
-          contentHeaders.Add((key, value));
-          // The Host header is not allowed to be set by the client
-          // DotNet will throw `System.InvalidOperationException` if you try to set it
+          // We need to let go of the request body
+          throw new EndOfStreamException("End of stream reached while reading request line");
         }
-        else
+
+        var partsOfFirstLine = firstLine.Split(' ');
+        receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
+        receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
+        receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
+
+        // Read the headers
+        string? requestHeaderLine;
+        var contentHeaders = new List<(string, string)>();
+        while (!string.IsNullOrEmpty(requestHeaderLine = await responseContentReaderForRequest.ReadLineAsync()))
         {
-          receivedRequest.Headers.Add(key, value);
+          // Split the header into key and value
+          var parts = requestHeaderLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
+          var key = parts[0];
+          var value = parts[1];
+
+          if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
+          {
+            contentHeaders.Add((key, value));
+            // The Host header is not allowed to be set by the client
+            // DotNet will throw `System.InvalidOperationException` if you try to set it
+          }
+          else
+          {
+            receivedRequest.Headers.Add(key, value);
+          }
         }
+
+        // Set the request body
+        // TODO: The StreamReader will have stolen and buffered some of the underlying stream data
+        receivedRequest.Content = new StreamContent(responseContentReaderForRequest.BaseStream);
+
+        // Add all the content headers
+        foreach (var (key, value) in contentHeaders)
+        {
+          receivedRequest.Content.Headers.Add(key, value);
+        }
+
+        return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
       }
-
-      // Set the request body
-      // TODO: The StreamReader will have stolen and buffered some of the underlying stream data
-      receivedRequest.Content = new StreamContent(reader.BaseStream);
-
-      // Add all the content headers
-      foreach (var (key, value) in contentHeaders)
+      catch (Exception ex)
       {
-        receivedRequest.Content.Headers.Add(key, value);
+        _logger.LogError(ex, "Error reading request from response");
+        // Indicate that we don't need the response body anymore
+        try { response.Content.Dispose(); } catch { }
+        // Close the request body
+        try { requestStreamForResponse.Close(); } catch { }
+        try { duplexContent?.Complete(); } catch { }
+
+        throw;
       }
     }
-
-    return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
   }
 
   /// <summary>
@@ -190,8 +263,8 @@ public class HttpReverseRequester
     await response.Content.CopyToAsync(requestStreamForResponse);
     // await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Hello World!\r\n"));
     await requestStreamForResponse.FlushAsync();
+    requestStreamForResponse.Close();
     duplexContent.Complete();
-    requestForResponse.Dispose();
   }
 
   public async Task CloseInstance()
@@ -199,7 +272,9 @@ public class HttpReverseRequester
     _logger.LogInformation("Starting close of instance: {id}", _id);
     var uri = new UriBuilder(_dispatcherUrl)
     {
-      Path = $"/api/chunked/close/{_id}",
+      Path = $"{_uri.AbsolutePath}/close/{_id}",
+      Port = 5003,
+      Scheme = "https",
     }.Uri;
     var request = new HttpRequestMessage(HttpMethod.Get, uri)
     {
@@ -210,13 +285,43 @@ public class HttpReverseRequester
 
     var response = await _client.SendAsync(request);
 
-    if (response.StatusCode != System.Net.HttpStatusCode.OK)
+    if (response.StatusCode != HttpStatusCode.OK)
     {
       _logger.LogError("Error closing instance: {id}, {statusCode}", _id, response.StatusCode);
     }
     else
     {
       _logger.LogInformation("Closed instance: {id}, {statusCode}", _id, response.StatusCode);
+      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+    }
+  }
+
+  public async Task Ping()
+  {
+    _logger.LogInformation("Starting ping of instance: {id}", _id);
+    var uri = new UriBuilder(_uri)
+    {
+      Path = $"{_uri.AbsolutePath}/ping/{_id}",
+      Port = 5003,
+      Scheme = "https",
+    }.Uri;
+    var request = new HttpRequestMessage(HttpMethod.Get, uri)
+    {
+      Version = new Version(2, 0)
+    };
+    request.Headers.Host = "lambdadispatch.local:5003";
+    request.Headers.Add("X-Lambda-Id", _id);
+
+    var response = await _client.SendAsync(request);
+
+    if (response.StatusCode != HttpStatusCode.OK)
+    {
+      _logger.LogError("Error pinging instance: {id}, {statusCode}", _id, response.StatusCode);
+    }
+    else
+    {
+      _logger.LogInformation("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
+      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
     }
   }
 }

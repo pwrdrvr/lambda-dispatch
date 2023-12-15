@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using PwrDrvr.LambdaDispatch.Messages;
 using Microsoft.Extensions.Logging;
 using AWS.Logger;
+using System.Net;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
@@ -71,6 +72,11 @@ public class Function
 
             using var lambdaIdScope = _logger.BeginScope("LambdaId: {LambdaId}", request.Id);
 
+            // TODO: We can potentially make this static or a map on dispatcherUrl to requester
+            // Each request repeats the Lambda ID and we do not need to re-establish sockets
+            // if the DispatcherUrl has not actually changed
+            await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl);
+
             var NumberOfChannels = request.NumberOfChannels;
 
             if (ThreadPool.ThreadCount < NumberOfChannels)
@@ -81,11 +87,6 @@ public class Function
 
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
-
-            // TODO: We can potentially make this static or a map on dispatcherUrl to requester
-            // Each request repeats the Lambda ID and we do not need to re-establish sockets
-            // if the DispatcherUrl has not actually changed
-            await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl);
 
             List<Task> tasks = new List<Task>();
             for (int i = 0; i < NumberOfChannels; i++)
@@ -114,7 +115,7 @@ public class Function
                             {
                                 using var timer = MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer);
 
-                                _logger.LogInformation("Getting request from Router");
+                                _logger.LogDebug("Getting request from Router");
 
                                 (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
                                     = await reverseRequester.GetRequest(channelId);
@@ -123,13 +124,22 @@ public class Function
 
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
-                                if (outerStatus == 409)
+                                if (outerStatus == (int)HttpStatusCode.Conflict)
                                 {
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 
                                     // Stop the other tasks from looping
                                     cts.Cancel();
-                                    _logger.LogInformation("Router told us to close our connection and not re-open it");
+                                    _logger.LogInformation("Router told us to close our connection and re-open it");
+                                    return;
+                                }
+                                else if (outerStatus != (int)HttpStatusCode.OK)
+                                {
+                                    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
+
+                                    // Stop the other tasks from looping
+                                    cts.Cancel();
+                                    _logger.LogInformation("Router gave a non-200 status code, stopping");
                                     return;
                                 }
 
@@ -138,7 +148,6 @@ public class Function
                                 // Read the bytes off the request body, if any
                                 // TODO: This is not always a string
                                 var requestBody = await receivedRequest.Content.ReadAsStringAsync();
-                                receivedRequest.Content.Dispose();
 
                                 var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                                 {
@@ -151,12 +160,11 @@ public class Function
 
                                 _logger.LogDebug("Sent response to Router");
                             }
-                            catch (EndOfStreamException)
+                            catch (EndOfStreamException ex)
                             {
-                                _logger.LogError("End of stream exception caught in task");
+                                _logger.LogError(ex, "End of stream exception caught in task");
                                 // We do not cancel, we just loop around and make a new request
                                 // If the new request gets a 409 status, then we will stop the loop
-                                break;
                             }
                             catch (HttpRequestException ex)
                             {
@@ -167,6 +175,10 @@ public class Function
                                     // If the address is invalid or connections are being terminated then we stop
                                     cts.Cancel();
                                 }
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                // This is expected
                             }
                             catch (Exception ex)
                             {
@@ -191,9 +203,32 @@ public class Function
 
             }
 
+            // Add a task that pings the Router every 5 seconds
+            // Needs it's own cancellation token
+            var pingCts = new CancellationTokenSource();
+            var pinger = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!pingCts.Token.IsCancellationRequested)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token);
+                        await reverseRequester.Ping();
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    // This is expected
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Exception caught in ping task");
+                }
+            });
+
             // TODO: Setup a timeout according to that specified in the payload
             // Note: the code below is only going to work cleanly under constant load
-#if !DEBUG
+#if true || !DEBUG
             var timeoutTask = Task.Delay(TimeSpan.FromSeconds(45));
             var finishedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
 
@@ -201,11 +236,16 @@ public class Function
             cts.Cancel();
 
             // Ask the Router to close our instance and connections when we timed out
-            if (finishedTask == timeoutTask) {
+            if (finishedTask == timeoutTask)
+            {
                 await reverseRequester.CloseInstance();
             }
 #endif
             await Task.WhenAll(tasks);
+
+            // Tell the pinger to exit
+            pingCts.Cancel();
+            await pinger;
 
             var response = new WaiterResponse { Id = request.Id };
 

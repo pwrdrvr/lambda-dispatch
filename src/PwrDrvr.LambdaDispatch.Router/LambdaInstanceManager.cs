@@ -211,7 +211,6 @@ public class LambdaInstanceManager
       if (instanceFromList != null)
       {
         await instanceFromList.Close();
-        return;
       }
 
       // We need to keep track of how many Lambdas are running

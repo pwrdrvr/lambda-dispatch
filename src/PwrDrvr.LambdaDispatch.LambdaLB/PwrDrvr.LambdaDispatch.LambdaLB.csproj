@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <DebugType>pdbonly</DebugType>
+    <DebugSymbols>true</DebugSymbols>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -33,6 +35,7 @@
     <PackageReference Include="Amazon.Lambda.Core" Version="2.2.0" />
     <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.0" />
     <PackageReference Include="App.Metrics" Version="4.3.0" />
+    <PackageReference Include="App.Metrics.Extensions.Collectors" Version="4.3.0" />
     <PackageReference Include="App.Metrics.Reporting.Console" Version="4.3.0" />
     <PackageReference Include="AWS.Logger.AspNetCore" Version="3.4.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />

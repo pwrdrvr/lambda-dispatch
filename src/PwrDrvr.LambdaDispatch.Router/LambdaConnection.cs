@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text;
 
 namespace PwrDrvr.LambdaDispatch.Router;
@@ -103,8 +104,11 @@ public class LambdaConnection
     State = LambdaConnectionState.Closed;
 
     // Close the connection
-    Response.StatusCode = 409;
-    await Response.StartAsync();
+    // Do not set the status code because it's already been sent
+    // as 200 if this connection was in the queue
+    // There will either be no subsequent connection or it will
+    // get immediately rejected with a 409
+    // Response.StatusCode = 409;
     await Response.WriteAsync($"Discarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
     await Response.CompleteAsync();
     try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
@@ -155,98 +159,109 @@ public class LambdaConnection
   /// </summary>
   public async Task RunRequest(HttpRequest request, HttpResponse response)
   {
-    // Check if state is wrong
-    if (State != LambdaConnectionState.Open)
+    try
     {
-      throw new InvalidOperationException("Connection is not open");
-    }
-
-    // Set the state to busy
-    State = LambdaConnectionState.Busy;
-
-    //
-    // Send the incoming request to the Lambda
-    //
-    await this.ProxyRequestToLambda(request);
-
-    //
-    //
-    // Read response from Lambda and relay back to caller
-    //
-    //
-
-    _logger.LogDebug("Reading response headers from Lambda");
-
-    // Send the headers to the caller
-    // This was reading the response headers from the Lambda
-    // foreach (var header in this.Response.Headers)
-    // {
-    //   // Do not set the status code by adding a header
-    //   if (header.Key == "Status-Code")
-    //   {
-    //     // Set the status code on the response
-    //     response.StatusCode = int.Parse(header.Value);
-    //     _logger.LogDebug($"Set response status code to {header.Value}");
-    //     continue;
-    //   }
-
-    //   if (header.Key == "Transfer-Encoding")
-    //   {
-    //     // Don't send the Transfer-Encoding header
-    //     continue;
-    //   }
-    //   response.Headers.Add(header.Key, header.Value);
-    //   _logger.LogDebug($"Sent reponse header to caller: {header.Key}: {header.Value}");
-    // }
-
-    _logger.LogDebug("Finished reading response headers from Lambda");
-
-    _logger.LogDebug("Copying response body from Lambda");
-
-    // Send the body to the caller
-    using var lambdaResponseReader = new StreamReader(this.Request.BodyReader.AsStream(), leaveOpen: true);
-    string? line;
-    // First line should be status
-    line = await lambdaResponseReader.ReadLineAsync();
-    _logger.LogDebug("Got status line from lambda: {line}", line);
-    response.StatusCode = int.Parse(line.Split(' ')[1]);
-    while (!string.IsNullOrEmpty(line = await lambdaResponseReader.ReadLineAsync()))
-    {
-      _logger.LogDebug("Got header line from lambda: {line}", line);
-
-      // Parse the header
-      var parts = line.Split(new[] { ": " }, 2, StringSplitOptions.None);
-      var key = parts[0];
-      // Join all the parts after the first one
-      var value = string.Join(": ", parts.Skip(1));
-      if (key == "Transfer-Encoding")
+      // Check if state is wrong
+      if (State != LambdaConnectionState.Open)
       {
-        // Don't set the Transfer-Encoding header as it breaks the response
-        continue;
+        throw new InvalidOperationException("Connection is not open");
       }
 
-      // Set the header on the Kestrel response
-      response.Headers[parts[0]] = parts[1];
-    }
+      // Set the state to busy
+      State = LambdaConnectionState.Busy;
+
+      //
+      // Send the incoming request to the Lambda
+      //
+      await this.ProxyRequestToLambda(request);
+
+      //
+      //
+      // Read response from Lambda and relay back to caller
+      //
+      //
+
+      _logger.LogDebug("Reading response headers from Lambda");
+
+      // Send the headers to the caller
+      // This was reading the response headers from the Lambda
+      // foreach (var header in this.Response.Headers)
+      // {
+      //   // Do not set the status code by adding a header
+      //   if (header.Key == "Status-Code")
+      //   {
+      //     // Set the status code on the response
+      //     response.StatusCode = int.Parse(header.Value);
+      //     _logger.LogDebug($"Set response status code to {header.Value}");
+      //     continue;
+      //   }
+
+      //   if (header.Key == "Transfer-Encoding")
+      //   {
+      //     // Don't send the Transfer-Encoding header
+      //     continue;
+      //   }
+      //   response.Headers.Add(header.Key, header.Value);
+      //   _logger.LogDebug($"Sent reponse header to caller: {header.Key}: {header.Value}");
+      // }
+
+      _logger.LogDebug("Finished reading response headers from Lambda");
+
+      _logger.LogDebug("Copying response body from Lambda");
+
+      // Send the body to the caller
+      using var lambdaResponseReader = new StreamReader(this.Request.BodyReader.AsStream(), leaveOpen: true);
+      string? line;
+      // First line should be status
+      line = await lambdaResponseReader.ReadLineAsync();
+      _logger.LogDebug("Got status line from lambda: {line}", line);
+      response.StatusCode = int.Parse(line.Split(' ')[1]);
+      while (!string.IsNullOrEmpty(line = await lambdaResponseReader.ReadLineAsync()))
+      {
+        _logger.LogDebug("Got header line from lambda: {line}", line);
+
+        // Parse the header
+        var parts = line.Split(new[] { ": " }, 2, StringSplitOptions.None);
+        var key = parts[0];
+        // Join all the parts after the first one
+        var value = string.Join(": ", parts.Skip(1));
+        if (key == "Transfer-Encoding")
+        {
+          // Don't set the Transfer-Encoding header as it breaks the response
+          continue;
+        }
+
+        // Set the header on the Kestrel response
+        response.Headers[parts[0]] = parts[1];
+      }
 
 #if true
-    while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
-    {
-      _logger.LogDebug("Got body line from lambda: {line}", line);
-      await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{line}\r\n"));
-    }
+      while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
+      {
+        _logger.LogDebug("Got body line from lambda: {line}", line);
+        await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{line}\r\n"));
+      }
 #else
     // Note: this probably will not work as some data has been buffered in the StreamReader
     lambdaResponseReader.BaseStream.CopyToAsync(response.BodyWriter.AsStream());
 #endif
 
-    _logger.LogDebug("Copied response body from Lambda");
+      _logger.LogDebug("Copied response body from Lambda");
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "LambdaConnection.RunRequest - Exception");
+      try { await this.Request.Body.CopyToAsync(Stream.Null); } catch { }
+    }
+    finally
+    {
+      // Set the state to closed
+      State = LambdaConnectionState.Closed;
 
-    await response.BodyWriter.CompleteAsync();
-    await response.Body.DisposeAsync();
-    await this.Request.Body.DisposeAsync();
+      try { await response.CompleteAsync(); } catch { }
 
-    // Mark that the Response has been sent on the LambdaInstance
-    this.TCS.SetResult();
+      // Mark that the Response has been sent on the LambdaInstance
+      this.TCS.SetResult();
+    }
   }
 }
