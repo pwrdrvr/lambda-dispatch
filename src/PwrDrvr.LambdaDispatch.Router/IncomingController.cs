@@ -22,7 +22,7 @@ public class IncomingController : ControllerBase
   [AcceptVerbs("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
   public async Task HandleRequest()
   {
-    logger.LogInformation("Router.IncomingController.HandleRequest - Start");
+    logger.LogDebug("Router.IncomingController.HandleRequest - Start");
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer))
     {
       if (Request.Path.StartsWithSegments("/api/chunked"))
