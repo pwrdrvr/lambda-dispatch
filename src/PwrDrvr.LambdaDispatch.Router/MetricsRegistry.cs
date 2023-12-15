@@ -44,7 +44,7 @@ public class LoggerMetricsReporter : IReportMetrics
 
       var output = Encoding.UTF8.GetString(stream.ToArray());
 
-      _logger.LogInformation(output);
+      _logger.LogInformation("Metrics:\n{output}", output);
     }
 
     return true;
