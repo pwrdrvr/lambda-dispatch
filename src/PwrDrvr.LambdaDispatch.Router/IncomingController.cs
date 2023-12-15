@@ -11,15 +11,18 @@ namespace PwrDrvr.LambdaDispatch.Router;
 public class IncomingController : ControllerBase
 {
   private readonly Dispatcher dispatcher;
+  private readonly ILogger<IncomingController> logger;
 
-  public IncomingController(Dispatcher dispatcher)
+  public IncomingController(Dispatcher dispatcher, ILogger<IncomingController> logger)
   {
     this.dispatcher = dispatcher;
+    this.logger = logger;
   }
 
   [AcceptVerbs("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
   public async Task HandleRequest()
   {
+    logger.LogInformation("Router.IncomingController.HandleRequest - Start");
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer))
     {
       if (Request.Path.StartsWithSegments("/api/chunked"))
