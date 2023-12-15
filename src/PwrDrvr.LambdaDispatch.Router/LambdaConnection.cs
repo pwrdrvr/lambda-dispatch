@@ -105,7 +105,7 @@ public class LambdaConnection
     // Close the connection
     Response.StatusCode = 409;
     await Response.StartAsync();
-    await Response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
+    await Response.WriteAsync($"Discarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
     await Response.CompleteAsync();
     try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
 
