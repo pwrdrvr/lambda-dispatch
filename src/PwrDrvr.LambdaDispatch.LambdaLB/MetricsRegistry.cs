@@ -9,10 +9,8 @@ using App.Metrics.Formatters;
 using App.Metrics.Formatters.Ascii;
 using App.Metrics.Gauge;
 using App.Metrics.Reporting;
-using App.Metrics.Reporting.Console;
 using App.Metrics.Timer;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 public class LoggerMetricsReporter : IReportMetrics
 {
