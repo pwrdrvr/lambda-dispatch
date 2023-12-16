@@ -10,8 +10,6 @@
     <AssemblyName>bootstrap</AssemblyName>
     <!-- We don't do invariant comparisons and we can do without the 37 MB libicu -->
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- Prevent libicu from being copied in -->
-    <PublishTrimmed>true</PublishTrimmed>
     <!-- This property makes the build directory similar to a publish directory and helps the AWS .NET Lambda Mock Test Tool find project dependencies. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- Generate Native AOT image during publishing to improve cold start time. -->
