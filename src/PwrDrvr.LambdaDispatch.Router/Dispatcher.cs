@@ -165,6 +165,8 @@ public class Dispatcher
       // Register the connection with the lambda
       var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, true);
 
+      // If the connection returned is null then the Response has already been disposed
+      // This will be null if the Lambda was actually gone when we went to add it to the instance manager
       if (connection == null)
       {
         _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
@@ -174,6 +176,10 @@ public class Dispatcher
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
         return result;
       }
+
+      // Start the response
+      // This sends the headers
+      await response.StartAsync();
 
       // Only at this point are we sure we're going to dispatch
       pendingRequest.RecordDispatchTime();
@@ -218,8 +224,6 @@ public class Dispatcher
     {
       // Start the response
       // This sends the headers
-      // We might not want to do this because it makes it impossible
-      // to send a 409 later if we can't dispatch
       await response.StartAsync();
     }
 

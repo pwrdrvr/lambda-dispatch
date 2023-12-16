@@ -80,7 +80,7 @@ public class LambdaInstanceManager
       return connection;
     }
 
-    _logger.LogWarning("AddConnectionForLambda - Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409", lambdaId);
+    _logger.LogWarning("AddConnectionForLambda - Connection added to Lambda that does not exist - closing with 409, LambdaId: {LambdaId}, ChannelId: {ChannelId}", lambdaId, channelId);
 
     // Close the connection
     try
@@ -93,7 +93,7 @@ public class LambdaInstanceManager
     }
     catch (Exception ex)
     {
-      _logger.LogError(ex, "AddConnectionForLambda - Exception closing down connection to LambdaId: {LambdaId}", lambdaId);
+      _logger.LogError(ex, "AddConnectionForLambda - Exception closing down connection to LambdaId: {LambdaId}, ChannelId: {ChannelId}", lambdaId, channelId);
     }
 
     return null;

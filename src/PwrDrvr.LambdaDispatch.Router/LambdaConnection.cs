@@ -121,7 +121,7 @@ public class LambdaConnection
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("Sending incoming request headers to Lambda");
 
-    // TODO: Write the request line
+    // Write the request line
     await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{incomingRequest.Method} {incomingRequest.Path} {incomingRequest.Protocol}\r\n"));
 
     // Send the headers to the Lambda
