@@ -91,8 +91,8 @@ public class HttpReverseRequester
         },
         // CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
         ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http2 },
-        // If it's a self-signed certificate for the specific host, return true.
-        CipherSuitesPolicy = new CipherSuitesPolicy(new List<TlsCipherSuite> { TlsCipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256 })
+        // WireShark needs this to decrypt the traffic
+        // CipherSuitesPolicy = new CipherSuitesPolicy(new List<TlsCipherSuite> { TlsCipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256 })
       };
       _handler = new SocketsHttpHandler { SslOptions = sslOptions };
       // _handler.Proxy = new WebProxy("http://localhost:8886");

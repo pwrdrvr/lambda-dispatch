@@ -1,5 +1,7 @@
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
+#if NATIVE_AOT
+
 using System.IO;
 using System.Text;
 using App.Metrics;
@@ -158,3 +160,4 @@ public static class MetricsRegistry
     }
   }
 }
+#endif

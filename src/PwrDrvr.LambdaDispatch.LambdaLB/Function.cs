@@ -40,7 +40,9 @@ public class Function
     private static async Task Main()
     {
         _logger.LogInformation("Lambda Started");
+#if NATIVE_AOT
         Task.Run(MetricsRegistry.PrintMetrics);
+#endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()
@@ -63,7 +65,9 @@ public class Function
         try
         {
             // Reset the metrics
+#if NATIVE_AOT
             MetricsRegistry.Metrics.Manage.Reset();
+#endif
 
             var lastWakeupTime = DateTime.Now;
 
@@ -97,7 +101,9 @@ public class Function
                 {
                     using var taskNumberScope = _logger.BeginScope("TaskNumber: {TaskNumber}", taskNumber);
 
+#if NATIVE_AOT
                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsOpen);
+#endif
 
                     try
                     {
@@ -109,11 +115,15 @@ public class Function
 
                             lastWakeupTime = DateTime.Now;
 
+#if NATIVE_AOT
                             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LastWakeupTime, () => (DateTime.Now - lastWakeupTime).TotalMilliseconds);
+#endif
 
                             try
                             {
+#if NATIVE_AOT
                                 using var timer = MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer);
+#endif
 
                                 _logger.LogDebug("Getting request from Router");
 
@@ -126,7 +136,9 @@ public class Function
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == (int)HttpStatusCode.Conflict)
                                 {
+#if NATIVE_AOT
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
+#endif
 
                                     // Stop the other tasks from looping
                                     cts.Cancel();
@@ -135,7 +147,9 @@ public class Function
                                 }
                                 else if (outerStatus != (int)HttpStatusCode.OK)
                                 {
+#if NATIVE_AOT
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
+#endif
 
                                     // Stop the other tasks from looping
                                     cts.Cancel();
@@ -143,7 +157,9 @@ public class Function
                                     return;
                                 }
 
+#if NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
+#endif
 
                                 // Read the bytes off the request body, if any
                                 // TODO: This is not always a string
@@ -156,7 +172,9 @@ public class Function
 
                                 await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
 
+#if NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
+#endif
 
                                 _logger.LogDebug("Sent response to Router");
                             }
@@ -196,8 +214,10 @@ public class Function
                     }
                     finally
                     {
+#if NATIVE_AOT
                         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.ChannelsOpen);
                         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsClosed);
+#endif
                     }
                 }));
 
@@ -256,7 +276,9 @@ public class Function
         finally
         {
             // Dump the metrics one last time
+#if NATIVE_AOT
             await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
+#endif
         }
     }
 }
