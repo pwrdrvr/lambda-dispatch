@@ -6,6 +6,7 @@ using PwrDrvr.LambdaDispatch.Messages;
 using Microsoft.Extensions.Logging;
 using AWS.Logger;
 using System.Net;
+using System.Net.Sockets;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
@@ -142,7 +143,7 @@ public class Function
 
                                     // Stop the other tasks from looping
                                     cts.Cancel();
-                                    _logger.LogInformation("Router told us to close our connection and re-open it");
+                                    _logger.LogInformation("Router told us to close our connection and not re-open it");
                                     return;
                                 }
                                 else if (outerStatus != (int)HttpStatusCode.OK)
@@ -188,7 +189,17 @@ public class Function
                             {
                                 if (!cts.IsCancellationRequested)
                                 {
-                                    _logger.LogError(ex, "HttpRequestException caught in task");
+                                    if (ex.InnerException is SocketException socketException &&
+                                        socketException.SocketErrorCode == SocketError.ConnectionRefused)
+                                    {
+                                        // Connection was refused, log at a lower level
+                                        _logger.LogInformation("Connection refused");
+                                    }
+                                    else
+                                    {
+                                        // Some other kind of HttpRequestException, log as error
+                                        _logger.LogError(ex, "HttpRequestException caught");
+                                    }
 
                                     // If the address is invalid or connections are being terminated then we stop
                                     cts.Cancel();

@@ -212,11 +212,16 @@ public class Dispatcher
     //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
 
-    // Start the response
-    // This sends the headers
-    // We might not want to do this because it makes it impossible
-    // to send a 409 later if we can't dispatch
-    await response.StartAsync();
+    // If the connection returned is null then the Response has already been disposed
+    // This will be null if the Lambda was actually gone when we went to add it to the instance manager
+    if (result.Connection != null)
+    {
+      // Start the response
+      // This sends the headers
+      // We might not want to do this because it makes it impossible
+      // to send a 409 later if we can't dispatch
+      await response.StartAsync();
+    }
 
     return result;
   }

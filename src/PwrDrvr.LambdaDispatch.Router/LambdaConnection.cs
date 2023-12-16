@@ -109,7 +109,7 @@ public class LambdaConnection
     // There will either be no subsequent connection or it will
     // get immediately rejected with a 409
     // Response.StatusCode = 409;
-    await Response.WriteAsync($"Discarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
+    await Response.WriteAsync($"GOAWAY\r\nDiscarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing\r\n");
     await Response.CompleteAsync();
     try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
 
@@ -250,7 +250,21 @@ public class LambdaConnection
     }
     catch (Exception ex)
     {
-      _logger.LogError(ex, "LambdaConnection.RunRequest - Exception");
+      if (this.Request.Headers.TryGetValue("Date", out var dateValues) && DateTime.TryParse(dateValues, out var requestDate))
+      {
+        var now = DateTime.UtcNow;
+        var duration = now - requestDate;
+
+        _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+            requestDate,
+            duration.TotalSeconds,
+            this.Instance.Id,
+            this.ChannelId);
+      }
+      else
+      {
+        _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Receipt time not known");
+      }
       try { await this.Request.Body.CopyToAsync(Stream.Null); } catch { }
     }
     finally

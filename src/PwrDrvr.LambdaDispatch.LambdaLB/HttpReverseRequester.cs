@@ -192,6 +192,17 @@ public class HttpReverseRequester
           // We need to let go of the request body
           throw new EndOfStreamException("End of stream reached while reading request line");
         }
+        else if (firstLine == "GOAWAY")
+        {
+          _logger.LogWarning("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+          // Clean up
+          // Indicate that we don't need the response body anymore
+          try { response.Content.Dispose(); } catch { }
+          // Close the request body
+          try { requestStreamForResponse.Close(); } catch { }
+          try { duplexContent?.Complete(); } catch { }
+          return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
+        }
 
         var partsOfFirstLine = firstLine.Split(' ');
         if (partsOfFirstLine.Length != 3)
