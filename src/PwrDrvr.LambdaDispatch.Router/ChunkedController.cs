@@ -75,7 +75,7 @@ public class ChunkedController : ControllerBase
             var delay = DateTimeOffset.UtcNow - date;
             if (delay > TimeSpan.FromSeconds(5))
             {
-              logger.LogError("Router.ChunkedController.Post - Request was delayed in receipt by {delay} ms", delay.TotalMilliseconds);
+              logger.LogWarning("Router.ChunkedController.Post - Request was delayed in receipt by {delay} ms", delay.TotalMilliseconds);
             }
           }
         }
