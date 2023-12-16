@@ -1,5 +1,7 @@
 bin/
 obj/
+out*/
+*.log
 Dockerfile*
 *.md
 .git

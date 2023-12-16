@@ -22,6 +22,9 @@ COPY . ./
 # Build the project
 RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime linux-arm64 -o out
 
+# We do not need the ~40 MB of ICU libs
+RUN rm out/libicu*
+
 # Use the Amazon Linux 2023 image as the runtime environment
 FROM amazonlinux:2023
 
@@ -29,11 +32,10 @@ FROM amazonlinux:2023
 WORKDIR /app
 
 # Install the ICU libraries
-RUN yum install -y libicu
+# RUN yum install -y libicu
 
 # Copy the build output from the build environment
 COPY --from=build-env /app/out .
-# COPY --from=build-env /app/certs/*.pfx ./certs/
 
 # Set the entrypoint
 ENTRYPOINT ["./bootstrap"]
