@@ -147,6 +147,11 @@ public class HttpReverseRequester
     request.Headers.Add("Date", DateTime.UtcNow.ToString("R"));
     request.Content = duplexContent;
 
+    //
+    // Send the request to the router
+    // Read the Response before sending the Request
+    // TODO: We can await the pair of the Response or Request closing to avoid deadlocks
+    //
     var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
     // Get the stream that we can write the response to
@@ -182,13 +187,17 @@ public class HttpReverseRequester
       {
         // Read the request line
         var firstLine = await responseContentReaderForRequest.ReadLineAsync();
-        if (firstLine == null)
+        if (string.IsNullOrEmpty(firstLine))
         {
           // We need to let go of the request body
           throw new EndOfStreamException("End of stream reached while reading request line");
         }
 
         var partsOfFirstLine = firstLine.Split(' ');
+        if (partsOfFirstLine.Length != 3)
+        {
+          throw new Exception($"Invalid request line: {firstLine}");
+        }
         receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
         receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
         receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
@@ -202,6 +211,10 @@ public class HttpReverseRequester
           var parts = requestHeaderLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
           var key = parts[0];
           var value = parts[1];
+          if (parts.Length != 2)
+          {
+            throw new Exception($"Invalid header line: {requestHeaderLine}");
+          }
 
           if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
           {
