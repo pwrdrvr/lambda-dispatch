@@ -41,7 +41,7 @@ namespace PwrDrvr.LambdaDispatch.Router
                 {
                     endpoints.MapHealthChecks("/health");
                     endpoints.MapControllers();  // Map the IncomingController
-                    endpoints.MapFallback(() => "Hello World!");
+                    endpoints.MapFallback(() => "Unhandled route - Does not call LambdaLB\r\n");
 
                     // Add more routes for the public interface here
                 });

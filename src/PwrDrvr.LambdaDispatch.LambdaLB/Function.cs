@@ -167,7 +167,7 @@ public class Function
 
                                 var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                                 {
-                                    Content = new StringContent("Hello World!\r\n"),
+                                    Content = new StringContent("Hello From LambdaLB!\r\n"),
                                 };
 
                                 await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
