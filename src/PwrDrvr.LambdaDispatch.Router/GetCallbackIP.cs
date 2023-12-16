@@ -46,7 +46,7 @@ public class GetCallbackIP
       // Ignore
     }
 
-    callbackUrl = "http://127.0.0.1:5003/api/chunked";
+    callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5003/api/chunked";
     return callbackUrl;
   }
 }
