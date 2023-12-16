@@ -32,6 +32,9 @@ openssl genrsa -out $ROOT_CERT.key 2048
 # Create a self-signed root certificate
 openssl req -x509 -new -nodes -key $ROOT_CERT.key -sha256 -days $ROOT_CERT_EXPIRY -out $ROOT_CERT.pem -subj "/CN=My Root CA"
 
+# Add the root certificate to the system's trust store
+# sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $ROOT_CERT.pem
+
 # Create a private key for the domain
 openssl genrsa -out $DOMAIN.key 2048
 
