@@ -19,6 +19,8 @@ services:
       - ROUTER_CALLBACK_HOST=router
 
   lambdalb:
+    depends_on:
+      - router
     build:
       context: .
       dockerfile: DockerfileLambda
