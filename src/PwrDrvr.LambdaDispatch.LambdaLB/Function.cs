@@ -208,21 +208,21 @@ public class Function
             var pingCts = new CancellationTokenSource();
             var pinger = Task.Run(async () =>
             {
-                try
+                while (!pingCts.Token.IsCancellationRequested)
                 {
-                    while (!pingCts.Token.IsCancellationRequested)
+                    try
                     {
                         await Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token);
                         await reverseRequester.Ping();
                     }
-                }
-                catch (TaskCanceledException)
-                {
-                    // This is expected
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Exception caught in ping task");
+                    catch (TaskCanceledException)
+                    {
+                        // This is expected
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Exception caught in ping task");
+                    }
                 }
             });
 
