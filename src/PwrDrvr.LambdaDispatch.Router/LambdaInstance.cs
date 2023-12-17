@@ -381,7 +381,8 @@ public class LambdaInstance
     {
       Id = Id,
       DispatcherUrl = await GetCallbackIP.Get(),
-      NumberOfChannels = maxConcurrentCount
+      NumberOfChannels = maxConcurrentCount,
+      SentTime = DateTime.Now
     };
 
     // Invoke the Lambda
