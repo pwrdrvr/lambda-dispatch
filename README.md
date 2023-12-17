@@ -157,6 +157,11 @@ AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS
   - Instead we capture with the CLI tools then open a portion of the data with the error in Wireshark
 - Define `USE_SOCKETS_HTTP_HANDLER` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
 - Define `USE_INSECURE_CIPHER_FOR_WIRESHARK` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
+- `dotnet build -c Release`
+- Start the Router and Lambda following instructions above
+- Run a million requests at a time until `hey` reports that some of the requests timed out
+  - `hey -n 1000000 -c 1000000 http://localhost:5002/fact`
+- After capturing the error, stop `tshark` with Ctrl-C then stop the Lambda and the Router with Ctrl-C
 - Run the commands below to capture packets
 - Run the command below to split the capture into multiple files:
   - `editcap -c 1000000 proto-error.pcapng proto-error-split.pcapng`
