@@ -72,7 +72,13 @@ public class Function
 
             var lastWakeupTime = DateTime.Now;
 
-            _logger.LogInformation("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
+            _logger.LogDebug("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
+
+            // Log if we got a late arriving Invoke packet (delayed before us)
+            if ((DateTime.Now - request.SentTime).TotalSeconds > 1)
+            {
+                _logger.LogWarning("Request took {Seconds} seconds to get here", (DateTime.Now - request.SentTime).TotalSeconds);
+            }
             _logger.LogInformation("Received WaiterRequest id: {Id}, dispatcherUrl: {DispatcherUrl}", request.Id, request.DispatcherUrl);
 
             using var lambdaIdScope = _logger.BeginScope("LambdaId: {LambdaId}", request.Id);
@@ -86,7 +92,7 @@ public class Function
 
             if (ThreadPool.ThreadCount < NumberOfChannels)
             {
-                _logger.LogInformation("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
+                _logger.LogDebug("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
                 ThreadPool.SetMinThreads(NumberOfChannels * 2, NumberOfChannels * 2);
             }
 
@@ -185,27 +191,60 @@ public class Function
                                 // We do not cancel, we just loop around and make a new request
                                 // If the new request gets a 409 status, then we will stop the loop
                             }
+                            catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.NameResolutionError)
+                            {
+                                if (!cts.IsCancellationRequested)
+                                {
+                                    // Connection was refused, log at a lower level
+                                    _logger.LogWarning("Name resolution error");
+
+                                    cts.Cancel();
+                                }
+                            }
+                            catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.ConnectionError)
+                            {
+                                if (!cts.IsCancellationRequested)
+                                {
+                                    // Connection was refused, log at a lower level
+                                    _logger.LogWarning("Connection refused");
+
+                                    cts.Cancel();
+                                }
+                            }
+                            // HttpRequestException is up to the point the response headers are read
+                            // Docs: https://devblogs.microsoft.com/dotnet/dotnet-8-networking-improvements/
                             catch (HttpRequestException ex)
                             {
                                 if (!cts.IsCancellationRequested)
                                 {
-                                    if (ex.InnerException is SocketException socketException &&
-                                        socketException.SocketErrorCode == SocketError.ConnectionRefused)
-                                    {
-                                        // Connection was refused, log at a lower level
-                                        _logger.LogInformation("Connection refused");
-                                    }
-                                    else
-                                    {
-                                        // Some other kind of HttpRequestException, log as error
-                                        _logger.LogError(ex, "HttpRequestException caught");
-                                    }
+                                    // Some other kind of HttpRequestException, log as error
+                                    _logger.LogError(ex, "HttpRequestException caught");
 
                                     // If the address is invalid or connections are being terminated then we stop
                                     cts.Cancel();
                                 }
                             }
-                            catch (TaskCanceledException)
+                            catch (HttpIOException ex) when (ex.HttpRequestError == HttpRequestError.InvalidResponse)
+                            {
+                                if (!cts.IsCancellationRequested)
+                                {
+                                    // Connection was refused, log at a lower level
+                                    _logger.LogError(ex, "Invalid response");
+
+                                    cts.Cancel();
+                                }
+                            }
+                            catch (HttpIOException ex)
+                            {
+                                if (!cts.IsCancellationRequested)
+                                {
+                                    _logger.LogError(ex, "HttpIOException caught");
+
+                                    // If the address is invalid or connections are being terminated then we stop
+                                    cts.Cancel();
+                                }
+                            }
+                            catch (OperationCanceledException)
                             {
                                 // This is expected
                             }

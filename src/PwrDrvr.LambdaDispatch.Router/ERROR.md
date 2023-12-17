@@ -1,6 +1,15 @@
 LambdaId: be8dc363-f20f-470f-a324-f6885d544fbe
 Channel: f349bf53-33b7-44bd-94f6-e7045de4963d
 
+## Fixes Needed
+- [ ] Router waits 2 minutes to read the request before it errors out on line 216 in RunRequest, need to make sure that the request body is closed out properly in LambdaLB on HttpRequestException
+
+## Router Error Line - Fires Later After Timeout
+
+src/PwrDrvr.LambdaDispatch.Router/LambdaConnection.cs:line 216
+// First line should be status
+line = await lambdaResponseReader.ReadLineAsync();
+
 ## Lambda invoked at 17:29:25.797
 lambda-dispatch-router-1    | 17:29:25.797 info: PwrDrvr.LambdaDispatch.Router.LambdaInstance[0]
 lambda-dispatch-router-1    |       Starting Lambda Instance be8dc363-f20f-470f-a324-f6885d544fbe
@@ -41,4 +50,3 @@ lambda-dispatch-router-1    |       LambdaConnection.RunRequest - Exception - Re
 lambda-dispatch-router-1    |       System.IO.IOException: The request stream was aborted.
 lambda-dispatch-router-1    |        ---> Microsoft.AspNetCore.Connections.ConnectionAbortedException: The HTTP/2 connection faulted.
 lambda-dispatch-router-1    |        ---> Microsoft.AspNetCore.Connections.ConnectionResetException: Connection reset by peer
-
