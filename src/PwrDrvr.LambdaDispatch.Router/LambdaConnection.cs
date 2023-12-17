@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Text;
 
@@ -250,13 +251,14 @@ public class LambdaConnection
     }
     catch (Exception ex)
     {
-      if (this.Request.Headers.TryGetValue("Date", out var dateValues) && DateTime.TryParse(dateValues, out var requestDate))
+      if (this.Request.Headers.TryGetValue("Date", out var dateValues)
+          && dateValues.Count == 1
+          && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
       {
-        var now = DateTime.UtcNow;
-        var duration = now - requestDate;
+        var duration = DateTime.UtcNow - requestDate;
 
         _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
-            requestDate,
+            requestDate.ToLocalTime().ToString("o"),
             duration.TotalSeconds,
             this.Instance.Id,
             this.ChannelId);

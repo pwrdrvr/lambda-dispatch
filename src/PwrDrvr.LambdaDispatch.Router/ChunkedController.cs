@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Timeouts;
+using System.Globalization;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -68,15 +69,14 @@ public class ChunkedController : ControllerBase
         }
 
         // Log an error if the request was delayed in reaching us, using the Date header added by HttpClient
-        if (Request.Headers.TryGetValue("Date", out Microsoft.Extensions.Primitives.StringValues dateMulti) && dateMulti.Count == 1)
+        if (this.Request.Headers.TryGetValue("Date", out var dateValues)
+         && dateValues.Count == 1
+         && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
         {
-          if (DateTimeOffset.TryParse(dateMulti.ToString(), out DateTimeOffset date))
+          var delay = DateTimeOffset.UtcNow - requestDate;
+          if (delay > TimeSpan.FromSeconds(5))
           {
-            var delay = DateTimeOffset.UtcNow - date;
-            if (delay > TimeSpan.FromSeconds(5))
-            {
-              logger.LogWarning("Router.ChunkedController.Post - Request was delayed in receipt by {delay} ms", delay.TotalMilliseconds);
-            }
+            logger.LogWarning("Router.ChunkedController.Post - Request received at {time} was delayed in receipt by {delay} ms", requestDate.ToLocalTime().ToString("o"), delay.TotalMilliseconds);
           }
         }
         else
