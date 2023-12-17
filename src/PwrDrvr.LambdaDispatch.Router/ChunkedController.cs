@@ -47,10 +47,10 @@ public class ChunkedController : ControllerBase
   [DisableRequestTimeout]
   [HttpPost]
   [DisableRequestSizeLimit]
-  [Route("request/{instanceId}")]
-  public async Task Post(string instanceId)
+  [Route("request/{lambdaId}/{channelId}")]
+  public async Task Post(string lambdaId, string channelId)
   {
-    logger.LogDebug("Router.ChunkedController.Post - Start: {instanceId}", instanceId);
+    logger.LogDebug("Router.ChunkedController.Post - Start for LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.LambdaRequestTimer))
     {
@@ -76,36 +76,23 @@ public class ChunkedController : ControllerBase
           var delay = DateTimeOffset.UtcNow - requestDate;
           if (delay > TimeSpan.FromSeconds(5))
           {
-            logger.LogWarning("Router.ChunkedController.Post - Request received at {time} was delayed in receipt by {delay} ms", requestDate.ToLocalTime().ToString("o"), delay.TotalMilliseconds);
+            logger.LogWarning("Router.ChunkedController.Post - Request received at {time} was delayed in receipt by {delay} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", requestDate.ToLocalTime().ToString("o"), delay.TotalMilliseconds, lambdaId, channelId);
           }
         }
-        else
-        {
-          logger.LogError("Router.ChunkedController.Post - No Date header");
-        }
-
-        // Get the channel id
-        if (!Request.Headers.TryGetValue("X-Channel-Id", out Microsoft.Extensions.Primitives.StringValues channelIdMulti) || channelIdMulti.Count != 1)
-        {
-          logger.LogDebug("Router.ChunkedController.Post - No X-Channel-Id header");
-        }
-
-        var lambdaId = lambdaIdMulti.ToString();
-        var channelId = channelIdMulti.ToString();
 
         logger.LogDebug("Router.ChunkedController.Post - Connection from LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
         // Print when we start the response
         Response.OnStarting(() =>
         {
-          logger.LogDebug("Starting response");
+          logger.LogDebug("Starting response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
           return Task.CompletedTask;
         });
 
         // Print when we finish the response
         Response.OnCompleted(() =>
         {
-          logger.LogDebug("Finished response");
+          logger.LogDebug("Finished response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
           return Task.CompletedTask;
         });
 
@@ -169,40 +156,11 @@ public class ChunkedController : ControllerBase
         // Wait until we have processed a request and sent a response
         await result.Connection.TCS.Task;
 
-        logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed");
-
-        // // Write the response body
-        // var writer = new StreamWriter(Response.Body);
-
-        // // TODO: Loop through all the headers in the Request and write them to the Response Body
-        // foreach (var header in Request.Headers)
-        // {
-        //   await writer.WriteAsync($"{header.Key}: {header.Value}\r\n");
-        // }
-
-        // // Write the Request body to the Response body
-
-
-        // await writer.WriteAsync("Chunked response");
-        // await writer.FlushAsync();
-        // // Close the response body
-        // await writer.DisposeAsync();
-
-        // // Read the request body
-        // using var reader = new StreamReader(Request.Body);
-        // string? line;
-        // while ((line = await reader.ReadLineAsync()) != null)
-        // {
-        //   // Dump request to the console
-        //   logger.LogDebug(line);
-        // }
-
-        // // Close the response body
-        // await writer.DisposeAsync();
+        logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       }
       catch (Exception ex)
       {
-        logger.LogError(ex, "Router.ChunkedController.Post - Exception");
+        logger.LogError(ex, "Router.ChunkedController.Post - Exception, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
         throw;
       }
     }

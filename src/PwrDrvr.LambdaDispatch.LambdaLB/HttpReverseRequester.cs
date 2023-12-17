@@ -137,7 +137,7 @@ public class HttpReverseRequester
 
     var uri = new UriBuilder(_uri)
     {
-      Path = $"{_uri.AbsolutePath}/request/{_id}",
+      Path = $"{_uri.AbsolutePath}/request/{_id}/{channelId}",
       Port = 5003,
       Scheme = "https",
     }.Uri;
