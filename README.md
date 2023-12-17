@@ -148,3 +148,31 @@ AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/workspaces/lambda-dispatch/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/linux-arm64/
 AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token bin/Release/net8.0/linux-arm64/native/bootstrap
 ```
+
+## Capturing Packets with tshark
+
+- Overall:
+  - We have to use an insecure cipher that does not use a Diffie-Hellman key exchange because HttpClient does not write the key exchange to a file that WireShark can use to decrypt
+  - We cannot capture directly in Wireshark because the UI becomes unresponsive when given several GB of data
+  - Instead we capture with the CLI tools then open a portion of the data with the error in Wireshark
+- Define `USE_SOCKETS_HTTP_HANDLER` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
+- Define `USE_INSECURE_CIPHER_FOR_WIRESHARK` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
+- Run the commands below to capture packets
+- Run the command below to split the capture into multiple files:
+  - `editcap -c 1000000 proto-error.pcapng proto-error-split.pcapng`
+- Find the file with the first timestamp before the error happened
+- Open the file in Wireshark
+- Scroll down to the timestamp of the error
+- If the packets at that time to do not have the protocol as HTTP2 then it means that the beginning of that HTTP2 socket was not in that capture file and you need to adjust the splits to a larger or smaller number of packets to shift where the files start
+  - One simple approach is to just double the size of the splits and try again
+
+```bash
+mkdir captures
+
+cd captures
+
+# This will capture and decrypt the packets
+# The saved file will be enormous (it takes millions of requests to capture the error)
+# The log file will take several minutes to finish writing after the capture is complete
+tshark -i lo0 -f "tcp port 5003" -o "tls.keys_list:0.0.0.0,5003,http,../certs/lambdadispatch.local.key" -w proto-error.pcapng -P > protoerror.log
+```
