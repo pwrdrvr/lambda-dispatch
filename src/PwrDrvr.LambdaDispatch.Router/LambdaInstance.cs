@@ -184,6 +184,11 @@ public class LambdaInstance
     {
       Interlocked.Increment(ref availableConnectionCount);
       connectionQueue.Enqueue(connection);
+
+      // Start the response
+      // This sends the headers
+      // The response will then hang around waiting for the data to be written to it
+      await response.StartAsync();
     }
 
     return connection;

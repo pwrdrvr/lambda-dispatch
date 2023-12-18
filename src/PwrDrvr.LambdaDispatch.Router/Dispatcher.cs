@@ -216,16 +216,10 @@ public class Dispatcher
     //
     // There was no pending request to immediately dispatch, so just add the connection
     //
+    // NOTE: As soon as this is called the connection can be taken and used for a request
+    // we do not own this request/response anymore after this call
+    //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
-
-    // If the connection returned is null then the Response has already been disposed
-    // This will be null if the Lambda was actually gone when we went to add it to the instance manager
-    if (result.Connection != null)
-    {
-      // Start the response
-      // This sends the headers
-      await response.StartAsync();
-    }
 
     return result;
   }
