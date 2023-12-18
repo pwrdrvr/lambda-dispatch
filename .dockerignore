@@ -8,3 +8,9 @@ Dockerfile*
 .gitignore
 docker-compose*
 *.template.yaml
+*.gcdump
+core_*
+*.report
+*.nettrace
+*.speedscope.json
+captures/
