@@ -240,7 +240,7 @@ public class Dispatcher
         // Create a CancellationToken that will be cancelled after 1 second
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 
-        await _pendingRequestSignal.Reader.ReadAsync(cts.Token);
+        await _pendingRequestSignal.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
         _logger.LogDebug("BackgroundPendingRequestDispatcher - Got signal");
 
         // Loop quickly until we dispatch the item that we know is there
@@ -248,7 +248,7 @@ public class Dispatcher
         {
           _logger.LogDebug("BackgroundPendingRequestDispatcher - Dispatched one");
 
-          await Task.Delay(TimeSpan.FromMilliseconds(10));
+          await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
         }
       }
       catch (OperationCanceledException)

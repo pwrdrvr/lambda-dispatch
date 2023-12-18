@@ -218,8 +218,8 @@ public static class MetricsRegistry
   {
     while (true)
     {
-      await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
-      await Task.Delay(TimeSpan.FromSeconds(5));
+      await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync()).ConfigureAwait(false);
+      await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
     }
   }
 }
