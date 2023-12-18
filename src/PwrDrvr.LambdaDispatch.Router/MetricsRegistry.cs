@@ -59,7 +59,8 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 
   public async Task WriteAsync(Stream output, MetricsDataValueSource metricsData, CancellationToken cancellationToken = default)
   {
-    using var sw = new StreamWriter(output);
+    using var ms = new MemoryStream();
+    using var sw = new StreamWriter(ms);
 
     foreach (var gauge in metricsData.Contexts.SelectMany(context => context.Gauges))
     {
@@ -73,12 +74,24 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 
     foreach (var histogram in metricsData.Contexts.SelectMany(context => context.Histograms))
     {
-      await sw.WriteLineAsync($"{histogram.Name}: {histogram.Value.Count} count {Math.Round(histogram.Value.LastValue, 1)} last {Math.Round(histogram.Value.Mean, 1)} mean {Math.Round(histogram.Value.Min, 1)} min {Math.Round(histogram.Value.Max, 1)} max {histogram.Unit}");
+      await sw.WriteLineAsync($"{histogram.Name}: {histogram.Value.Count} count {Math.Round(histogram.Value.LastValue, 1)} last {Math.Round(histogram.Value.Mean, 1)} mean {Math.Round(histogram.Value.Min, 1)} min {Math.Round(histogram.Value.Max, 1)} max {histogram.Value.Percentile95} 95p {histogram.Unit}");
     }
 
     foreach (var timer in metricsData.Contexts.SelectMany(context => context.Timers))
     {
       await sw.WriteLineAsync($"{timer.Name}: {timer.Value.Histogram.Count} count {Math.Round(timer.Value.Histogram.LastValue, 1)} last {Math.Round(timer.Value.Histogram.Mean, 1)} mean {Math.Round(timer.Value.Histogram.Min, 1)} min {Math.Round(timer.Value.Histogram.Max, 1)} max {timer.Unit}");
+    }
+
+    // Sort the metric text and write it to the output stream
+    await sw.FlushAsync(cancellationToken);
+    ms.Position = 0;
+    var sr = new StreamReader(ms);
+    var lines = await sr.ReadToEndAsync(cancellationToken);
+    var sortedLines = lines.Split('\n').OrderBy(l => l);
+    foreach (var line in sortedLines)
+    {
+      await output.WriteAsync(Encoding.UTF8.GetBytes(line), cancellationToken);
+      await output.WriteAsync(Encoding.UTF8.GetBytes("\n"), cancellationToken);
     }
   }
 }
