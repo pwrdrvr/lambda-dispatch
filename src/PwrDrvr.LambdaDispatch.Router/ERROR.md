@@ -2,8 +2,9 @@
 
 - LambdaId: `e9e56095-586f-45e0-97d0-505a93fe7048`
 - ChannelId: `7a0ebe6c-535a-408f-b069-f82b4e065c77`
-- Timestamp of first exception: `00:56:21.396`
-- 
+- `00:56:21.396`    - First exception in LambdaLB
+- `00:56:21.458472` - RST on socket
+- `00:56:21.460`    - Router observes socket reset
 
 ## Connection History from Router
 
@@ -16,7 +17,12 @@
 00:56:21.411 info: PwrDrvr.LambdaDispatch.Router.LambdaInstanceManager[0]
       LambdaInstance e9e56095-586f-45e0-97d0-505a93fe7048 invocation complete, _desiredInstanceCount 4, _runningInstanceCount 0, _startingInstanceCount 3 (after decrement)
 
-# Fail - These timestamps make no sense - The request was receive in the same second as the log message but it says it was 18 seconds ago
+# Wireshark shows RST on socket
+849990	00:56:21.458472	127.0.0.1	59018	127.0.0.1	5003	TCP	44	1		59018 → 5003 [RST, ACK] Seq=112195863 Ack=41562795 Win=394112 Len=0
+
+# Fail
+# - The lambda error on this channel was at `00:56:21.396`
+# - Ignore the timestamps as they were calculating the difference from NYC to UTC
 00:56:21.460 fail: PwrDrvr.LambdaDispatch.Router.LambdaConnection[0]
       LambdaConnection.RunRequest - Exception - Request was received at 12/17/2023 00:56:21, 18000.459575 seconds ago, LambdaID: e9e56095-586f-45e0-97d0-505a93fe7048, ChannelId: 7a0ebe6c-535a-408f-b069-f82b4e065c77
       System.IO.IOException: The request stream was aborted.
@@ -26,10 +32,17 @@
          --- End of inner exception stack trace ---
 ```
 
-
-
 ## Exception Summary from LambdaLB
 
+```log
+00:56:20.912 info: PwrDrvr.LambdaDispatch.LambdaLB.HttpReverseRequester[0]
+      => LambdaId: e9e56095-586f-45e0-97d0-505a93fe7048
+      Pinged instance: e9e56095-586f-45e0-97d0-505a93fe7048, OK
+00:56:21.396 fail: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+      => LambdaId: e9e56095-586f-45e0-97d0-505a93fe7048 => TaskNumber: 2 => ChannelId: 7a0ebe6c-535a-408f-b069-f82b4e065c77
+      HttpRequestException caught
+      System.Net.Http.HttpRequestException: The HTTP/2 server sent invalid data on the connection. HTTP/2 error code 'PROTOCOL_ERROR' (0x1). (HttpProtocolError)
+```
 
 ## Full Router Exception - First Instance
 
