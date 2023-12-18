@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <!-- <Optimize>false</Optimize> -->
+    <!-- <EnablePreviewFeatures>true</EnablePreviewFeatures> -->
     <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
     <OutputType>Exe</OutputType>
@@ -27,6 +29,12 @@
   <PropertyGroup Condition="'$(NativeAot)' == 'true'">
     <DefineConstants>NATIVE_AOT</DefineConstants>
   </PropertyGroup>
+  <!-- Use a pattern like this if testing a locally compiled version of a dotnet/runtime library -->
+  <!-- <ItemGroup>
+    <Reference Include="System.Net.Http">
+      <HintPath>/Users/huntharo/pwrdrvr/dotnet/runtime/artifacts/bin/System.Net.Http/Release/net8.0-osx/System.Net.Http.dll</HintPath>
+    </Reference>
+  </ItemGroup> -->
   <!-- 
   When publishing Lambda functions for ARM64 to the provided.al2 runtime a newer version of libicu needs to be included
   in the deployment bundle because .NET requires a newer version of libicu then is preinstalled with Amazon Linux 2.

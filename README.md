@@ -135,8 +135,94 @@ dotnet-trace convert --format speedscope trace.nettrace
 dotnet tool install --global dotnet-sos
 dotnet-sos install
 
-lldb process attach --pid <PID>
+dotnet tool install --global dotnet-dump
+dotnet-dump collect -p 39725
+
+dotnet tool install --global dotnet-gcdump
+dotnet-gcdump collect -p 39725
+
+
+# https://learn.microsoft.com/en-us/dotnet/core/diagnostics/sos-debugging-extension
+# https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-dump
+lldb process attach pid -p <PID>
 plugin load /usr/local/share/dotnet/shared/Microsoft.NETCore.App/<version>/libsosplugin.dylib
+plugin load /Users/huntharo/.dotnet/tools/.store/dotnet-sos/8.0.452401/dotnet-sos/8.0.452401/tools/net6.0/any/osx-arm64/libsosplugin.dylib 
+
+## Commands
+~sosCommand (null)
+~sosCommand (null)
+~ExtensionCommand analyzeoom
+~sosCommand bpmd
+~ExtensionCommand assemblies
+~ExtensionCommand clrmodules
+~sosCommand ClrStack
+~sosCommand Threads
+~sosCommand u
+~ExtensionCommand crashinfo
+~sosCommand dbgout
+~sosCommand DumpALC
+~sosCommand DumpArray
+~ExtensionCommand dumpasync
+~sosCommand DumpAssembly
+~sosCommand DumpClass
+~sosCommand DumpDelegate
+~sosCommand DumpDomain
+~sosCommand DumpGCData
+~ExtensionCommand dumpheap
+~sosCommand DumpIL
+~sosCommand DumpLog
+~sosCommand DumpMD
+~sosCommand DumpModule
+~sosCommand DumpMT
+~sosCommand DumpObj
+~ExtensionCommand dumpruntimetypes
+~sosCommand DumpSig
+~sosCommand DumpSigElem
+~sosCommand DumpStack
+~ExtensionCommand dumpstackobjects
+~ExtensionCommand dso
+~sosCommand DumpVC
+~ExtensionCommand eeheap
+~sosCommand EEStack
+~sosCommand EEVersion
+~sosCommand EHInfo
+~ExtensionCommand finalizequeue
+~sosCommand FindAppDomain
+~sosCommand FindRoots
+~sosCommand GCHandles
+~ExtensionCommand gcheapstat
+~sosCommand GCInfo
+~ExtensionCommand gcroot
+~ExtensionCommand gcwhere
+~sosCommand HistClear
+~sosCommand HistInit
+~sosCommand HistObj
+~sosCommand HistObjFind
+~sosCommand HistRoot
+~sosCommand HistStats
+~sosCommand IP2MD
+~ExtensionCommand listnearobj
+~ExtensionCommand loadsymbols
+~ExtensionCommand logging
+~sosCommand Name2EE
+~ExtensionCommand objsize
+~ExtensionCommand pathto
+~sosCommand PrintException
+~sosCommand PrintException
+~sosCommand runtimes
+~sosCommand StopOnCatch
+~sosCommand SetClrPath
+~ExtensionCommand setsymbolserver
+~sosCommand Help
+~sosCommand SOSStatus
+~sosCommand SOSFlush
+~sosCommand SyncBlk
+~ExtensionCommand threadpool
+~sosCommand ThreadState
+~sosCommand token2ee
+~ExtensionCommand verifyheap
+~ExtensionCommand verifyobj
+~ExtensionCommand traverseheap
 
 sudo apt-get install lldb
 

@@ -1,4 +1,16 @@
-# Wireshark Era
+# HTTP2 Protocol Error
+
+The problem manifested as 10 HTTP2 streams closing down with a ProtocolError in HttpClient when reading the response body.
+
+Reproducing the error took between 1 million and 100+ million requests each time.
+
+The solution was that `Response.StartAsync()` (which sends the `HEADERS` frame in HTTP2) was being called after the `LambdaConnection` object was added to the available connections in the `LambdaInstance`, which meant that it could be picked up and used by the `LambdaLB` before the `HEADERS` frame was sent.
+
+Followup: it seems this is a bug in Kestrel that allows this to happen.  It is always wrong to send a `DATA` frame before the `HEADERS` frame has been sent on the response.  This can be checked for and an error can be thrown to make this much more obvious.
+
+Once the nature of the problem was known, it was possible to view the `DATA` frames with no `HEADERS` frame for a single stream in Wireshark that happened right when the error occurred.
+
+## Wireshark Data
 
 - LambdaId: `e9e56095-586f-45e0-97d0-505a93fe7048`
 - ChannelId: `7a0ebe6c-535a-408f-b069-f82b4e065c77`
