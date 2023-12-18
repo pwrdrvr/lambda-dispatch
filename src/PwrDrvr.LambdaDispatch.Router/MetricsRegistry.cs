@@ -74,7 +74,7 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 
     foreach (var histogram in metricsData.Contexts.SelectMany(context => context.Histograms))
     {
-      await sw.WriteLineAsync($"{histogram.Name}: {histogram.Value.Count} count {Math.Round(histogram.Value.LastValue, 1)} last {Math.Round(histogram.Value.Mean, 1)} mean {Math.Round(histogram.Value.Min, 1)} min {Math.Round(histogram.Value.Max, 1)} max {histogram.Value.Percentile95} 95p {histogram.Unit}");
+      await sw.WriteLineAsync($"{histogram.Name}: {histogram.Value.Count} count {Math.Round(histogram.Value.LastValue, 1)} last {Math.Round(histogram.Value.Mean, 1)} mean {Math.Round(histogram.Value.Min, 1)} min {Math.Round(histogram.Value.Max, 1)} max {Math.Round(histogram.Value.Percentile95, 1)} 95p {histogram.Unit}");
     }
 
     foreach (var timer in metricsData.Contexts.SelectMany(context => context.Timers))
