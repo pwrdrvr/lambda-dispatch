@@ -1,5 +1,8 @@
 const express = require("express");
 const { DynamoDBClient, GetItemCommand } = require("@aws-sdk/client-dynamodb");
+const { promisify } = require("util");
+
+const sleep = promisify(setTimeout);
 
 const app = express();
 const port = 3000;
@@ -12,7 +15,17 @@ const dbClient = new DynamoDBClient({});
 //   console.log(`${new Date().toISOString()} Contained App - Heartbeat`);
 // }, 5000);
 
-app.get("/health", (req, res) => {
+let firstHealthCheck = true;
+
+app.get("/health", async (req, res) => {
+  if (firstHealthCheck) {
+    firstHealthCheck = false;
+    console.log(
+      `${new Date().toISOString()} Contained App - First health check - delayed 8 seconds`
+    );
+    await sleep(8000);
+  }
+
   res.send("OK");
 });
 
@@ -37,6 +50,10 @@ app.get("/read", async (req, res) => {
     //   `${new Date().toISOString()} Contained App - Success`,
     //   data.Item
     // );
+
+    // Pause for 50 ms to simulate calling an upstream that takes longer
+    await sleep(50);
+
     res.json(data.Item);
   } catch (err) {
     console.error(
