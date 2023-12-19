@@ -139,6 +139,10 @@ public class Function
 
                                 _logger.LogDebug("Got request from Router");
 
+                                //
+                                // TODO: Send receivedRequest to Node.js app
+                                //
+
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == (int)HttpStatusCode.Conflict)

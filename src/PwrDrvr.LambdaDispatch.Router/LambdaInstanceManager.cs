@@ -219,12 +219,12 @@ public class LambdaInstanceManager
       if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
       {
         // We need to start a new instance
-        await this.StartNewInstance();
+        await this.StartNewInstance().ConfigureAwait(false);
       }
     };
 
     // This is only async because of the ENI IP lookup
-    await instance.Start();
+    await instance.Start().ConfigureAwait(false);
   }
 
   /// <summary>
