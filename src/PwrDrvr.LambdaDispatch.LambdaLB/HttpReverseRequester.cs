@@ -281,6 +281,16 @@ public class HttpReverseRequester
     // Copy the headers
     foreach (var header in response.Headers)
     {
+      if (string.Compare(header.Key, "Keep-Alive", true) == 0)
+      {
+        // Don't send the Keep-Alive header
+        continue;
+      }
+      if (string.Compare(header.Key, "Connection", true) == 0)
+      {
+        // Don't send the Connection header
+        continue;
+      }
       await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {string.Join(',', header.Value)}\r\n"));
     }
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Lambda-Id: " + _id + "\r\n"));
