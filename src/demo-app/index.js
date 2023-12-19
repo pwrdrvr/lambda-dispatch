@@ -5,10 +5,7 @@ const app = express();
 const port = 3000;
 
 // Create a DynamoDB client
-const dbClient = new DynamoDBClient({
-  maxAttempts: 1,
-  timeout: 5,
-});
+const dbClient = new DynamoDBClient({});
 
 // Start a heartbeat log
 // setInterval(() => {
