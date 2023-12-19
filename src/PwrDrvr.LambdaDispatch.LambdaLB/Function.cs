@@ -43,7 +43,7 @@ public class Function
         _logger.LogInformation("Lambda Started");
 #if !DEBUG
         await StartChildApp().ConfigureAwait(false);
-        _logger.LogInformation("Child App Started");
+        _logger.LogInformation("Contained App Started");
 #endif
 #if !NATIVE_AOT
         Task.Run(MetricsRegistry.PrintMetrics);
@@ -54,17 +54,38 @@ public class Function
             .RunAsync();
     }
 
+    private static string FindStartupScript()
+    {
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var startupScript = Path.Combine(currentDirectory, "startapp.sh");
+
+        if (!File.Exists(startupScript))
+        {
+            // Check if ../demo-app/startapp.sh exists
+            currentDirectory = Path.Combine(currentDirectory, "src", "demo-app");
+            startupScript = Path.Combine(currentDirectory, "startapp.sh");
+        }
+
+        return startupScript;
+    }
+
     private static async Task StartChildApp()
     {
         // Start the application
+        var startupScript = FindStartupScript();
         var startApp = new ProcessStartInfo
         {
-            FileName = "/bin/bash",
-            ArgumentList = { "./startapp.sh" },
-            RedirectStandardOutput = true,
+            FileName = startupScript,
             UseShellExecute = false,
             CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(startupScript)
         };
+        // TODO: Need a way to configure this for local testing
+#if false
+        startApp.Environment.Remove("AWS_ACCESS_KEY_ID");
+        startApp.Environment.Remove("AWS_SECRET_ACCESS_KEY");
+        startApp.Environment.Remove("AWS_SESSION_TOKEN");
+#endif
         var process = Process.Start(startApp);
         // await process.WaitForExitAsync();
 
@@ -227,7 +248,9 @@ public class Function
                                     Scheme = "http",
                                 }.Uri;
                                 // TODO: Return after headers are received
+                                _logger.LogDebug("Sending request to Contained App");
                                 var response = await appHttpClient.SendAsync(receivedRequest);
+                                _logger.LogDebug("Got response from Contained App");
 
                                 // Get the response body and dump it
                                 // var responseBody = await response.Content.ReadAsStringAsync();
