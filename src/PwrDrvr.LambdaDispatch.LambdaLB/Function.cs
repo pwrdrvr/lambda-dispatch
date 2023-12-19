@@ -4,9 +4,9 @@ using Amazon.Lambda.Serialization.SystemTextJson;
 using System.Text.Json.Serialization;
 using PwrDrvr.LambdaDispatch.Messages;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using AWS.Logger;
 using System.Net;
-using System.Net.Sockets;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
@@ -41,13 +41,53 @@ public class Function
     private static async Task Main()
     {
         _logger.LogInformation("Lambda Started");
-#if NATIVE_AOT
+        await StartChildApp().ConfigureAwait(false);
+        _logger.LogInformation("Child App Started");
+#if !NATIVE_AOT
         Task.Run(MetricsRegistry.PrintMetrics);
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()
             .RunAsync();
+    }
+
+    private static async Task StartChildApp()
+    {
+        // Start the application
+        var startApp = new ProcessStartInfo
+        {
+            FileName = "/bin/bash",
+            ArgumentList = { "./startapp.sh" },
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        var process = Process.Start(startApp);
+        // await process.WaitForExitAsync();
+
+        // Poll the health endpoint
+        using var client = new HttpClient();
+        var healthCheckUrl = "http://localhost:3000/health";
+        HttpResponseMessage response = null;
+        do
+        {
+            try
+            {
+                response = await client.GetAsync(healthCheckUrl);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    break;
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Ignore exceptions caused by the server not being ready
+            }
+
+            await Task.Delay(1000); // Wait for a second before polling again
+        }
+        while (true);
     }
 
     /// <summary>
@@ -66,7 +106,7 @@ public class Function
         try
         {
             // Reset the metrics
-#if NATIVE_AOT
+#if !NATIVE_AOT
             MetricsRegistry.Metrics.Manage.Reset();
 #endif
 
@@ -108,7 +148,7 @@ public class Function
                 {
                     using var taskNumberScope = _logger.BeginScope("TaskNumber: {TaskNumber}", taskNumber);
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsOpen);
 #endif
 
@@ -122,13 +162,13 @@ public class Function
 
                             lastWakeupTime = DateTime.Now;
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LastWakeupTime, () => (DateTime.Now - lastWakeupTime).TotalMilliseconds);
 #endif
 
                             try
                             {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                 using var timer = MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer);
 #endif
 
@@ -147,7 +187,7 @@ public class Function
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == (int)HttpStatusCode.Conflict)
                                 {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 #endif
 
@@ -158,7 +198,7 @@ public class Function
                                 }
                                 else if (outerStatus != (int)HttpStatusCode.OK)
                                 {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 #endif
 
@@ -168,7 +208,7 @@ public class Function
                                     return;
                                 }
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
 #endif
 
@@ -183,7 +223,7 @@ public class Function
 
                                 await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
 #endif
 
@@ -268,7 +308,7 @@ public class Function
                     }
                     finally
                     {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.ChannelsOpen);
                         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsClosed);
 #endif
@@ -330,7 +370,7 @@ public class Function
         finally
         {
             // Dump the metrics one last time
-#if NATIVE_AOT
+#if !NATIVE_AOT
             await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
 #endif
         }

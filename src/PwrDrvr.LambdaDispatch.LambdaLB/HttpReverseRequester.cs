@@ -1,5 +1,5 @@
-#define USE_SOCKETS_HTTP_HANDLER
-#define USE_INSECURE_CIPHER_FOR_WIRESHARK
+// #define USE_SOCKETS_HTTP_HANDLER
+// #define USE_INSECURE_CIPHER_FOR_WIRESHARK
 
 using System.Net;
 using System.Net.Security;
