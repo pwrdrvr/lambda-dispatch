@@ -41,8 +41,10 @@ public class Function
     private static async Task Main()
     {
         _logger.LogInformation("Lambda Started");
+#if !DEBUG
         await StartChildApp().ConfigureAwait(false);
         _logger.LogInformation("Child App Started");
+#endif
 #if !NATIVE_AOT
         Task.Run(MetricsRegistry.PrintMetrics);
 #endif
@@ -128,6 +130,8 @@ public class Function
             // if the DispatcherUrl has not actually changed
             await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl);
 
+            using var appHttpClient = new HttpClient();
+
             var NumberOfChannels = request.NumberOfChannels;
 
             if (ThreadPool.ThreadCount < NumberOfChannels)
@@ -179,10 +183,6 @@ public class Function
 
                                 _logger.LogDebug("Got request from Router");
 
-                                //
-                                // TODO: Send receivedRequest to Node.js app
-                                //
-
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == (int)HttpStatusCode.Conflict)
@@ -212,15 +212,29 @@ public class Function
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
 #endif
 
-                                // Read the bytes off the request body, if any
-                                // TODO: This is not always a string
-                                var requestBody = await receivedRequest.Content.ReadAsStringAsync();
-
-                                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                                //
+                                // Send receivedRequest to Contained App
+                                //
+                                // Override the host and port
+                                receivedRequest.RequestUri = new UriBuilder()
                                 {
-                                    Content = new StringContent("Hello From LambdaLB!\r\n"),
-                                };
+                                    Host = "localhost",
+                                    Port = 3000,
+                                    // The requestUri is ONLY a path/query string
+                                    // TODO: Not sure Path will accept a query string here
+                                    Path = receivedRequest.RequestUri.OriginalString,
+                                    // Query = receivedRequest.RequestUri.Query,
+                                    Scheme = "http",
+                                }.Uri;
+                                // TODO: Return after headers are received
+                                var response = await appHttpClient.SendAsync(receivedRequest);
 
+                                // Get the response body and dump it
+                                // var responseBody = await response.Content.ReadAsStringAsync();
+
+                                // Send the response back
+                                // TODO: Only send the headers
+                                // TODO: Use CopyToAsync on the body
                                 await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
 
 #if !NATIVE_AOT
