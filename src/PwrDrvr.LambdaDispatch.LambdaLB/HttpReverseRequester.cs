@@ -199,7 +199,7 @@ public class HttpReverseRequester
         }
         else if (firstLine == "GOAWAY")
         {
-          _logger.LogWarning("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+          _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
           // Clean up
           // Indicate that we don't need the response body anymore
           try { response.Content.Dispose(); } catch { }
@@ -281,7 +281,7 @@ public class HttpReverseRequester
     // Copy the headers
     foreach (var header in response.Headers)
     {
-      await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
+      await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {string.Join(',', header.Value)}\r\n"));
     }
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Lambda-Id: " + _id + "\r\n"));
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Channel-Id: " + channelId + "\r\n"));
@@ -327,7 +327,7 @@ public class HttpReverseRequester
 
   public async Task Ping()
   {
-    _logger.LogInformation("Starting ping of instance: {id}", _id);
+    _logger.LogDebug("Starting ping of instance: {id}", _id);
     var uri = new UriBuilder(_uri)
     {
       Path = $"{_uri.AbsolutePath}/ping/{_id}",
@@ -349,7 +349,7 @@ public class HttpReverseRequester
     }
     else
     {
-      _logger.LogInformation("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
+      _logger.LogDebug("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
       try { await response.Content.CopyToAsync(Stream.Null); } catch { }
     }
   }
