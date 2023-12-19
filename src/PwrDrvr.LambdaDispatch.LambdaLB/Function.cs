@@ -252,6 +252,11 @@ public class Function
                                 var response = await appHttpClient.SendAsync(receivedRequest);
                                 _logger.LogDebug("Got response from Contained App");
 
+                                if ((int)response.StatusCode >= 500)
+                                {
+                                    _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
+                                }
+
                                 // Get the response body and dump it
                                 // var responseBody = await response.Content.ReadAsStringAsync();
 
