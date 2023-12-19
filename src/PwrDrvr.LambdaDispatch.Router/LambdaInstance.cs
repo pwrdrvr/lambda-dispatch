@@ -106,13 +106,18 @@ public class LambdaInstance
   /// This allow us to subtract maxConcurrentCount - availableConnectionCount to get the number of
   /// connections that are busy or non-existing (which we can treat as busy)
   /// 
-  /// This reducs funny business like instances being in the idle queue
+  /// This reduces funny business like instances being in the idle queue
   /// but actually not having any available connections
   /// </summary>
   private volatile int availableConnectionCount = 0;
 
   private volatile int openConnectionCount = 0;
 
+  /// <summary>
+  /// The number of requests that are outstanding
+  /// But really the delta between the max concurrent count and the available connection count
+  /// This prevents instances from being marked as idle when they are actually busy / have no available connections
+  /// </summary>
   public int OutstandingRequestCount => maxConcurrentCount - availableConnectionCount;
 
   public int AvailableConnectionCount => availableConnectionCount;
