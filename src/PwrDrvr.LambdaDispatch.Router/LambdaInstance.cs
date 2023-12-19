@@ -182,6 +182,11 @@ public class LambdaInstance
     // Only make this connection visible if we're not going to immediately use it for a queued request
     if (!immediateDispatch)
     {
+      // Start the response
+      // This sends the headers
+      // The response will then hang around waiting for the data to be written to it
+      await response.StartAsync();
+
       Interlocked.Increment(ref availableConnectionCount);
       connectionQueue.Enqueue(connection);
     }
@@ -381,7 +386,8 @@ public class LambdaInstance
     {
       Id = Id,
       DispatcherUrl = await GetCallbackIP.Get(),
-      NumberOfChannels = maxConcurrentCount
+      NumberOfChannels = maxConcurrentCount,
+      SentTime = DateTime.Now
     };
 
     // Invoke the Lambda

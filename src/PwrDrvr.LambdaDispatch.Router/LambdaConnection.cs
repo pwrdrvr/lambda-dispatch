@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Text;
 
@@ -109,7 +110,7 @@ public class LambdaConnection
     // There will either be no subsequent connection or it will
     // get immediately rejected with a 409
     // Response.StatusCode = 409;
-    await Response.WriteAsync($"Discarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing");
+    await Response.WriteAsync($"GOAWAY\r\nDiscarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing\r\n");
     await Response.CompleteAsync();
     try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
 
@@ -121,7 +122,7 @@ public class LambdaConnection
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("Sending incoming request headers to Lambda");
 
-    // TODO: Write the request line
+    // Write the request line
     await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{incomingRequest.Method} {incomingRequest.Path} {incomingRequest.Protocol}\r\n"));
 
     // Send the headers to the Lambda
@@ -250,7 +251,22 @@ public class LambdaConnection
     }
     catch (Exception ex)
     {
-      _logger.LogError(ex, "LambdaConnection.RunRequest - Exception");
+      if (this.Request.Headers.TryGetValue("Date", out var dateValues)
+          && dateValues.Count == 1
+          && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+      {
+        var duration = DateTime.UtcNow - requestDate;
+
+        _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+            requestDate.ToLocalTime().ToString("o"),
+            duration.TotalSeconds,
+            this.Instance.Id,
+            this.ChannelId);
+      }
+      else
+      {
+        _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Receipt time not known");
+      }
       try { await this.Request.Body.CopyToAsync(Stream.Null); } catch { }
     }
     finally

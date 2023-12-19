@@ -17,8 +17,12 @@ public class WaiterRequest
   /// Set the number of channels to open back to the router
   /// </summary>
   public int NumberOfChannels { get; set; }
-}
 
+  /// <summary>
+  /// Set the time that the message was sent
+  /// </summary>
+  public DateTime SentTime { get; set; }
+}
 
 public class WaiterResponse
 {

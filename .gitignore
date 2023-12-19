@@ -9,6 +9,13 @@
 out
 
 certs/
+captures/
+
+*.gcdump
+core_*
+*.report
+*.nettrace
+*.speedscope.json
 
 # User-specific files
 *.rsuser

@@ -22,7 +22,7 @@ namespace PwrDrvr.LambdaDispatch.Router
 
             services.AddSingleton<Dispatcher>();
 
-            Task.Run(MetricsRegistry.PrintMetrics);
+            Task.Run(MetricsRegistry.PrintMetrics).ConfigureAwait(false);
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

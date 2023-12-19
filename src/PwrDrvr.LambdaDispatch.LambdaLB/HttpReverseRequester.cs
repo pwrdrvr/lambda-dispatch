@@ -1,6 +1,8 @@
+#define USE_SOCKETS_HTTP_HANDLER
+#define USE_INSECURE_CIPHER_FOR_WIRESHARK
+
 using System.Net;
 using System.Net.Security;
-using System.Security.Authentication;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -17,10 +19,10 @@ public class HttpReverseRequester
 
   private readonly HttpClient _client;
 
-#if false
-  private readonly HttpClientHandler? _handler;
-#else
+#if USE_SOCKETS_HTTP_HANDLER
   private readonly SocketsHttpHandler? _handler;
+#else
+  private readonly HttpClientHandler? _handler;
 #endif
 
   public HttpReverseRequester(string id, string dispatcherUrl, HttpClient httpClient = null, ILogger<HttpReverseRequester> logger = null)
@@ -38,7 +40,45 @@ public class HttpReverseRequester
 
     if (httpClient == null)
     {
-#if false
+#if USE_SOCKETS_HTTP_HANDLER
+      var sslOptions = new SslClientAuthenticationOptions
+      {
+        RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
+        {
+          // If the certificate is a valid, signed certificate, return true.
+          if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
+          {
+            return true;
+          }
+
+          // If it's a self-signed certificate for the specific host, return true.
+          // TODO: Get the CN name to allow
+          if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
+          {
+            return true;
+          }
+
+          // In all other cases, return false.
+          return false;
+        },
+        // CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
+        ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http2 },
+#if USE_INSECURE_CIPHER_FOR_WIRESHARK
+        // WireShark needs this to decrypt the traffic
+        CipherSuitesPolicy = new CipherSuitesPolicy(new List<TlsCipherSuite> { TlsCipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256 })
+#endif
+      };
+      _handler = new SocketsHttpHandler { SslOptions = sslOptions };
+      // _handler.Proxy = new WebProxy("http://localhost:8886");
+      // _handler.UseProxy = true;
+      // Allow to live to just over max time of a Lambda invoke
+      _handler.PooledConnectionLifetime = TimeSpan.FromMinutes(16);
+      _client = new HttpClient(_handler, true)
+      {
+        DefaultRequestVersion = new Version(2, 0),
+        Timeout = TimeSpan.FromMinutes(15),
+      };
+#else
       _handler = new HttpClientHandler();
       // _handler.Proxy = new WebProxy("http://localhost:8080");
       // _handler.UseProxy = true;
@@ -63,47 +103,12 @@ public class HttpReverseRequester
         return false;
       };
 
-      _client = new HttpClient(socketsHttpHandler)
-      {
-        DefaultRequestVersion = new Version(2, 0),
-        Timeout = TimeSpan.FromMinutes(15),
-      };
-#else
-      var sslOptions = new SslClientAuthenticationOptions
-      {
-        RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
-        {
-          // If the certificate is a valid, signed certificate, return true.
-          if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
-          {
-            return true;
-          }
-
-          // If it's a self-signed certificate for the specific host, return true.
-          // TODO: Get the CN name to allow
-          if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
-          {
-            return true;
-          }
-
-          // In all other cases, return false.
-          return false;
-        },
-        // CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
-        ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http2 },
-        // WireShark needs this to decrypt the traffic
-        // CipherSuitesPolicy = new CipherSuitesPolicy(new List<TlsCipherSuite> { TlsCipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256 })
-      };
-      _handler = new SocketsHttpHandler { SslOptions = sslOptions };
-      // _handler.Proxy = new WebProxy("http://localhost:8886");
-      // _handler.UseProxy = true;
       _client = new HttpClient(_handler, true)
       {
         DefaultRequestVersion = new Version(2, 0),
         Timeout = TimeSpan.FromMinutes(15),
       };
 #endif
-
     }
     else
     {
@@ -132,7 +137,7 @@ public class HttpReverseRequester
 
     var uri = new UriBuilder(_uri)
     {
-      Path = $"{_uri.AbsolutePath}/request/{_id}",
+      Path = $"{_uri.AbsolutePath}/request/{_id}/{channelId}",
       Port = 5003,
       Scheme = "https",
     }.Uri;
@@ -191,6 +196,17 @@ public class HttpReverseRequester
         {
           // We need to let go of the request body
           throw new EndOfStreamException("End of stream reached while reading request line");
+        }
+        else if (firstLine == "GOAWAY")
+        {
+          _logger.LogWarning("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+          // Clean up
+          // Indicate that we don't need the response body anymore
+          try { response.Content.Dispose(); } catch { }
+          // Close the request body
+          try { requestStreamForResponse.Close(); } catch { }
+          try { duplexContent?.Complete(); } catch { }
+          return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
         }
 
         var partsOfFirstLine = firstLine.Split(' ');
@@ -296,7 +312,7 @@ public class HttpReverseRequester
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
 
-    var response = await _client.SendAsync(request);
+    using var response = await _client.SendAsync(request);
 
     if (response.StatusCode != HttpStatusCode.OK)
     {
@@ -325,7 +341,7 @@ public class HttpReverseRequester
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
 
-    var response = await _client.SendAsync(request);
+    using var response = await _client.SendAsync(request);
 
     if (response.StatusCode != HttpStatusCode.OK)
     {

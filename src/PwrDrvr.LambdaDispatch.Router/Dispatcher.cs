@@ -165,6 +165,8 @@ public class Dispatcher
       // Register the connection with the lambda
       var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, true);
 
+      // If the connection returned is null then the Response has already been disposed
+      // This will be null if the Lambda was actually gone when we went to add it to the instance manager
       if (connection == null)
       {
         _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
@@ -174,6 +176,10 @@ public class Dispatcher
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
         return result;
       }
+
+      // Start the response
+      // This sends the headers
+      await response.StartAsync();
 
       // Only at this point are we sure we're going to dispatch
       pendingRequest.RecordDispatchTime();
@@ -210,13 +216,10 @@ public class Dispatcher
     //
     // There was no pending request to immediately dispatch, so just add the connection
     //
+    // NOTE: As soon as this is called the connection can be taken and used for a request
+    // we do not own this request/response anymore after this call
+    //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
-
-    // Start the response
-    // This sends the headers
-    // We might not want to do this because it makes it impossible
-    // to send a 409 later if we can't dispatch
-    await response.StartAsync();
 
     return result;
   }
@@ -231,7 +234,7 @@ public class Dispatcher
         // Create a CancellationToken that will be cancelled after 1 second
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 
-        await _pendingRequestSignal.Reader.ReadAsync(cts.Token);
+        await _pendingRequestSignal.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
         _logger.LogDebug("BackgroundPendingRequestDispatcher - Got signal");
 
         // Loop quickly until we dispatch the item that we know is there
@@ -239,7 +242,7 @@ public class Dispatcher
         {
           _logger.LogDebug("BackgroundPendingRequestDispatcher - Dispatched one");
 
-          await Task.Delay(TimeSpan.FromMilliseconds(10));
+          await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
         }
       }
       catch (OperationCanceledException)
