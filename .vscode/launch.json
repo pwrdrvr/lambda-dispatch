@@ -18,7 +18,10 @@
       "args": [],
       "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB",
       "stopAtEntry": false,
-      "console": "internalConsole"
+      "console": "internalConsole",
+      "env": {
+        "STATIC_RESPONSE": "true",
+      }
     },
     {
       "name": "LambdaLB bootstrap (console) - Release",
