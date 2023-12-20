@@ -28,9 +28,15 @@ public class Function
 {
     private static readonly ILogger _logger;
 
+    private static readonly bool _staticResponse;
+
     static Function()
     {
         _logger = LoggerInstance.CreateLogger<Function>();
+
+        // If the environment variable STATIC_RESPONSE is set to true then we will always return the same response
+        // This is useful for testing the Lambda function without the Contained App
+        _staticResponse = Environment.GetEnvironmentVariable("STATIC_RESPONSE") == "true";
     }
 
     /// <summary>
@@ -42,8 +48,11 @@ public class Function
     {
         _logger.LogInformation("Lambda Started");
 #if !DEBUG
-        await StartChildApp().ConfigureAwait(false);
-        _logger.LogInformation("Contained App Started");
+        if (!_staticResponse)
+        {
+            await StartChildApp().ConfigureAwait(false);
+            _logger.LogInformation("Contained App Started");
+        }
 #endif
 #if !NATIVE_AOT
         Task.Run(MetricsRegistry.PrintMetrics);
@@ -149,7 +158,8 @@ public class Function
             // TODO: We can potentially make this static or a map on dispatcherUrl to requester
             // Each request repeats the Lambda ID and we do not need to re-establish sockets
             // if the DispatcherUrl has not actually changed
-            await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl);
+            using var routerHttpClient = SetupHttpClient.CreateClient();
+            await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl, routerHttpClient);
 
             using var appHttpClient = new HttpClient();
 
@@ -247,23 +257,40 @@ public class Function
                                     // Query = receivedRequest.RequestUri.Query,
                                     Scheme = "http",
                                 }.Uri;
-                                // TODO: Return after headers are received
-                                _logger.LogDebug("Sending request to Contained App");
-                                var response = await appHttpClient.SendAsync(receivedRequest);
-                                _logger.LogDebug("Got response from Contained App");
 
-                                if ((int)response.StatusCode >= 500)
+                                if (!_staticResponse)
                                 {
-                                    _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
+                                    // TODO: Return after headers are received
+                                    _logger.LogDebug("Sending request to Contained App");
+                                    using var response = await appHttpClient.SendAsync(receivedRequest);
+                                    _logger.LogDebug("Got response from Contained App");
+
+                                    if ((int)response.StatusCode >= 500)
+                                    {
+                                        _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
+                                    }
+
+                                    // Get the response body and dump it
+                                    // var responseBody = await response.Content.ReadAsStringAsync();
+
+                                    // Send the response back
+                                    // TODO: Only send the headers
+                                    // TODO: Use CopyToAsync on the body
+                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
                                 }
+                                else
+                                {
+                                    // Read the bytes off the request body, if any
+                                    // TODO: This is not always a string
+                                    var requestBody = await receivedRequest.Content.ReadAsStringAsync();
 
-                                // Get the response body and dump it
-                                // var responseBody = await response.Content.ReadAsStringAsync();
+                                    using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                                    {
+                                        Content = new StringContent($"Hello from LambdaLB")
+                                    };
 
-                                // Send the response back
-                                // TODO: Only send the headers
-                                // TODO: Use CopyToAsync on the body
-                                await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                }
 
 #if !NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
@@ -369,7 +396,13 @@ public class Function
                     try
                     {
                         await Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token);
-                        await reverseRequester.Ping();
+                        if (!await reverseRequester.Ping())
+                        {
+                            // Stop the other tasks from looping
+                            cts.Cancel();
+                            _logger.LogInformation("Failed pinging router, stopping");
+                            return;
+                        }
                     }
                     catch (TaskCanceledException)
                     {
