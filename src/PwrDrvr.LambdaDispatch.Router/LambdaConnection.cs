@@ -141,6 +141,7 @@ public class LambdaConnection
       _logger.LogDebug("Sending incoming request body to Lambda");
 
       // Send the body to the Lambda
+      await Response.BodyWriter.FlushAsync();
       await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter.AsStream());
       await incomingRequest.BodyReader.CompleteAsync();
 
