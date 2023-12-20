@@ -1,11 +1,15 @@
 #!/bin/bash
 
 # Define variables
-ROOT_CERT="Pwrdrvr.LambdaDispatch"
+OUTPUT_DIR="./certs"
+ROOT_CERT="fakeroot"
 DOMAIN="lambdadispatch.local"
 ROOT_CERT_EXPIRY=365
 DOMAIN_CERT_EXPIRY=365
-CONFIG_FILE="san.cnf"
+CONFIG_FILE="$OUTPUT_DIR/san.cnf"
+
+# Create the output directory if it doesn't exist
+mkdir -p $OUTPUT_DIR
 
 # Generate a configuration file for the domain certificate
 cat > $CONFIG_FILE <<EOF
@@ -27,31 +31,30 @@ DNS.1 = $DOMAIN
 EOF
 
 # Create a private key for the root certificate
-openssl genrsa -out $ROOT_CERT.key 2048
+openssl genrsa -out $OUTPUT_DIR/$ROOT_CERT.key 2048
 
 # Create a self-signed root certificate
-openssl req -x509 -new -nodes -key $ROOT_CERT.key -sha256 -days $ROOT_CERT_EXPIRY -out $ROOT_CERT.pem -subj "/CN=My Root CA"
+openssl req -x509 -new -nodes -key $OUTPUT_DIR/$ROOT_CERT.key -sha256 -days $ROOT_CERT_EXPIRY -out $OUTPUT_DIR/$ROOT_CERT.pem -subj "/CN=My Root CA"
 
 # Add the root certificate to the system's trust store
-# sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $ROOT_CERT.pem
+# This is useful if you'd prefer to observe the traffic with Fiddler (but I don't think it will show this issue)
+# sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $OUTPUT_DIR/$ROOT_CERT.pem
 
 # Create a private key for the domain
-openssl genrsa -out $DOMAIN.key 2048
+openssl genrsa -out $OUTPUT_DIR/$DOMAIN.key 2048
 
 # Create a certificate signing request (CSR) for the domain with SAN
-openssl req -new -key $DOMAIN.key -out $DOMAIN.csr -config $CONFIG_FILE
+openssl req -new -key $OUTPUT_DIR/$DOMAIN.key -out $OUTPUT_DIR/$DOMAIN.csr -config $CONFIG_FILE
 
 # Create a certificate for the domain signed by the root certificate
-openssl x509 -req -in $DOMAIN.csr -CA $ROOT_CERT.pem -CAkey $ROOT_CERT.key -CAcreateserial -out $DOMAIN.crt -days $DOMAIN_CERT_EXPIRY -sha256 -extfile $CONFIG_FILE -extensions req_ext
-
+openssl x509 -req -in $OUTPUT_DIR/$DOMAIN.csr -CA $OUTPUT_DIR/$ROOT_CERT.pem -CAkey $OUTPUT_DIR/$ROOT_CERT.key -CAcreateserial -CAserial $OUTPUT_DIR/$ROOT_CERT.srl -out $OUTPUT_DIR/$DOMAIN.crt -days $DOMAIN_CERT_EXPIRY -sha256 -extfile $CONFIG_FILE -extensions req_ext
 # Convert the private key to PKCS8 format for HttpClient
-openssl pkcs8 -topk8 -inform PEM -outform PEM -in $DOMAIN.key -out $DOMAIN.pkcs8.key -nocrypt
+openssl pkcs8 -topk8 -inform PEM -outform PEM -in $OUTPUT_DIR/$DOMAIN.key -out $OUTPUT_DIR/$DOMAIN.pkcs8.key -nocrypt
 
 # Convert the domain certificate and the private key to .pfx format for Kestrel
-# TODO: Use a password and fetch it with AWS Secrets Manager
-openssl pkcs12 -export -out $DOMAIN.pfx -inkey $DOMAIN.key -in $DOMAIN.crt -passout pass:"" #-password pass:your_password
+openssl pkcs12 -export -out $OUTPUT_DIR/$DOMAIN.pfx -inkey $OUTPUT_DIR/$DOMAIN.key -in $OUTPUT_DIR/$DOMAIN.crt -passout pass:"" #-password pass:your_password
 
 # Clean up CSR and config file
-rm $DOMAIN.csr $CONFIG_FILE
+rm $OUTPUT_DIR/$DOMAIN.csr $CONFIG_FILE
 
-echo "Certificates created."
+echo "Certificates created in $OUTPUT_DIR."

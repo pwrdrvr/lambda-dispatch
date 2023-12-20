@@ -22,7 +22,7 @@ public static class SetupHttpClient
       }
 
       // If it's a self-signed certificate for the specific host, return true.
-      if (cert != null && cert.Subject.Contains("CN=dummy.local"))
+      if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
       {
         return true;
       }
@@ -54,7 +54,7 @@ public static class SetupHttpClient
       }
 
       // If it's a self-signed certificate for the specific host, return true.
-      if (cert != null && cert.Subject.Contains("CN=dummy.local"))
+      if (cert != null && cert.Subject.Contains("CN=lambdadispatch.local"))
       {
         return true;
       }
