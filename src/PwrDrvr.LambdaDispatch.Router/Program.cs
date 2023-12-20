@@ -56,7 +56,7 @@ public class Program
                 // webBuilder.UseUrls("http://0.0.0.0:5002", "http://0.0.0.0:5001", "https://0.0.0.0:5003");
                 webBuilder.ConfigureKestrel(serverOptions =>
                 {
-                    serverOptions.ListenAnyIP(5001);
+                    // serverOptions.ListenAnyIP(5001);
                     serverOptions.ListenAnyIP(5002);
                     serverOptions.ListenAnyIP(5003, listenOptions =>
                     {

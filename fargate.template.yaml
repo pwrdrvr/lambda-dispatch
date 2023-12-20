@@ -219,6 +219,15 @@ Resources:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
 
+  DynamoDBVPCEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcId: !Ref MyVPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+
   LambdaVPCEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -343,6 +352,18 @@ Resources:
       HealthCheckTimeoutSeconds: 2
       HealthyThresholdCount: 2
 
+  LambdaLBTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: LambdaDispatchDemo
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
   LambdaLBExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -366,6 +387,17 @@ Resources:
                   - ec2:DescribeNetworkInterfaces
                   - ec2:DeleteNetworkInterface
                 Resource: '*'
+        - PolicyName: DynamoDBAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:DeleteItem'
+                Resource: !GetAtt LambdaLBTable.Arn
         - PolicyName: CloudWatchLogsPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -388,6 +420,8 @@ Resources:
           FromPort: 0
           ToPort: 65535
           CidrIp: !GetAtt MyVPC.CidrBlock
+        - IpProtocol: '-1'
+          DestinationPrefixListId: 'pl-4ca54025' # US East 2 DynamoDB Prefix List
 
   LambdaLB:
     Type: AWS::Lambda::Function

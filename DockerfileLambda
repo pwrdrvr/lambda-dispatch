@@ -20,22 +20,51 @@ RUN dotnet restore src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.La
 COPY . ./
 
 # Build the project
-RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime linux-arm64 -o out
+RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime linux-arm64 -o out /p:NativeAot=true
 
 # We do not need the ~40 MB of ICU libs
 RUN rm out/libicu*
 
-# Use the Amazon Linux 2023 image as the runtime environment
-FROM amazonlinux:2023
+
+#
+# Build the node.js app
+#
+FROM node:20-alpine AS node-build-env
 
 # Set the working directory
 WORKDIR /app
 
-# Install the ICU libraries
-# RUN yum install -y libicu
+# Copy just files needed for npm install
+COPY src/demo-app/package.json src/demo-app/package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy everything from the current directory to the working directory in the image
+COPY src/demo-app .
+
+# Build the app
+RUN npm run build
+
+
+#
+# Use the Amazon Linux 2023 image as the runtime environment
+#
+# FROM amazonlinux:2023
+FROM public.ecr.aws/lambda/provided:al2023
+
+# Set the working directory
+WORKDIR /app
+
+RUN dnf install -y nodejs
 
 # Copy the build output from the build environment
+# This is a self-contained single binary file
 COPY --from=build-env /app/out .
+
+# Copy the node.js app
+COPY --from=node-build-env /app/dist/index.js dist/
+COPY --from=node-build-env /app/startapp.sh ./
 
 # Set the entrypoint
 ENTRYPOINT ["./bootstrap"]

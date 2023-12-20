@@ -1,6 +1,6 @@
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
 
 using System.IO;
 using System.Text;

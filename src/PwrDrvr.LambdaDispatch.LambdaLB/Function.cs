@@ -4,9 +4,9 @@ using Amazon.Lambda.Serialization.SystemTextJson;
 using System.Text.Json.Serialization;
 using PwrDrvr.LambdaDispatch.Messages;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using AWS.Logger;
 using System.Net;
-using System.Net.Sockets;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
@@ -28,9 +28,15 @@ public class Function
 {
     private static readonly ILogger _logger;
 
+    private static readonly bool _staticResponse;
+
     static Function()
     {
         _logger = LoggerInstance.CreateLogger<Function>();
+
+        // If the environment variable STATIC_RESPONSE is set to true then we will always return the same response
+        // This is useful for testing the Lambda function without the Contained App
+        _staticResponse = Environment.GetEnvironmentVariable("STATIC_RESPONSE") == "true";
     }
 
     /// <summary>
@@ -41,13 +47,79 @@ public class Function
     private static async Task Main()
     {
         _logger.LogInformation("Lambda Started");
-#if NATIVE_AOT
+#if !DEBUG
+        if (!_staticResponse)
+        {
+            await StartChildApp().ConfigureAwait(false);
+            _logger.LogInformation("Contained App Started");
+        }
+#endif
+#if !NATIVE_AOT
         Task.Run(MetricsRegistry.PrintMetrics);
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()
             .RunAsync();
+    }
+
+    private static string FindStartupScript()
+    {
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var startupScript = Path.Combine(currentDirectory, "startapp.sh");
+
+        if (!File.Exists(startupScript))
+        {
+            // Check if ../demo-app/startapp.sh exists
+            currentDirectory = Path.Combine(currentDirectory, "src", "demo-app");
+            startupScript = Path.Combine(currentDirectory, "startapp.sh");
+        }
+
+        return startupScript;
+    }
+
+    private static async Task StartChildApp()
+    {
+        // Start the application
+        var startupScript = FindStartupScript();
+        var startApp = new ProcessStartInfo
+        {
+            FileName = startupScript,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(startupScript)
+        };
+        // TODO: Need a way to configure this for local testing
+#if false
+        startApp.Environment.Remove("AWS_ACCESS_KEY_ID");
+        startApp.Environment.Remove("AWS_SECRET_ACCESS_KEY");
+        startApp.Environment.Remove("AWS_SESSION_TOKEN");
+#endif
+        var process = Process.Start(startApp);
+        // await process.WaitForExitAsync();
+
+        // Poll the health endpoint
+        using var client = new HttpClient();
+        var healthCheckUrl = "http://localhost:3000/health";
+        HttpResponseMessage response = null;
+        do
+        {
+            try
+            {
+                response = await client.GetAsync(healthCheckUrl);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    break;
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Ignore exceptions caused by the server not being ready
+            }
+
+            await Task.Delay(1000); // Wait for a second before polling again
+        }
+        while (true);
     }
 
     /// <summary>
@@ -66,7 +138,7 @@ public class Function
         try
         {
             // Reset the metrics
-#if NATIVE_AOT
+#if !NATIVE_AOT
             MetricsRegistry.Metrics.Manage.Reset();
 #endif
 
@@ -86,7 +158,10 @@ public class Function
             // TODO: We can potentially make this static or a map on dispatcherUrl to requester
             // Each request repeats the Lambda ID and we do not need to re-establish sockets
             // if the DispatcherUrl has not actually changed
-            await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl);
+            using var routerHttpClient = SetupHttpClient.CreateClient();
+            await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl, routerHttpClient);
+
+            using var appHttpClient = new HttpClient();
 
             var NumberOfChannels = request.NumberOfChannels;
 
@@ -108,7 +183,7 @@ public class Function
                 {
                     using var taskNumberScope = _logger.BeginScope("TaskNumber: {TaskNumber}", taskNumber);
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsOpen);
 #endif
 
@@ -122,13 +197,13 @@ public class Function
 
                             lastWakeupTime = DateTime.Now;
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LastWakeupTime, () => (DateTime.Now - lastWakeupTime).TotalMilliseconds);
 #endif
 
                             try
                             {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                 using var timer = MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer);
 #endif
 
@@ -139,15 +214,11 @@ public class Function
 
                                 _logger.LogDebug("Got request from Router");
 
-                                //
-                                // TODO: Send receivedRequest to Node.js app
-                                //
-
                                 // The OuterStatus is the status returned by the Router on it's Response
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == (int)HttpStatusCode.Conflict)
                                 {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 #endif
 
@@ -158,7 +229,7 @@ public class Function
                                 }
                                 else if (outerStatus != (int)HttpStatusCode.OK)
                                 {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 #endif
 
@@ -168,22 +239,60 @@ public class Function
                                     return;
                                 }
 
-#if NATIVE_AOT
+#if !NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
 #endif
 
-                                // Read the bytes off the request body, if any
-                                // TODO: This is not always a string
-                                var requestBody = await receivedRequest.Content.ReadAsStringAsync();
-
-                                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                                //
+                                // Send receivedRequest to Contained App
+                                //
+                                // Override the host and port
+                                receivedRequest.RequestUri = new UriBuilder()
                                 {
-                                    Content = new StringContent("Hello From LambdaLB!\r\n"),
-                                };
+                                    Host = "localhost",
+                                    Port = 3000,
+                                    // The requestUri is ONLY a path/query string
+                                    // TODO: Not sure Path will accept a query string here
+                                    Path = receivedRequest.RequestUri.OriginalString,
+                                    // Query = receivedRequest.RequestUri.Query,
+                                    Scheme = "http",
+                                }.Uri;
 
-                                await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                if (!_staticResponse)
+                                {
+                                    // TODO: Return after headers are received
+                                    _logger.LogDebug("Sending request to Contained App");
+                                    using var response = await appHttpClient.SendAsync(receivedRequest);
+                                    _logger.LogDebug("Got response from Contained App");
 
-#if NATIVE_AOT
+                                    if ((int)response.StatusCode >= 500)
+                                    {
+                                        _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
+                                    }
+
+                                    // Get the response body and dump it
+                                    // var responseBody = await response.Content.ReadAsStringAsync();
+
+                                    // Send the response back
+                                    // TODO: Only send the headers
+                                    // TODO: Use CopyToAsync on the body
+                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                }
+                                else
+                                {
+                                    // Read the bytes off the request body, if any
+                                    // TODO: This is not always a string
+                                    var requestBody = await receivedRequest.Content.ReadAsStringAsync();
+
+                                    using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                                    {
+                                        Content = new StringContent($"Hello from LambdaLB")
+                                    };
+
+                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                }
+
+#if !NATIVE_AOT
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
 #endif
 
@@ -268,7 +377,7 @@ public class Function
                     }
                     finally
                     {
-#if NATIVE_AOT
+#if !NATIVE_AOT
                         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.ChannelsOpen);
                         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsClosed);
 #endif
@@ -287,7 +396,13 @@ public class Function
                     try
                     {
                         await Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token);
-                        await reverseRequester.Ping();
+                        if (!await reverseRequester.Ping())
+                        {
+                            // Stop the other tasks from looping
+                            cts.Cancel();
+                            _logger.LogInformation("Failed pinging router, stopping");
+                            return;
+                        }
                     }
                     catch (TaskCanceledException)
                     {
@@ -330,7 +445,7 @@ public class Function
         finally
         {
             // Dump the metrics one last time
-#if NATIVE_AOT
+#if !NATIVE_AOT
             await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
 #endif
         }
