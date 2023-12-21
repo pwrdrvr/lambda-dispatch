@@ -210,7 +210,8 @@ public class LambdaInstanceManager
       // The instance will already be marked as closing
       if (instanceFromList != null)
       {
-        await instanceFromList.Close();
+        // We don't want to wait for this, let it happen in the background
+        instanceFromList.Close();
       }
 
       // We need to keep track of how many Lambdas are running
@@ -228,7 +229,21 @@ public class LambdaInstanceManager
   }
 
   /// <summary>
-  /// Allow an instance to gracefully deregister itself
+  /// Gracefully close an instance
+  /// </summary>
+  /// <param name="instance"></param>
+  public void CloseInstance(LambdaInstance instance)
+  {
+    _logger.LogInformation("Closing instance {instanceId}", instance.Id);
+
+    // The instance is going to get cleaned up by the OnInvocationComplete handler
+    // Counts will be decremented, the instance will be replaced, etc.
+    // We just need to get the Lambda to return from the invoke
+    instance.Close();
+  }
+
+  /// <summary>
+  /// Gracefully close an instance
   /// </summary>
   /// <param name="instanceId"></param>
   /// <returns></returns>
@@ -238,10 +253,7 @@ public class LambdaInstanceManager
 
     if (_instances.TryGetValue(instanceId, out var instance))
     {
-      // The instance is going to get cleaned up by the OnInvocationComplete handler
-      // Counts will be decremented, the instance will be replaced, etc.
-      // We just need to get the Lambda to return from the invoke
-      instance.ReleaseConnections();
+      this.CloseInstance(instance);
     }
     else
     {
