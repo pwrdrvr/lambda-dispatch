@@ -110,6 +110,7 @@ public class LambdaInstanceManager
 
     // Calculate the desired count
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
+    // TODO: Load the 2x factor from the configuration
     var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
 
     // Special case for 0 pending or running
@@ -139,6 +140,33 @@ public class LambdaInstanceManager
       // Decrement the desired count
       Interlocked.Decrement(ref _desiredInstanceCount);
     }
+
+    // Stop only running instances if we have too many
+    // We do not count starting instances because they are not yet running
+    // TODO: This is dangerous - the runningInstanceCount is not decremented
+    // until the Lamda invoke returns, which could be seconds later.
+    // This means we could close all of the instances when this is hit from multiple threads.
+    // while (_runningInstanceCount > _desiredInstanceCount)
+    // {
+    //   // Get the least outstanding instance
+    //   if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
+    //   {
+    //     // Remove it from the collection
+    //     _instances.TryRemove(leastBusyInstance.Id, out var _);
+
+    //     // Note: the background rebalancer will remove this from the least outstanding queue eventually
+
+    //     // Close the instance
+    //     this.CloseInstance(leastBusyInstance);
+    //   }
+    //   else
+    //   {
+    //     // We have no instances to close
+    //     // This can happen if all instances are busy and we're starting a lot of new instances to replace them
+    //     _logger.LogError("UpdateDesiredCapacity - No instances to close - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+    //     break;
+    //   }
+    // }
 
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
 
@@ -212,6 +240,12 @@ public class LambdaInstanceManager
       {
         // We don't want to wait for this, let it happen in the background
         instanceFromList.Close();
+      }
+
+      if (instance.DoNotReplace)
+      {
+        _logger.LogInformation("LambdaInstance {instanceId} marked as DoNotReplace, not replacing", instance.Id);
+        return;
       }
 
       // We need to keep track of how many Lambdas are running
