@@ -77,6 +77,11 @@ public class LambdaInstance
   /// </summary>
   public bool DoNotReplace { get; private set; } = false;
 
+  // Add a task completion source
+  // When the lambda is done we set the task completion source
+  // and then we can wait on it to know when the lambda is done
+  private readonly TaskCompletionSource<bool> _tcs = new();
+
   private static AmazonLambdaConfig CreateConfig()
   {
     // Set env var AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051
@@ -138,6 +143,11 @@ public class LambdaInstance
   {
     this.maxConcurrentCount = maxConcurrentCount;
   }
+
+  /// <summary>
+  /// Task that completes when the Lambda Instance is done
+  /// </summary>
+  public Task<bool> InvokeCompletionTask => _tcs.Task;
 
   /// <summary>
   /// Called when we get a connection for the Lambda Instance ID
@@ -337,7 +347,15 @@ public class LambdaInstance
       {
         releasedConnectionCount += await ReleaseConnections();
 
-        await Task.Delay(1000);
+        // Wait for the task completion or 1 second
+        var delayTask = Task.Delay(TimeSpan.FromSeconds(1));
+        var completedTask = await Task.WhenAny(_tcs.Task, delayTask);
+
+        if (completedTask == _tcs.Task)
+        {
+          // The lambda is done
+          break;
+        }
       }
 
       State = LambdaInstanceState.Closed;
@@ -439,11 +457,13 @@ public class LambdaInstance
       {
         // Handle any exceptions that occurred during the invocation
         Exception ex = t.Exception;
+        _tcs.SetException(ex);
         _logger.LogError("LambdaInvoke for LambdaId: {Id}, gave error: {Message}", this.Id, ex.Message);
       }
       else if (t.IsCompleted)
       {
         // The Lambda invocation has completed
+        _tcs.SetResult(true);
         _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
       }
     });

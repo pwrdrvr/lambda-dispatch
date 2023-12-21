@@ -1,4 +1,5 @@
 # Use the official .NET 8 SDK image as the build environment
+# Build with whatever CPU the host OS has
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-env
 
 # Set the working directory
@@ -19,7 +20,8 @@ COPY . ./
 RUN dotnet publish src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Router.csproj -c Release --self-contained true --runtime linux-arm64 -o out
 
 # Use the Amazon Linux 2023 image as the runtime environment
-FROM amazonlinux:2023
+# Use the runtime image for ARM64
+FROM --platform=linux/arm64 amazonlinux:2023
 
 # Set the working directory
 WORKDIR /app

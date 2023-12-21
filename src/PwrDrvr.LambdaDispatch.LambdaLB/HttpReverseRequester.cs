@@ -19,12 +19,6 @@ public class HttpReverseRequester
 
   private readonly HttpClient _client;
 
-#if USE_SOCKETS_HTTP_HANDLER
-  private readonly SocketsHttpHandler? _handler;
-#else
-  private readonly HttpClientHandler? _handler;
-#endif
-
   public HttpReverseRequester(string id, string dispatcherUrl, HttpClient httpClient, ILogger<HttpReverseRequester> logger = null)
   {
     _logger = logger ?? LoggerInstance.CreateLogger<HttpReverseRequester>();
@@ -44,8 +38,6 @@ public class HttpReverseRequester
   public ValueTask DisposeAsync()
   {
     _client.Dispose();
-    // Handler is owned by client now
-    // _handler?.Dispose();
 
     return ValueTask.CompletedTask;
   }
@@ -231,32 +223,47 @@ public class HttpReverseRequester
     duplexContent.Complete();
   }
 
+  private int _closeStarted = 0;
+
   public async Task CloseInstance()
   {
-    _logger.LogInformation("Starting close of instance: {id}", _id);
-    var uri = new UriBuilder(_dispatcherUrl)
+    try
     {
-      Path = $"{_uri.AbsolutePath}/close/{_id}",
-      Port = 5003,
-      Scheme = "https",
-    }.Uri;
-    var request = new HttpRequestMessage(HttpMethod.Get, uri)
-    {
-      Version = new Version(2, 0)
-    };
-    request.Headers.Host = "lambdadispatch.local:5003";
-    request.Headers.Add("X-Lambda-Id", _id);
+      if (Interlocked.CompareExchange(ref _closeStarted, 1, 0) == 1)
+      {
+        _logger.LogInformation("Close already started for instance: {id}", _id);
+        return;
+      }
 
-    using var response = await _client.SendAsync(request);
+      _logger.LogInformation("Starting close of instance: {id}", _id);
+      var uri = new UriBuilder(_dispatcherUrl)
+      {
+        Path = $"{_uri.AbsolutePath}/close/{_id}",
+        Port = 5003,
+        Scheme = "https",
+      }.Uri;
+      var request = new HttpRequestMessage(HttpMethod.Get, uri)
+      {
+        Version = new Version(2, 0)
+      };
+      request.Headers.Host = "lambdadispatch.local:5003";
+      request.Headers.Add("X-Lambda-Id", _id);
 
-    if (response.StatusCode != HttpStatusCode.OK)
-    {
-      _logger.LogError("Error closing instance: {id}, {statusCode}", _id, response.StatusCode);
+      using var response = await _client.SendAsync(request);
+
+      if (response.StatusCode != HttpStatusCode.OK)
+      {
+        _logger.LogError("Error closing instance: {id}, {statusCode}", _id, response.StatusCode);
+      }
+      else
+      {
+        _logger.LogInformation("Closed instance: {id}, {statusCode}", _id, response.StatusCode);
+        try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+      }
     }
-    else
+    catch
     {
-      _logger.LogInformation("Closed instance: {id}, {statusCode}", _id, response.StatusCode);
-      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+      _logger.LogError("Error closing instance: {id}", _id);
     }
   }
 

@@ -1,4 +1,5 @@
 # Use the official .NET 8 SDK image as the build environment
+# Build with whatever CPU the host OS has
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-env
 
 # Needed for Native AOT compilation
@@ -29,6 +30,7 @@ RUN rm out/libicu*
 #
 # Build the node.js app
 #
+# Build with whatever CPU the host OS has
 FROM node:20-alpine AS node-build-env
 
 # Set the working directory
@@ -50,8 +52,9 @@ RUN npm run build
 #
 # Use the Amazon Linux 2023 image as the runtime environment
 #
+# Use the runtime image for ARM64
 # FROM amazonlinux:2023
-FROM public.ecr.aws/lambda/provided:al2023
+FROM --platform=linux/arm64 public.ecr.aws/lambda/provided:al2023
 
 # Set the working directory
 WORKDIR /app
