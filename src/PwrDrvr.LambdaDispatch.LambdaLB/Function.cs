@@ -30,6 +30,8 @@ public class Function
 
     private static readonly bool _staticResponse;
 
+    private static int _requestsInProgress = 0;
+
     static Function()
     {
         _logger = LoggerInstance.CreateLogger<Function>();
@@ -195,8 +197,6 @@ public class Function
                             var channelId = Guid.NewGuid().ToString();
                             using var channelIdScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
 
-                            lastWakeupTime = DateTime.Now;
-
 #if !NATIVE_AOT
                             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LastWakeupTime, () => (DateTime.Now - lastWakeupTime).TotalMilliseconds);
 #endif
@@ -211,6 +211,8 @@ public class Function
 
                                 (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
                                     = await reverseRequester.GetRequest(channelId);
+
+                                lastWakeupTime = DateTime.Now;
 
                                 _logger.LogDebug("Got request from Router");
 
@@ -243,60 +245,70 @@ public class Function
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
 #endif
 
-                                //
-                                // Send receivedRequest to Contained App
-                                //
-                                // Override the host and port
-                                receivedRequest.RequestUri = new UriBuilder()
-                                {
-                                    Host = "localhost",
-                                    Port = 3000,
-                                    // The requestUri is ONLY a path/query string
-                                    // TODO: Not sure Path will accept a query string here
-                                    Path = receivedRequest.RequestUri.OriginalString,
-                                    // Query = receivedRequest.RequestUri.Query,
-                                    Scheme = "http",
-                                }.Uri;
+                                // Keep track of requests in progress
+                                Interlocked.Increment(ref _requestsInProgress);
 
-                                if (!_staticResponse)
+                                try
                                 {
-                                    // TODO: Return after headers are received
-                                    _logger.LogDebug("Sending request to Contained App");
-                                    using var response = await appHttpClient.SendAsync(receivedRequest);
-                                    _logger.LogDebug("Got response from Contained App");
-
-                                    if ((int)response.StatusCode >= 500)
+                                    //
+                                    // Send receivedRequest to Contained App
+                                    //
+                                    // Override the host and port
+                                    receivedRequest.RequestUri = new UriBuilder()
                                     {
-                                        _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
+                                        Host = "localhost",
+                                        Port = 3000,
+                                        // The requestUri is ONLY a path/query string
+                                        // TODO: Not sure Path will accept a query string here
+                                        Path = receivedRequest.RequestUri.OriginalString,
+                                        // Query = receivedRequest.RequestUri.Query,
+                                        Scheme = "http",
+                                    }.Uri;
+
+                                    if (!_staticResponse)
+                                    {
+                                        // TODO: Return after headers are received
+                                        _logger.LogDebug("Sending request to Contained App");
+                                        using var response = await appHttpClient.SendAsync(receivedRequest);
+                                        _logger.LogDebug("Got response from Contained App");
+
+                                        if ((int)response.StatusCode >= 500)
+                                        {
+                                            _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
+                                        }
+
+                                        // Get the response body and dump it
+                                        // var responseBody = await response.Content.ReadAsStringAsync();
+
+                                        // Send the response back
+                                        // TODO: Only send the headers
+                                        // TODO: Use CopyToAsync on the body
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                    }
+                                    else
+                                    {
+                                        // Read the bytes off the request body, if any
+                                        // TODO: This is not always a string
+                                        var requestBody = await receivedRequest.Content.ReadAsStringAsync();
+
+                                        using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                                        {
+                                            Content = new StringContent($"Hello from LambdaLB")
+                                        };
+
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
                                     }
 
-                                    // Get the response body and dump it
-                                    // var responseBody = await response.Content.ReadAsStringAsync();
-
-                                    // Send the response back
-                                    // TODO: Only send the headers
-                                    // TODO: Use CopyToAsync on the body
-                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
-                                }
-                                else
-                                {
-                                    // Read the bytes off the request body, if any
-                                    // TODO: This is not always a string
-                                    var requestBody = await receivedRequest.Content.ReadAsStringAsync();
-
-                                    using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                                    {
-                                        Content = new StringContent($"Hello from LambdaLB")
-                                    };
-
-                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
-                                }
-
 #if !NATIVE_AOT
-                                MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
+                                    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
 #endif
 
-                                _logger.LogDebug("Sent response to Router");
+                                    _logger.LogDebug("Sent response to Router");
+                                }
+                                finally
+                                {
+                                    Interlocked.Decrement(ref _requestsInProgress);
+                                }
                             }
                             catch (EndOfStreamException ex)
                             {
@@ -403,6 +415,15 @@ public class Function
                             _logger.LogInformation("Failed pinging router, stopping");
                             return;
                         }
+
+                        // Check if we've been idle too long
+                        if (_requestsInProgress == 0 && (DateTime.Now - lastWakeupTime).TotalSeconds > 5)
+                        {
+                            // Stop the other tasks from looping
+                            _logger.LogInformation("Idle too long, stopping");
+                            await reverseRequester.CloseInstance();
+                            return;
+                        }
                     }
                     catch (TaskCanceledException)
                     {
@@ -427,6 +448,8 @@ public class Function
             // Ask the Router to close our instance and connections when we timed out
             if (finishedTask == timeoutTask)
             {
+                // This will return immediately if the close already started
+                // The next waiter will wait for all the channels to close
                 await reverseRequester.CloseInstance();
             }
 #endif
