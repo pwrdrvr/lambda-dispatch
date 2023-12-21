@@ -390,7 +390,7 @@ public class LambdaInstance
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
-    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInstanceCount);
+    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInvokeCount);
 
     // Throw if the instance is already open or closed
     // This isn't a race condition because there should only be a single call
@@ -427,7 +427,7 @@ public class LambdaInstance
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
     invokeTask.ContinueWith(t =>
     {
-      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInstanceCount);
+      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInvokeCount);
 
       // NOTE: The Lambda will return via the callback to indicate that it's shutting down
       // but it will linger until we close the responses to it's requests
