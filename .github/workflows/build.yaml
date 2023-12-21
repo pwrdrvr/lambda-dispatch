@@ -34,7 +34,7 @@ jobs:
           file: ./DockerfileRouter
           push: false
           tags: pwrdrvr/lambda-dispatch-router:latest
-          platforms: linux/arm64
+          # platforms: linux/arm64
 
   build-lambdalb:
     runs-on: ubuntu-latest
@@ -59,4 +59,4 @@ jobs:
           file: ./DockerfileLambda
           push: false
           tags: pwrdrvr/lambda-dispatch-lambdalb:latest
-          platforms: linux/arm64
+          # platforms: linux/arm64
