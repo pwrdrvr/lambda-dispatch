@@ -267,74 +267,14 @@ public class LambdaInstance
     // Our invoke should cause maxConcurrentCount connections to be established
   }
 
-  public void ReleaseConnections()
-  {
-    // Mark that we are closing
-    State = LambdaInstanceState.Closing;
-
-    // We do this in the background so the Lambda can exit as soon as the last
-    // connection to it is closed
-#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-    Task.Run(async () =>
-    {
-      // Close all the connections that are not in use
-      var releasedConnectionCount = 0;
-      for (int i = 0; i < 5; i++)
-      {
-        while (connectionQueue.TryDequeue(out var connection))
-        {
-          // Decrement the available connection count
-          Interlocked.Decrement(ref availableConnectionCount);
-
-          // If the connection is Closed we discard it (can happen on abnormal close during idle)
-          if (connection.State == LambdaConnectionState.Closed)
-          {
-            continue;
-          }
-
-          // Close the connection
-          try
-          {
-            await connection.Discard();
-            releasedConnectionCount++;
-          }
-          catch (Exception ex)
-          {
-            _logger.LogError(ex, "ReleaseConnections - Exception closing down connection to LambdaId: {LambdaId}", Id);
-          }
-        }
-
-        await Task.Delay(1000);
-      }
-
-      _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount: {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
-
-      // The state should be set to Closed when the InvokeAsync returns
-    });
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-
-    // NOTE: Some connections may still be open, but they will be closed when
-    // their in flight request is finished
-  }
-
   /// <summary>
-  /// Close all available connections to the Lambda Instance
-  /// 
-  /// Use a status code that indicates that the connection should not be
-  /// re-opened by the Lambda
+  /// Release the connections without state checks
+  /// We use this from both Close and CloseAsync
   /// </summary>
-  public async Task Close()
+  private async Task<int> ReleaseConnections()
   {
-    // Ignore if already closing
-    if (Interlocked.Exchange(ref signalClosing, 1) == 1)
-    {
-      // Already closing
-      return;
-    }
-
-    State = LambdaInstanceState.Closing;
-
     // Close all the connections that are not in use
+    var releasedConnectionCount = 0;
     while (connectionQueue.TryDequeue(out var connection))
     {
       // Decrement the available connection count
@@ -350,12 +290,72 @@ public class LambdaInstance
       try
       {
         await connection.Discard();
+        releasedConnectionCount++;
       }
       catch (Exception ex)
       {
-        _logger.LogError(ex, "Close - Exception closing down connection to LambdaId: {LambdaId}", Id);
+        _logger.LogError(ex, "ReleaseConnections - Exception closing down connection to LambdaId: {LambdaId}", Id);
       }
     }
+
+    // NOTE: Some connections may still be open, but they will be closed when
+    // their in flight request is finished
+    return releasedConnectionCount;
+  }
+
+  /// <summary>
+  /// Closes in the background so the Lambda can exist as soon as it sees it's last connection close
+  /// </summary>
+  public void Close()
+  {
+    // Ignore if already closing
+    if (Interlocked.Exchange(ref signalClosing, 1) == 1)
+    {
+      // Already closing
+      return;
+    }
+
+    // We do this in the background so the Lambda can exit as soon as the last
+    // connection to it is closed
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+    Task.Run(async () =>
+    {
+      var releasedConnectionCount = 0;
+      for (int i = 0; i < 5; i++)
+      {
+        releasedConnectionCount += await ReleaseConnections();
+
+        await Task.Delay(1000);
+      }
+
+      _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount: {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
+    });
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+    // NOTE: Some connections may still be open, but they will be closed when
+    // their in flight request is finished
+  }
+
+  /// <summary>
+  /// Close all available connections to the Lambda Instance
+  /// 
+  /// Use a status code that indicates that the connection should not be
+  /// re-opened by the Lambda
+  /// </summary>
+  public async Task CloseAsync()
+  {
+    // Ignore if already closing
+    if (Interlocked.Exchange(ref signalClosing, 1) == 1)
+    {
+      // Already closing
+      return;
+    }
+
+    State = LambdaInstanceState.Closing;
+
+    // Close all the connections that are not in use
+    var releasedConnectionCount = await ReleaseConnections();
+    _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount: {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
 
     // Set the state to closed
     State = LambdaInstanceState.Closed;
