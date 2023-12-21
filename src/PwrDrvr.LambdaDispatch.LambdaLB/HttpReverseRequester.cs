@@ -19,12 +19,6 @@ public class HttpReverseRequester
 
   private readonly HttpClient _client;
 
-#if USE_SOCKETS_HTTP_HANDLER
-  private readonly SocketsHttpHandler? _handler;
-#else
-  private readonly HttpClientHandler? _handler;
-#endif
-
   public HttpReverseRequester(string id, string dispatcherUrl, HttpClient httpClient, ILogger<HttpReverseRequester> logger = null)
   {
     _logger = logger ?? LoggerInstance.CreateLogger<HttpReverseRequester>();
@@ -44,8 +38,6 @@ public class HttpReverseRequester
   public ValueTask DisposeAsync()
   {
     _client.Dispose();
-    // Handler is owned by client now
-    // _handler?.Dispose();
 
     return ValueTask.CompletedTask;
   }
