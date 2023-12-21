@@ -183,6 +183,9 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Requests
   };
 
+  /// <summary>
+  /// Number of Lambda.InvokeAsync calls outstanding
+  /// </summary>
   public static readonly CounterOptions LambdaInstanceCount = new()
   {
     Name = "LambdaInstanceCount",
