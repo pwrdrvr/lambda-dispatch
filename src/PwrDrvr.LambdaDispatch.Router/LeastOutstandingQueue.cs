@@ -121,7 +121,60 @@ public class LeastOutstandingQueue
   // }
 
   /// <summary>
-  /// Get the instance with the least outstanding requests, approximately
+  /// Remove the least busy instance from the queue
+  /// 
+  /// Note: this will return a full instance if no other instances are available but
+  /// that instance will still be in the full dictionary (or could be reinstated too)
+  /// and must be removed.
+  /// </summary>
+  /// <param name="instance"></param>
+  /// <returns></returns>
+  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out LambdaInstance? instance)
+  {
+    instance = null;
+
+    // Get the instance with the least outstanding requests
+    // Skip the "full" instances
+    for (var i = 0; i < availableInstances.Length; i++)
+    {
+      //
+      // We may loop through and move many items if they are not usable
+      //
+      while (availableInstances[i].TryDequeue(out var dequeuedInstance))
+      {
+        // We got an instance with, what we think, is the least outstanding requests
+        // But, the instance may actually be closed or full due to disconnects
+        // So we'll check that here
+        if (dequeuedInstance.State != LambdaInstanceState.Open)
+        {
+          // The instance is not open, so we'll drop it on the floor and move on
+          continue;
+        }
+        if (dequeuedInstance.AvailableConnectionCount == 0)
+        {
+          // The instance is full, so we'll put it in the full instances
+          fullInstances.TryAdd(dequeuedInstance.Id, dequeuedInstance);
+
+          // Hold on to this instance so we can return it, in case we see no better instance
+          instance = dequeuedInstance;
+          continue;
+        }
+
+        // Note: this is the only time we own this instance
+        // Once we put it back in a queue it's mutable by other threads
+
+        // We got the least busy instance that was not full
+        instance = dequeuedInstance;
+        return true;
+      }
+    }
+
+    // If we encounted any instance at all, full or not, we're going to return it
+    return instance != null;
+  }
+
+  /// <summary>
+  /// Get a connection from the instance with the least outstanding requests, approximately
   ///  
   /// Note: this will perform some limited rebalancing of instances if wrong counts are encountered
   /// </summary>

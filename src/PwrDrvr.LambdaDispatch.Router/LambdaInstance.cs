@@ -66,8 +66,16 @@ public class LambdaInstance
   /// </summary>
   public int QueueApproximateCount => connectionQueue.Count;
 
+  /// <summary>
+  /// State of this Lambda Instance
+  /// </summary>
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
+  /// <summary>
+  /// If true, the Lambda Instance should not be replaced when the OnInvocationComplete event is raised
+  /// We set this when we decide to stop an instance
+  /// </summary>
+  public bool DoNotReplace { get; private set; } = false;
 
   private static AmazonLambdaConfig CreateConfig()
   {
@@ -306,7 +314,7 @@ public class LambdaInstance
   /// <summary>
   /// Closes in the background so the Lambda can exist as soon as it sees it's last connection close
   /// </summary>
-  public void Close()
+  public void Close(bool doNotReplace = false)
   {
     // Ignore if already closing
     if (Interlocked.Exchange(ref signalClosing, 1) == 1)
@@ -314,6 +322,8 @@ public class LambdaInstance
       // Already closing
       return;
     }
+
+    DoNotReplace = doNotReplace;
 
     // We do this in the background so the Lambda can exit as soon as the last
     // connection to it is closed
@@ -342,7 +352,7 @@ public class LambdaInstance
   /// Use a status code that indicates that the connection should not be
   /// re-opened by the Lambda
   /// </summary>
-  public async Task CloseAsync()
+  public async Task CloseAsync(bool doNotReplace = false)
   {
     // Ignore if already closing
     if (Interlocked.Exchange(ref signalClosing, 1) == 1)
@@ -350,6 +360,8 @@ public class LambdaInstance
       // Already closing
       return;
     }
+
+    DoNotReplace = doNotReplace;
 
     State = LambdaInstanceState.Closing;
 
