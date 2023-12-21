@@ -2,11 +2,12 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 public class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         Console.WriteLine($"Before ThreadPool ThreadCount: {ThreadPool.ThreadCount}");
         ThreadPool.SetMinThreads(20, 20);
         Console.WriteLine($"After ThreadPool ThreadCount: {ThreadPool.ThreadCount}");
+        await GetCallbackIP.Get().ConfigureAwait(false);
         CreateHostBuilder(args).Build().Run();
     }
 
