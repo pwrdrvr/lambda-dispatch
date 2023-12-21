@@ -85,7 +85,7 @@ public class LambdaInstance
     var config = new AmazonLambdaConfig
     {
       Timeout = TimeSpan.FromMinutes(15),
-      MaxErrorRetry = 0
+      MaxErrorRetry = 8
     };
 
     if (!string.IsNullOrEmpty(serviceUrl))
@@ -325,6 +325,8 @@ public class LambdaInstance
 
     DoNotReplace = doNotReplace;
 
+    State = LambdaInstanceState.Closing;
+
     // We do this in the background so the Lambda can exit as soon as the last
     // connection to it is closed
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
@@ -337,6 +339,8 @@ public class LambdaInstance
 
         await Task.Delay(1000);
       }
+
+      State = LambdaInstanceState.Closed;
 
       _logger.LogInformation("Released {ReleasedConnectionCount} connections for LambdaId: {LambdaId}, AvailableConnectionCount: {AvailableConnectionCount}", releasedConnectionCount, Id, this.AvailableConnectionCount);
     });
@@ -386,7 +390,7 @@ public class LambdaInstance
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
-    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInstanceCount);
+    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInvokeCount);
 
     // Throw if the instance is already open or closed
     // This isn't a race condition because there should only be a single call
@@ -423,7 +427,7 @@ public class LambdaInstance
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
     invokeTask.ContinueWith(t =>
     {
-      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInstanceCount);
+      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInvokeCount);
 
       // NOTE: The Lambda will return via the callback to indicate that it's shutting down
       // but it will linger until we close the responses to it's requests
@@ -435,12 +439,12 @@ public class LambdaInstance
       {
         // Handle any exceptions that occurred during the invocation
         Exception ex = t.Exception;
-        _logger.LogError("LambdaInvoke for Id {Id}, gave error: {Message}", this.Id, ex.Message);
+        _logger.LogError("LambdaInvoke for LambdaId: {Id}, gave error: {Message}", this.Id, ex.Message);
       }
       else if (t.IsCompleted)
       {
         // The Lambda invocation has completed
-        _logger.LogDebug("LambdaInvoke completed for Id: {Id}", this.Id);
+        _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
       }
     });
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

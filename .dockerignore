@@ -1,5 +1,5 @@
-bin/
-obj/
+**/bin/
+**/obj/
 out*/
 *.log
 Dockerfile*
@@ -16,3 +16,4 @@ core_*
 captures/
 **/node_modules/
 **/dist/
+./hey*
