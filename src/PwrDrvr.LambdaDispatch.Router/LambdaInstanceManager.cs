@@ -15,6 +15,14 @@ public class LambdaInstanceManager
 
   private volatile int _startingInstanceCount = 0;
 
+  /// <summary>
+  /// Count of instances that have been marked for deletion but
+  /// that have not terminated yet
+  ///
+  /// Similar to _startingInstanceCount but in the other direction
+  /// </summary>
+  private volatile int _tombstonedInstanceCount = 0;
+
   private readonly int _maxConcurrentCount;
 
   /// <summary>
@@ -146,27 +154,37 @@ public class LambdaInstanceManager
     // TODO: This is dangerous - the runningInstanceCount is not decremented
     // until the Lamda invoke returns, which could be seconds later.
     // This means we could close all of the instances when this is hit from multiple threads.
-    // while (_runningInstanceCount > _desiredInstanceCount)
-    // {
-    //   // Get the least outstanding instance
-    //   if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
-    //   {
-    //     // Remove it from the collection
-    //     _instances.TryRemove(leastBusyInstance.Id, out var _);
+    while (_runningInstanceCount - _tombstonedInstanceCount > _desiredInstanceCount)
+    {
+      // Get the least outstanding instance
+      if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
+      {
+        // Increment the tombstoned count
+        // This ensures that we and other threads do not try to close this instance again
+        Interlocked.Increment(ref _tombstonedInstanceCount);
+        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceTombstonedCount, _tombstonedInstanceCount);
 
-    //     // Note: the background rebalancer will remove this from the least outstanding queue eventually
+        // Remove it from the collection
+        _instances.TryRemove(leastBusyInstance.Id, out var _);
 
-    //     // Close the instance
-    //     this.CloseInstance(leastBusyInstance);
-    //   }
-    //   else
-    //   {
-    //     // We have no instances to close
-    //     // This can happen if all instances are busy and we're starting a lot of new instances to replace them
-    //     _logger.LogError("UpdateDesiredCapacity - No instances to close - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
-    //     break;
-    //   }
-    // }
+        // Note: the background rebalancer will remove this from the least outstanding queue eventually
+
+        // Close the instance
+        if (!CloseInstance(leastBusyInstance))
+        {
+          // If we failed to start closing the instance, decrement the tombstoned count
+          Interlocked.Decrement(ref _tombstonedInstanceCount);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceTombstonedCount, _tombstonedInstanceCount);
+        }
+      }
+      else
+      {
+        // We have no instances to close
+        // This can happen if all instances are busy and we're starting a lot of new instances to replace them
+        _logger.LogError("UpdateDesiredCapacity - No instances to close - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+        break;
+      }
+    }
 
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
 
@@ -242,9 +260,11 @@ public class LambdaInstanceManager
         instanceFromList.Close();
       }
 
-      if (instance.DoNotReplace)
+      if (instance.Tombstoned)
       {
-        _logger.LogInformation("LambdaInstance {instanceId} marked as DoNotReplace, not replacing", instance.Id);
+        Interlocked.Decrement(ref _tombstonedInstanceCount);
+        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceTombstonedCount, _tombstonedInstanceCount);
+        _logger.LogInformation("LambdaInstance {instanceId} marked as Tombstoned, not replacing", instance.Id);
         return;
       }
 
@@ -266,14 +286,14 @@ public class LambdaInstanceManager
   /// Gracefully close an instance
   /// </summary>
   /// <param name="instance"></param>
-  public void CloseInstance(LambdaInstance instance)
+  public bool CloseInstance(LambdaInstance instance, bool tombstone = false)
   {
     _logger.LogInformation("Closing instance {instanceId}", instance.Id);
 
     // The instance is going to get cleaned up by the OnInvocationComplete handler
     // Counts will be decremented, the instance will be replaced, etc.
     // We just need to get the Lambda to return from the invoke
-    instance.Close();
+    return instance.Close(tombstone);
   }
 
   /// <summary>
@@ -281,17 +301,18 @@ public class LambdaInstanceManager
   /// </summary>
   /// <param name="instanceId"></param>
   /// <returns></returns>
-  public void CloseInstance(string instanceId)
+  public bool CloseInstance(string instanceId, bool tombstone = false)
   {
     _logger.LogInformation("Closing instance {instanceId}", instanceId);
 
     if (_instances.TryGetValue(instanceId, out var instance))
     {
-      this.CloseInstance(instance);
+      return CloseInstance(instance, tombstone);
     }
     else
     {
       _logger.LogInformation("Instance {instanceId} not found during close", instanceId);
+      return false;
     }
   }
 }

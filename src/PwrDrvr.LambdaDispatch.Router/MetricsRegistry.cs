@@ -207,6 +207,12 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Items,
   };
 
+  public static readonly GaugeOptions LambdaInstanceTombstonedCount = new()
+  {
+    Name = "LambdaInstanceTombstonedCount",
+    MeasurementUnit = Unit.Items,
+  };
+
   public static readonly CounterOptions LambdaConnectionRejectedCount = new()
   {
     Name = "LambdaConnectionRejectedCount",

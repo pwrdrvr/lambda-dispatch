@@ -72,10 +72,9 @@ public class LambdaInstance
   public LambdaInstanceState State { get; private set; } = LambdaInstanceState.Initial;
 
   /// <summary>
-  /// If true, the Lambda Instance should not be replaced when the OnInvocationComplete event is raised
-  /// We set this when we decide to stop an instance
+  /// If true, the Lambda Instance was marked for shutdown
   /// </summary>
-  public bool DoNotReplace { get; private set; } = false;
+  public bool Tombstoned { get; private set; } = false;
 
   private static AmazonLambdaConfig CreateConfig()
   {
@@ -314,16 +313,16 @@ public class LambdaInstance
   /// <summary>
   /// Closes in the background so the Lambda can exist as soon as it sees it's last connection close
   /// </summary>
-  public void Close(bool doNotReplace = false)
+  public bool Close(bool tombstoned = false)
   {
     // Ignore if already closing
     if (Interlocked.Exchange(ref signalClosing, 1) == 1)
     {
       // Already closing
-      return;
+      return false;
     }
 
-    DoNotReplace = doNotReplace;
+    Tombstoned = tombstoned;
 
     // We do this in the background so the Lambda can exit as soon as the last
     // connection to it is closed
@@ -344,6 +343,7 @@ public class LambdaInstance
 
     // NOTE: Some connections may still be open, but they will be closed when
     // their in flight request is finished
+    return true;
   }
 
   /// <summary>
@@ -352,16 +352,16 @@ public class LambdaInstance
   /// Use a status code that indicates that the connection should not be
   /// re-opened by the Lambda
   /// </summary>
-  public async Task CloseAsync(bool doNotReplace = false)
+  public async Task<bool> CloseAsync(bool tombstoned = false)
   {
     // Ignore if already closing
     if (Interlocked.Exchange(ref signalClosing, 1) == 1)
     {
       // Already closing
-      return;
+      return false;
     }
 
-    DoNotReplace = doNotReplace;
+    Tombstoned = tombstoned;
 
     State = LambdaInstanceState.Closing;
 
@@ -374,6 +374,7 @@ public class LambdaInstance
 
     // NOTE: Some connections may still be open, but they will be closed when
     // their in flight request is finished
+    return true;
   }
 
   /// <summary>
