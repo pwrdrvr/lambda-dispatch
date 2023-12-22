@@ -151,12 +151,23 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Custom("ms"),
   };
 
-  public static async Task PrintMetrics()
+  public static async Task PrintMetrics(CancellationToken cancellationToken)
   {
-    while (true)
+    while (!cancellationToken.IsCancellationRequested)
     {
-      await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
-      await Task.Delay(TimeSpan.FromSeconds(5));
+      try
+      {
+        await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
+        await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+      }
+      catch (OperationCanceledException)
+      {
+        return;
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine(ex);
+      }
     }
   }
 }
