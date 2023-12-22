@@ -110,7 +110,7 @@ curl http://lambda-ECSFa-99YoLua7GcRe-1054486381.us-east-2.elb.amazonaws.com/fac
 
 ```bash
 npm i -g cloc
-cloc --exclude-dir=bin,obj --exclude-ext=csproj,sln,json,md .
+cloc --exclude-dir=bin,obj,captures,node_modules,dist --exclude-ext=csproj,sln,json,md,log,pcapng .
 ```
 
 ## Performance Analysis
