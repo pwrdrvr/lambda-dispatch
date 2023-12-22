@@ -155,6 +155,9 @@ public class Function
     {
         try
         {
+            var initialRemainingTime = context.RemainingTime.TotalSeconds < 0 ? TimeSpan.FromMinutes(1) : context.RemainingTime;
+            var exitTime = DateTime.Now + initialRemainingTime;
+
             // Reset the metrics
 #if !NATIVE_AOT
             MetricsRegistry.Metrics.Manage.Reset();
@@ -190,7 +193,6 @@ public class Function
             }
 
             CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
 
             List<Task> tasks = new List<Task>();
             for (int i = 0; i < NumberOfChannels; i++)
@@ -208,7 +210,7 @@ public class Function
                     try
                     {
                         _logger.LogInformation("Starting task");
-                        while (!token.IsCancellationRequested)
+                        while (!cts.Token.IsCancellationRequested)
                         {
                             var channelId = Guid.NewGuid().ToString();
                             using var channelIdScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
@@ -460,9 +462,8 @@ public class Function
                 }
             });
 
-            // TODO: Setup a timeout according to that specified in the payload
             // Note: the code below is only going to work cleanly under constant load
-            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(45));
+            var timeoutTask = Task.Delay(exitTime - DateTime.Now - ComputeTimeout(initialRemainingTime));
             var finishedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
 
             // This just prevents looping around again
@@ -493,6 +494,26 @@ public class Function
 #if !NATIVE_AOT
             await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
 #endif
+        }
+    }
+
+    private static TimeSpan ComputeTimeout(TimeSpan initialRemainingTime)
+    {
+        if (initialRemainingTime <= TimeSpan.FromMinutes(1))
+        {
+            return TimeSpan.FromSeconds(10);
+        }
+        else if (initialRemainingTime <= TimeSpan.FromMinutes(5))
+        {
+            return TimeSpan.FromSeconds(15);
+        }
+        else if (initialRemainingTime <= TimeSpan.FromMinutes(10))
+        {
+            return TimeSpan.FromSeconds(30);
+        }
+        else
+        {
+            return TimeSpan.FromSeconds(60);
         }
     }
 }
