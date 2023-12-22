@@ -328,6 +328,29 @@ Resources:
         - !Ref ECSLoadBalancerSG
       Scheme: internet-facing
 
+  LambdaDispatchRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z005084420J9MD9JNBCUK
+      Name: lambdadispatch.ghpublic.pwrdrvr.com.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: lambdadispatch.ghpublic.pwrdrvr.com
+      SubjectAlternativeNames:
+        - directlambda.ghpublic.pwrdrvr.com
+      DomainValidationOptions:
+        - DomainName: lambdadispatch.ghpublic.pwrdrvr.com
+          HostedZoneId: Z005084420J9MD9JNBCUK
+        - DomainName: directlambda.ghpublic.pwrdrvr.com
+          HostedZoneId: Z005084420J9MD9JNBCUK
+      ValidationMethod: DNS
+
   FargateListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -337,6 +360,18 @@ Resources:
       LoadBalancerArn: !Ref ECSFargateLoadBalancer
       Port: 80
       Protocol: HTTP
+  
+  FargateHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ECSFargateLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref Certificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FargateTargetGroup
 
   FargateTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup

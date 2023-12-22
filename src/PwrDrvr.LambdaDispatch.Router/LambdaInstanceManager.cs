@@ -2,6 +2,7 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading.Channels;
 
 public class LambdaInstanceManager
 {
@@ -27,6 +28,9 @@ public class LambdaInstanceManager
   {
     _maxConcurrentCount = maxConcurrentCount;
     _leastOutstandingQueue = new(maxConcurrentCount);
+
+    // Start the capacity manager
+    Task.Run(ManageCapacity);
   }
 
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection)
@@ -99,12 +103,20 @@ public class LambdaInstanceManager
     return null;
   }
 
-  // TODO: This should project excess capacity and not use 100% of max capacity at all times
-  // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
-  public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
+  private struct LambdaInstanceCapacityMessage
   {
-    _logger.LogDebug("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+    public int PendingRequests { get; set; }
+    public int RunningRequests { get; set; }
+  }
 
+  private Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(1)
+  {
+    FullMode = BoundedChannelFullMode.DropOldest
+  });
+
+  private int ComputeDesiredInstanceCount(int pendingRequests, int runningRequests)
+  {
+    // Calculate the desired count
     var cleanPendingRequests = Math.Max(pendingRequests, 0);
     var cleanRunningRequests = Math.Max(runningRequests, 0);
 
@@ -112,80 +124,146 @@ public class LambdaInstanceManager
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
     // TODO: Load the 2x factor from the configuration
     var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
+    return desiredInstanceCount;
+  }
 
-    // Special case for 0 pending or running
-    if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
+
+  // TODO: This should project excess capacity and not use 100% of max capacity at all times
+  // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
+  private async Task ManageCapacity()
+  {
+    Dictionary<string, LambdaInstance> stoppingInstances = [];
+
+    while (true)
     {
-      desiredInstanceCount = 0;
+      // Setup a timer to run every 5 seconds or when we are asked to increase capacity
+      var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      try
+      {
+        // Cleanup any stopping instances
+        foreach (var stoppingInstance in stoppingInstances)
+        {
+          if (stoppingInstance.Value.InvokeCompletionTask.IsCompleted)
+          {
+            stoppingInstances.Remove(stoppingInstance.Key);
+          }
+        }
+
+        //
+        // Only a single instance of this will run at a time
+        //
+        var message = await _capacityChannel.Reader.ReadAsync(cts.Token);
+        var pendingRequests = message.PendingRequests;
+        var runningRequests = message.RunningRequests;
+
+        _logger.LogDebug("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+
+        var cleanPendingRequests = Math.Max(pendingRequests, 0);
+        var cleanRunningRequests = Math.Max(runningRequests, 0);
+
+        // Calculate the desired count
+        var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
+        // TODO: Load the 2x factor from the configuration
+        var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
+
+        // Special case for 0 pending or running
+        if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
+        {
+          desiredInstanceCount = 0;
+        }
+
+        _logger.LogDebug("UpdateDesiredCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+
+        // Try to set the new desired count
+        // Because we own setting this value we can do a simple compare and swap
+        Interlocked.Exchange(ref _desiredInstanceCount, desiredInstanceCount);
+
+        // Start instances if needed
+        while (_runningInstanceCount + _startingInstanceCount < desiredInstanceCount)
+        {
+          _logger.LogDebug("UpdateDesiredCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+          // Start a new instance
+          await StartNewInstance();
+        }
+
+        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
+
+        _logger.LogDebug("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+      }
+      catch (OperationCanceledException)
+      {
+        // This was a timeout
+        // Time to check if we can reduce capacity
+
+        // Stop only running instances if we have too many
+        // We do not count starting instances because they are not yet running
+        // Example:
+        // Running: 100
+        // Desired: 50
+        // Stopping: 20
+        // We need to stop 100 - 50 = 50 instances, but 20 are already stopping so 50 - 20 = 30 more need to be stopped
+        // Note: it doesn't matter if the instances in the dictionary are stopped or not.
+        // Example a few moments later when all 20 have stopped but we haven't updated our calcuation:
+        // Running: 80
+        // Desired: 50
+        // Stopping: 0
+        // We need to stop 80 - 50 = 30 instances, but 0 are already stopping so 30 - 0 = 30 more need to be stopped
+        // At worst, we won't stop enough until the next loop.
+        var excessCapacity = Math.Max(_runningInstanceCount - _desiredInstanceCount - stoppingInstances.Count, 0);
+        while (excessCapacity-- > 0)
+        {
+          // Get the least outstanding instance
+          if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
+          {
+            // Remove it from the collection
+            _instances.TryRemove(leastBusyInstance.Id, out var _);
+
+            // Add to the stopping list
+            stoppingInstances.Add(leastBusyInstance.Id, leastBusyInstance);
+
+            // Close the instance
+            CloseInstance(leastBusyInstance);
+          }
+          else
+          {
+            // We have no instances to close
+            // This can happen if all instances are busy and we're starting a lot of new instances to replace them
+            _logger.LogError("UpdateDesiredCapacity - No instances to close - _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+            break;
+          }
+        }
+      }
+      catch (Exception ex)
+      {
+        _logger.LogError(ex, "ManageCapacity - Exception");
+      }
+    }
+  }
+
+  public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
+  {
+    // In the nominal case of the right amount of capacity, we avoid writing to the channel
+    if (ComputeDesiredInstanceCount(pendingRequests, runningRequests) == _desiredInstanceCount)
+    {
+      // Nothing to do
+      return;
     }
 
-    _logger.LogDebug("UpdateDesiredCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
-
-    // Start instances if needed
-    while (_runningInstanceCount + _startingInstanceCount < desiredInstanceCount)
+    // Send the message to the channel
+    // This will return immediately because we drop any prior message and only keep the latest
+    await _capacityChannel.Writer.WriteAsync(new LambdaInstanceCapacityMessage()
     {
-      _logger.LogDebug("UpdateDesiredCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
-      // Start a new instance
-      await this.StartNewInstance(false);
-    }
-
-    // Try to set the new desired count
-    while (_desiredInstanceCount < desiredInstanceCount)
-    {
-      // Increment the desired count
-      Interlocked.Increment(ref _desiredInstanceCount);
-    }
-    while (_desiredInstanceCount > desiredInstanceCount)
-    {
-      // Decrement the desired count
-      Interlocked.Decrement(ref _desiredInstanceCount);
-    }
-
-    // Stop only running instances if we have too many
-    // We do not count starting instances because they are not yet running
-    // TODO: This is dangerous - the runningInstanceCount is not decremented
-    // until the Lamda invoke returns, which could be seconds later.
-    // This means we could close all of the instances when this is hit from multiple threads.
-    // while (_runningInstanceCount > _desiredInstanceCount)
-    // {
-    //   // Get the least outstanding instance
-    //   if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
-    //   {
-    //     // Remove it from the collection
-    //     _instances.TryRemove(leastBusyInstance.Id, out var _);
-
-    //     // Note: the background rebalancer will remove this from the least outstanding queue eventually
-
-    //     // Close the instance
-    //     this.CloseInstance(leastBusyInstance);
-    //   }
-    //   else
-    //   {
-    //     // We have no instances to close
-    //     // This can happen if all instances are busy and we're starting a lot of new instances to replace them
-    //     _logger.LogError("UpdateDesiredCapacity - No instances to close - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
-    //     break;
-    //   }
-    // }
-
-    MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
-
-    _logger.LogDebug("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+      PendingRequests = pendingRequests,
+      RunningRequests = runningRequests
+    });
   }
 
   /// <summary>
   /// Start a new LambdaInstance and increment the desired count
   /// </summary>
   /// <returns></returns>
-  private async Task StartNewInstance(bool incrementDesiredCount = false)
+  private async Task StartNewInstance()
   {
-    // If we get called we're starting a new instance
-    if (incrementDesiredCount)
-    {
-      Interlocked.Increment(ref _desiredInstanceCount);
-      MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
-    }
-
     Interlocked.Increment(ref _startingInstanceCount);
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
 
@@ -254,7 +332,7 @@ public class LambdaInstanceManager
       if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
       {
         // We need to start a new instance
-        await this.StartNewInstance().ConfigureAwait(false);
+        await StartNewInstance().ConfigureAwait(false);
       }
     };
 

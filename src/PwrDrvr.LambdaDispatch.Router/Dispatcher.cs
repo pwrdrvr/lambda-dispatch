@@ -174,6 +174,8 @@ public class Dispatcher
         _pendingRequestSignal.Writer.TryWrite(1);
         Interlocked.Increment(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
+        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.PendingDispatchCount);
+        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.PendingDispatchForegroundCount);
         return result;
       }
 
@@ -226,6 +228,7 @@ public class Dispatcher
 
   private async Task BackgroundPendingRequestDispatcher()
   {
+    // TODO: This should be starting more instances if the queue is building
     while (true)
     {
       // Wait for the signal or 1 second
@@ -258,12 +261,27 @@ public class Dispatcher
     }
   }
 
+  /// <summary>
+  /// 
+  /// </summary>
+  /// <returns>Whether a request was dispatched</returns>
   private async Task<bool> TryBackgroundDispatchOne()
   {
     // If there should be pending requests, try to get a connection then grab a request
     // If we can't get a pending request, put the connection back
-    while (_pendingRequestCount > 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
+    while (_pendingRequestCount > 0)
     {
+      // Try to get a connection
+      if (!_lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
+      {
+        _logger.LogDebug("TryBackgroundDispatchOne - No connections available");
+
+        // Start more instances if needed
+        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        return false;
+      }
+
+      // Try to get a pending request
       if (_pendingRequests.TryDequeue(out var pendingRequest))
       {
         pendingRequest.RecordDispatchTime();

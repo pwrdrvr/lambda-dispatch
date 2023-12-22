@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using PwrDrvr.LambdaDispatch.Messages;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
-using AWS.Logger;
 using System.Net;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
@@ -41,6 +40,9 @@ public class Function
         _staticResponse = Environment.GetEnvironmentVariable("STATIC_RESPONSE") == "true";
     }
 
+    private static readonly TaskCompletionSource tcsShutdown = new();
+    private static readonly CancellationTokenSource ctsShutdown = new();
+
     /// <summary>
     /// The main entry point for the Lambda function. The main function is called once during the Lambda init phase. It
     /// initializes the .NET Lambda runtime client passing in the function handler to invoke for each Lambda event and
@@ -48,6 +50,18 @@ public class Function
     /// </summary>
     private static async Task Main()
     {
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            _logger.LogInformation("Ctrl-C caught. Exiting...");
+
+            // Add your cleanup code here.
+            tcsShutdown.SetResult();
+            ctsShutdown.Cancel();
+
+            // Prevent the process from terminating, if desired
+            e.Cancel = true;
+        };
+
         _logger.LogInformation("Lambda Started");
 #if !DEBUG
         if (!_staticResponse)
@@ -57,12 +71,14 @@ public class Function
         }
 #endif
 #if !NATIVE_AOT
-        Task.Run(MetricsRegistry.PrintMetrics);
+        Task.Run(() => MetricsRegistry.PrintMetrics(ctsShutdown.Token)).ConfigureAwait(false);
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
         await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
             .Build()
-            .RunAsync();
+            .RunAsync(ctsShutdown.Token);
+
+        _logger.LogInformation("Returning from main");
     }
 
     private static string FindStartupScript()
@@ -139,6 +155,9 @@ public class Function
     {
         try
         {
+            var initialRemainingTime = context.RemainingTime.TotalSeconds < 0 ? TimeSpan.FromMinutes(1) : context.RemainingTime;
+            var exitTime = DateTime.Now + initialRemainingTime;
+
             // Reset the metrics
 #if !NATIVE_AOT
             MetricsRegistry.Metrics.Manage.Reset();
@@ -174,7 +193,6 @@ public class Function
             }
 
             CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
 
             List<Task> tasks = new List<Task>();
             for (int i = 0; i < NumberOfChannels; i++)
@@ -192,7 +210,7 @@ public class Function
                     try
                     {
                         _logger.LogInformation("Starting task");
-                        while (!token.IsCancellationRequested)
+                        while (!cts.Token.IsCancellationRequested)
                         {
                             var channelId = Guid.NewGuid().ToString();
                             using var channelIdScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
@@ -395,7 +413,6 @@ public class Function
 #endif
                     }
                 }));
-
             }
 
             // Add a task that pings the Router every 5 seconds
@@ -407,12 +424,12 @@ public class Function
                 {
                     try
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token);
-                        if (!await reverseRequester.Ping())
+                        var completedTask = await Task.WhenAny(tcsShutdown.Task, Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token));
+
+                        if (completedTask == tcsShutdown.Task)
                         {
-                            // Stop the other tasks from looping
-                            cts.Cancel();
-                            _logger.LogInformation("Failed pinging router, stopping");
+                            _logger.LogInformation("Breaking out of ping loop and sending Close request");
+                            await reverseRequester.CloseInstance();
                             return;
                         }
 
@@ -420,8 +437,17 @@ public class Function
                         if (_requestsInProgress == 0 && (DateTime.Now - lastWakeupTime).TotalSeconds > 5)
                         {
                             // Stop the other tasks from looping
-                            _logger.LogInformation("Idle too long, stopping");
+                            _logger.LogInformation("Idle too long, sending Close request");
                             await reverseRequester.CloseInstance();
+                            return;
+                        }
+
+                        // Send a ping
+                        if (!await reverseRequester.Ping())
+                        {
+                            // Stop the other tasks from looping
+                            cts.Cancel();
+                            _logger.LogInformation("Failed pinging router, stopping");
                             return;
                         }
                     }
@@ -436,10 +462,8 @@ public class Function
                 }
             });
 
-            // TODO: Setup a timeout according to that specified in the payload
             // Note: the code below is only going to work cleanly under constant load
-#if true || !DEBUG
-            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(45));
+            var timeoutTask = Task.Delay(exitTime - DateTime.Now - ComputeTimeout(initialRemainingTime));
             var finishedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
 
             // This just prevents looping around again
@@ -452,7 +476,6 @@ public class Function
                 // The next waiter will wait for all the channels to close
                 await reverseRequester.CloseInstance();
             }
-#endif
             await Task.WhenAll(tasks);
 
             // Tell the pinger to exit
@@ -471,6 +494,26 @@ public class Function
 #if !NATIVE_AOT
             await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
 #endif
+        }
+    }
+
+    private static TimeSpan ComputeTimeout(TimeSpan initialRemainingTime)
+    {
+        if (initialRemainingTime <= TimeSpan.FromMinutes(1))
+        {
+            return TimeSpan.FromSeconds(10);
+        }
+        else if (initialRemainingTime <= TimeSpan.FromMinutes(5))
+        {
+            return TimeSpan.FromSeconds(15);
+        }
+        else if (initialRemainingTime <= TimeSpan.FromMinutes(10))
+        {
+            return TimeSpan.FromSeconds(30);
+        }
+        else
+        {
+            return TimeSpan.FromSeconds(60);
         }
     }
 }
