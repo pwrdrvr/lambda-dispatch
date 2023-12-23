@@ -1,10 +1,10 @@
-const express = require("express");
-const { DynamoDBClient, GetItemCommand } = require("@aws-sdk/client-dynamodb");
-const { promisify } = require("util");
+import express from "express";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { promisify } from "util";
 
 const sleep = promisify(setTimeout);
 
-const app = express();
+export const app = express();
 const port = 3000;
 
 // Create a DynamoDB client
@@ -15,15 +15,23 @@ const dbClient = new DynamoDBClient({});
 //   console.log(`${new Date().toISOString()} Contained App - Heartbeat`);
 // }, 5000);
 
-let firstHealthCheck = true;
+let initPerformed = false;
+
+export async function performInit() {
+  initPerformed = true;
+  debugger;
+  console.log(
+    `${new Date().toISOString()} Contained App - Performing Init - Delaying 8 seconds`
+  );
+  await sleep(8000);
+  console.log(
+    `${new Date().toISOString()} Contained App - Performed Init - Delayed 8 seconds`
+  );
+}
 
 app.get("/health", async (req, res) => {
-  if (firstHealthCheck) {
-    firstHealthCheck = false;
-    console.log(
-      `${new Date().toISOString()} Contained App - First health check - delayed 8 seconds`
-    );
-    await sleep(8000);
+  if (!initPerformed) {
+    performInit();
   }
 
   res.send("OK");
