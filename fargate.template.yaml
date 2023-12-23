@@ -338,6 +338,16 @@ Resources:
         DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
         HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
 
+  DirectLambdaRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z005084420J9MD9JNBCUK
+      Name: directlambda.ghpublic.pwrdrvr.com.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
+
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
@@ -473,6 +483,52 @@ Resources:
       VpcConfig:
         SecurityGroupIds: [!Ref LambdaLBSG]
         SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+
+  DirectLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "lambda-dispatch-directlambda"
+      Role: !GetAtt LambdaLBExecutionRole.Arn
+      Code:
+        ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-directlambda:latest
+      MemorySize: 256
+      Timeout: 60
+      PackageType: "Image"
+      Architectures:
+        - arm64
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaLBSG]
+        SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+
+  DirectLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt DirectLambda.Arn
+      Principal: elasticloadbalancing.amazonaws.com
+
+  DirectLambdaTargetGroup:
+    DependsOn:
+      - DirectLambdaInvokePermission
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt DirectLambda.Arn
+
+  DirectLambdaListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref DirectLambdaTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - directlambda.ghpublic.pwrdrvr.com
+      ListenerArn: !Ref FargateHttpsListener
+      Priority: 1
 
 Outputs:
   LoadBalancerDNS:
