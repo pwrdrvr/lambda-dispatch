@@ -25,9 +25,6 @@ RUN npm run build
 #
 FROM --platform=linux/arm64 public.ecr.aws/lambda/nodejs:20
 
-# Set the working directory
-WORKDIR /app
-
 # Copy the node.js app
 COPY --from=node-build-env /app/dist/*.?js ./
 
