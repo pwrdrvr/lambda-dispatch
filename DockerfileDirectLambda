@@ -1,0 +1,32 @@
+#
+# Build the node.js app
+#
+# Build with whatever CPU the host OS has
+FROM node:20-alpine AS node-build-env
+
+# Set the working directory
+WORKDIR /app
+
+# Copy just files needed for npm install
+COPY src/demo-app/package.json src/demo-app/package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy everything from the current directory to the working directory in the image
+COPY src/demo-app .
+
+# Build the app
+RUN npm run build
+
+
+#
+# Use the Amazon Linux 2023 image as the runtime environment
+#
+FROM --platform=linux/arm64 public.ecr.aws/lambda/nodejs:20
+
+# Copy the node.js app
+COPY --from=node-build-env /app/dist/*.?js ./
+
+# Set the entrypoint
+CMD ["directlambda.handler"]

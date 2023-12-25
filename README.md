@@ -77,19 +77,25 @@ aws cloudformation update-stack --stack-name lambda-dispatch-ecr --template-body
 ```bash
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
 
-docker build --file DockerfileRouter -t lambda-dispatch-router .
-docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
-docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
+docker build --file DockerfileRouter -t lambda-dispatch-router . \
+&& docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest \
+&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
 ```
 
 ## Publish the Docker Image - LambdaLB
 
 ```bash
-aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
+docker build --file DockerfileLambdaLB -t lambda-dispatch-lambdalb . \
+&& docker tag lambda-dispatch-lambdalb:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest \
+&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
+```
 
-docker build --file DockerfileLambdaLB -t lambda-dispatch-lambdalb .
-docker tag lambda-dispatch-lambdalb:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
-docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
+## Publish the Docker Image - DirectLambda
+
+```bash
+docker build --file DockerfileDirectLambda -t lambda-dispatch-directlambda . \
+&& docker tag lambda-dispatch-directlambda:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest \
+&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest
 ```
 
 ## Deploy the Fargate and Lambda Template

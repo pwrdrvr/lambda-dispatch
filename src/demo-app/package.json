@@ -4,12 +4,18 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild index.js --bundle --platform=node --outfile=dist/index.js"
+    "build": "npm run build:app && npm run build:directlambda && npm run build:serverlessloader",
+    "build:app": "esbuild app.cjs --bundle --platform=node --outfile=dist/app.cjs",
+    "build:directlambda": "esbuild directlambda.mjs --bundle --platform=node --format=esm --external:./serverlessloader.cjs --outfile=dist/directlambda.mjs",
+    "build:serverlessloader": "esbuild serverlessloader.cjs --bundle --platform=node --format=cjs --outfile=dist/serverlessloader.cjs",
+    "start:app": "node dist/app.cjs",
+    "start:directlambda": "node dist/directlambda.mjs"
   },
   "author": "PwrDrvr LLC",
   "license": "UNLICENSED",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.476.0",
+    "@codegenie/serverless-express": "^4.13.0",
     "express": "^4.18.2"
   },
   "devDependencies": {

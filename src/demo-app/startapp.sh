@@ -1,2 +1,2 @@
 #!/bin/sh
-exec node dist/index.js
+exec node dist/app.cjs

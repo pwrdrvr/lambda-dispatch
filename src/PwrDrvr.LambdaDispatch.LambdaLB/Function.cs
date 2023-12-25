@@ -63,13 +63,15 @@ public class Function
         };
 
         _logger.LogInformation("Lambda Started");
-#if !DEBUG
         if (!_staticResponse)
         {
             await StartChildApp().ConfigureAwait(false);
             _logger.LogInformation("Contained App Started");
         }
-#endif
+        else
+        {
+            _logger.LogInformation("Static Response Enabled - Skipping Contained App Startup");
+        }
 #if !NATIVE_AOT
         Task.Run(() => MetricsRegistry.PrintMetrics(ctsShutdown.Token)).ConfigureAwait(false);
 #endif
