@@ -1,6 +1,7 @@
 import express from "express";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { promisify } from "util";
+import path from "path";
 
 const sleep = promisify(setTimeout);
 
@@ -28,6 +29,9 @@ export async function performInit() {
     `${new Date().toISOString()} Contained App - Performed Init - Delayed 8 seconds`
   );
 }
+
+// Serve static files from the "public" directory
+app.use("/public", express.static(path.join(__dirname, "public")));
 
 app.get("/health", async (req, res) => {
   if (!initPerformed) {
