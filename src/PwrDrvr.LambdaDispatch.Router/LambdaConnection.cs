@@ -1,5 +1,5 @@
+using System.Buffers;
 using System.Globalization;
-using System.Linq.Expressions;
 using System.Text;
 
 namespace PwrDrvr.LambdaDispatch.Router;
@@ -183,34 +183,113 @@ public class LambdaConnection
       //
       //
 
-      _logger.LogDebug("Reading response headers from Lambda");
-
-      // Send the headers to the caller
-      // This was reading the response headers from the Lambda
-      // foreach (var header in this.Response.Headers)
-      // {
-      //   // Do not set the status code by adding a header
-      //   if (header.Key == "Status-Code")
-      //   {
-      //     // Set the status code on the response
-      //     response.StatusCode = int.Parse(header.Value);
-      //     _logger.LogDebug($"Set response status code to {header.Value}");
-      //     continue;
-      //   }
-
-      //   if (header.Key == "Transfer-Encoding")
-      //   {
-      //     // Don't send the Transfer-Encoding header
-      //     continue;
-      //   }
-      //   response.Headers.Add(header.Key, header.Value);
-      //   _logger.LogDebug($"Sent reponse header to caller: {header.Key}: {header.Value}");
-      // }
-
-      _logger.LogDebug("Finished reading response headers from Lambda");
-
       _logger.LogDebug("Copying response body from Lambda");
 
+#if true
+      var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+      try
+      {
+        // Read up to max headers size of data
+        // Read until we fill the bufer OR we get an EOF
+        int totalBytesRead = 0;
+        while (true)
+        {
+          if (totalBytesRead >= headerBuffer.Length)
+          {
+            // Buffer is full
+            break;
+          }
+
+          var bytesRead = await Request.Body.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead);
+          if (bytesRead == 0)
+          {
+            // Done reading
+            break;
+          }
+
+          totalBytesRead += bytesRead;
+        }
+
+        // Read the status line
+        int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n');
+        if (endOfStatusLine == -1)
+        {
+          // Handle error: '\n' not found in the buffer
+          throw new Exception("Status line not found in response");
+        }
+
+        string statusLine = Encoding.UTF8.GetString(headerBuffer, 0, endOfStatusLine);
+
+        response.StatusCode = int.Parse(statusLine.Split(' ')[1]);
+
+        // Start processing the rest of the headers from the character after '\n'
+        int startOfNextLine = endOfStatusLine + 1;
+
+        // Process the rest of the headers
+        while (startOfNextLine < totalBytesRead)
+        {
+          // Find the index of the next '\n' in headerBuffer
+          int endOfLine = Array.IndexOf(headerBuffer, (byte)'\n', startOfNextLine);
+          if (endOfLine == -1)
+          {
+            // No more '\n' found
+            break;
+          }
+
+          // Check if this is the end of the headers
+          if (endOfLine == startOfNextLine || (endOfLine == startOfNextLine + 1 && headerBuffer[startOfNextLine] == '\r'))
+          {
+            // End of headers
+            // Move the start to the character after '\n'
+            startOfNextLine = endOfLine + 1;
+            break;
+          }
+
+          // We don't want the \n or the possibly proceeding \r
+          var endOfHeaderIdx = endOfLine;
+          if (headerBuffer[endOfHeaderIdx - 1] == '\r')
+          {
+            endOfHeaderIdx--;
+          }
+
+          // Extract the line
+          string headerLine = Encoding.UTF8.GetString(headerBuffer, startOfNextLine, endOfHeaderIdx - startOfNextLine);
+
+          // Parse the line as a header
+          var parts = headerLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
+
+          var key = parts[0];
+          // Join all the parts after the first one
+          var value = string.Join(": ", parts.Skip(1));
+          if (key == "Transfer-Encoding")
+          {
+            // Don't set the Transfer-Encoding header as it breaks the response
+            continue;
+          }
+
+          // Set the header on the Kestrel response
+          response.Headers[parts[0]] = parts[1];
+
+          // Move the start to the character after '\n'
+          startOfNextLine = endOfLine + 1;
+        }
+
+        // Flush any remaining bytes in the buffer
+        if (startOfNextLine < totalBytesRead)
+        {
+          // There are bytes left in the buffer
+          // Copy them to the response
+          await response.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine));
+        }
+      }
+      finally
+      {
+        ArrayPool<byte>.Shared.Return(headerBuffer);
+      }
+
+      // Copy the rest of the response body
+      await Request.Body.CopyToAsync(response.BodyWriter.AsStream());
+#else
       // Send the body to the caller
       using var lambdaResponseReader = new StreamReader(this.Request.BodyReader.AsStream(), leaveOpen: true);
       string? line;
@@ -237,15 +316,18 @@ public class LambdaConnection
         response.Headers[parts[0]] = parts[1];
       }
 
-#if true
+# if true
+      // This can be useful for debugging, but it will mangle-non-UTF-8 bytes
       while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
       {
         _logger.LogDebug("Got body line from lambda: {line}", line);
         await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{line}\r\n"));
       }
-#else
-    // Note: this probably will not work as some data has been buffered in the StreamReader
-    lambdaResponseReader.BaseStream.CopyToAsync(response.BodyWriter.AsStream());
+# else
+      // Note: This will lose bytes at the start of the body that were buffered by the StreamReader
+      // TODO: Use IO Pipelines instead
+      await lambdaResponseReader.BaseStream.CopyToAsync(response.Body);
+# endif
 #endif
 
       _logger.LogDebug("Copied response body from Lambda");
