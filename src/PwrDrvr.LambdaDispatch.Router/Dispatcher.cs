@@ -240,10 +240,19 @@ public class Dispatcher
         await _pendingRequestSignal.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
         _logger.LogDebug("BackgroundPendingRequestDispatcher - Got signal");
 
-        // Loop quickly until we dispatch the item that we know is there
-        while (!await TryBackgroundDispatchOne())
+        // Only do this loop if we have pending requests
+        if (_pendingRequestCount == 0)
         {
-          _logger.LogDebug("BackgroundPendingRequestDispatcher - Dispatched one");
+          _logger.LogDebug("BackgroundPendingRequestDispatcher - No pending requests");
+          continue;
+        }
+
+        // Loop quickly until we dispatch the item that we got a signal for
+        // The item can be consumed by an incoming lambda connection, so it might not be there
+        var tryCount = 0;
+        while (!await TryBackgroundDispatchOne() && tryCount++ < 10)
+        {
+          _logger.LogDebug("BackgroundPendingRequestDispatcher - Could not dispatch one, trying again");
 
           await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
         }
