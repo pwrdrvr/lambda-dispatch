@@ -228,7 +228,6 @@ public class Dispatcher
 
   private async Task BackgroundPendingRequestDispatcher()
   {
-    // TODO: This should be starting more instances if the queue is building
     while (true)
     {
       // Wait for the signal or 1 second

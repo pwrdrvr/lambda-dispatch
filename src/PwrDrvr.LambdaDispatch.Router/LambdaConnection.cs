@@ -183,6 +183,7 @@ public class LambdaConnection
 
       _logger.LogDebug("Copying response body from Lambda");
 
+      // TODO: Get the 32 KB header size limit from configuration
       var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
       try
       {

@@ -156,10 +156,7 @@ public class HttpReverseRequester
     // Read the actual request off the Response from the router
     //
     var receivedRequest = new HttpRequestMessage();
-
-    //
-    // TODO: We need to read the request headers into a buffer
-    //
+    // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
     try
     {
@@ -354,6 +351,7 @@ public class HttpReverseRequester
   public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, Stream requestStreamForResponse, HttpDuplexContent duplexContent, string channelId)
   {
     // Write the status line
+    // TODO: Which HTTP version should be using here?  It seems this should be 1.1 always
     await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n"));
     // Copy the headers
     foreach (var header in response.Headers)
