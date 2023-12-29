@@ -160,7 +160,6 @@ public class HttpReverseRequester
     //
     // TODO: We need to read the request headers into a buffer
     //
-#if true
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
     try
     {
@@ -346,92 +345,6 @@ public class HttpReverseRequester
     {
       ArrayPool<byte>.Shared.Return(headerBuffer);
     }
-#else
-    using (var responseContentReaderForRequest = new StreamReader(await response.Content.ReadAsStreamAsync(), Encoding.UTF8, leaveOpen: true))
-    {
-      try
-      {
-        // Read the request line
-        var firstLine = await responseContentReaderForRequest.ReadLineAsync();
-        if (string.IsNullOrEmpty(firstLine))
-        {
-          // We need to let go of the request body
-          throw new EndOfStreamException("End of stream reached while reading request line");
-        }
-        else if (firstLine == "GOAWAY")
-        {
-          _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
-          // Clean up
-          // Indicate that we don't need the response body anymore
-          try { response.Content.Dispose(); } catch { }
-          // Close the request body
-          try { requestStreamForResponse.Close(); } catch { }
-          try { duplexContent?.Complete(); } catch { }
-          return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
-        }
-
-        var partsOfFirstLine = firstLine.Split(' ');
-        if (partsOfFirstLine.Length != 3)
-        {
-          throw new Exception($"Invalid request line: {firstLine}");
-        }
-        receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
-        receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
-        receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
-
-        // Read the headers
-        string? requestHeaderLine;
-        var contentHeaders = new List<(string, string)>();
-        while (!string.IsNullOrEmpty(requestHeaderLine = await responseContentReaderForRequest.ReadLineAsync()))
-        {
-          // Split the header into key and value
-          var parts = requestHeaderLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
-          var key = parts[0];
-          var value = parts[1];
-          if (parts.Length != 2)
-          {
-            throw new Exception($"Invalid header line: {requestHeaderLine}");
-          }
-
-          if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
-          {
-            contentHeaders.Add((key, value));
-          }
-          else if (string.Compare(key, "Content-Length", StringComparison.OrdinalIgnoreCase) == 0)
-          {
-            contentHeaders.Add((key, value));
-          }
-          else
-          {
-            receivedRequest.Headers.Add(key, value);
-          }
-        }
-
-        // Set the request body
-        // TODO: The StreamReader will have stolen and buffered some of the underlying stream data
-        receivedRequest.Content = new StreamContent(responseContentReaderForRequest.BaseStream);
-
-        // Add all the content headers
-        foreach (var (key, value) in contentHeaders)
-        {
-          receivedRequest.Content.Headers.Add(key, value);
-        }
-
-        return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
-      }
-      catch (Exception ex)
-      {
-        _logger.LogError(ex, "Error reading request from response");
-        // Indicate that we don't need the response body anymore
-        try { response.Content.Dispose(); } catch { }
-        // Close the request body
-        try { requestStreamForResponse.Close(); } catch { }
-        try { duplexContent?.Complete(); } catch { }
-
-        throw;
-      }
-    }
-#endif
   }
 
   /// <summary>
