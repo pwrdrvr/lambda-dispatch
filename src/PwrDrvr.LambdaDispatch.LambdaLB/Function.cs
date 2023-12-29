@@ -290,6 +290,7 @@ public class Function
                                         // TODO: Return after headers are received
                                         _logger.LogDebug("Sending request to Contained App");
                                         using var response = await appHttpClient.SendAsync(receivedRequest);
+
                                         _logger.LogDebug("Got response from Contained App");
 
                                         if ((int)response.StatusCode >= 500)
@@ -319,6 +320,18 @@ public class Function
 #endif
 
                                     _logger.LogDebug("Sent response to Router");
+                                }
+                                catch (HttpRequestException ex)
+                                {
+                                    _logger.LogError(ex, "HttpRequestException caught in task");
+                                    // We need to send a response back to the Router
+                                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                                    {
+                                        Content = new StringContent(ex.Message)
+                                    };
+                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+
+                                    throw;
                                 }
                                 finally
                                 {
