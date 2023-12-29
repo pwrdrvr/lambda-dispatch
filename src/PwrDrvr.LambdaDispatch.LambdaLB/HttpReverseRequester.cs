@@ -151,8 +151,10 @@ public class HttpReverseRequester
           if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
           {
             contentHeaders.Add((key, value));
-            // The Host header is not allowed to be set by the client
-            // DotNet will throw `System.InvalidOperationException` if you try to set it
+          }
+          else if (string.Compare(key, "Content-Length", StringComparison.OrdinalIgnoreCase) == 0)
+          {
+            contentHeaders.Add((key, value));
           }
           else
           {
