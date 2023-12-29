@@ -303,8 +303,8 @@ public class Function
                                     }
                                     else
                                     {
+                                        // NOTE: Static response is only for testing
                                         // Read the bytes off the request body, if any
-                                        // TODO: This is not always a string
                                         var requestBody = await receivedRequest.Content.ReadAsStringAsync();
 
                                         using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
@@ -321,15 +321,23 @@ public class Function
 
                                     _logger.LogDebug("Sent response to Router");
                                 }
-                                catch (HttpRequestException ex)
+                                catch (Exception ex)
                                 {
-                                    _logger.LogError(ex, "HttpRequestException caught in task");
-                                    // We need to send a response back to the Router
-                                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                                    _logger.LogError(ex, "Exception caught in task");
+
+                                    try
                                     {
-                                        Content = new StringContent(ex.Message)
-                                    };
-                                    await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                        // We need to send a response back to the Router
+                                        var response = new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                                        {
+                                            Content = new StringContent(ex.Message)
+                                        };
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                    }
+                                    catch (Exception ex2)
+                                    {
+                                        _logger.LogError(ex2, "Exception caught sending error response");
+                                    }
 
                                     throw;
                                 }
