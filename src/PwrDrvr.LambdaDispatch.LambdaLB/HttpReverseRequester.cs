@@ -351,34 +351,69 @@ public class HttpReverseRequester
   public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, Stream requestStreamForResponse, HttpDuplexContent duplexContent, string channelId)
   {
     // Write the status line
-    // TODO: Which HTTP version should be using here?  It seems this should be 1.1 always
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n"));
-    // Copy the headers
-    foreach (var header in response.Headers)
+    // TODO: Get the 32 KB header size limit from configuration
+    var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    try
     {
-      if (string.Compare(header.Key, "Keep-Alive", true) == 0)
+      int offset = 0;
+      // TODO: Which HTTP version should be using here?  It seems this should be 1.1 always
+      var statusLine = $"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n";
+      var statusLineBytes = Encoding.UTF8.GetBytes(statusLine);
+      statusLineBytes.CopyTo(headerBuffer, offset);
+      offset += statusLineBytes.Length;
+      // Copy the headers
+      foreach (var header in response.Headers)
       {
-        // Don't send the Keep-Alive header
-        continue;
-      }
-      if (string.Compare(header.Key, "Connection", true) == 0)
-      {
-        // Don't send the Connection header
-        continue;
-      }
-      await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {string.Join(',', header.Value)}\r\n"));
-    }
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Lambda-Id: " + _id + "\r\n"));
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Channel-Id: " + channelId + "\r\n"));
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Server: PwrDrvr.LambdaDispatch.LambdaLB\r\n"));
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+        if (string.Compare(header.Key, "Keep-Alive", true) == 0)
+        {
+          // Don't send the Keep-Alive header
+          continue;
+        }
+        if (string.Compare(header.Key, "Connection", true) == 0)
+        {
+          // Don't send the Connection header
+          continue;
+        }
 
-    // Copy the body from the request to the response
-    await response.Content.CopyToAsync(requestStreamForResponse);
-    // await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Hello World!\r\n"));
-    await requestStreamForResponse.FlushAsync();
-    requestStreamForResponse.Close();
-    duplexContent.Complete();
+        var headerLine = $"{header.Key}: {string.Join(',', header.Value)}\r\n";
+        var headerLineBytes = Encoding.UTF8.GetBytes(headerLine);
+        headerLineBytes.CopyTo(headerBuffer, offset);
+        offset += headerLineBytes.Length;
+      }
+
+      // Add the control headers
+      var controlHeaders = new Dictionary<string, string>
+      {
+        { "X-Lambda-Id", _id },
+        { "X-Channel-Id", channelId },
+        { "Server", "PwrDrvr.LambdaDispatch.LambdaLB" },
+      };
+      foreach (var (key, value) in controlHeaders)
+      {
+        var headerLine = $"{key}: {value}\r\n";
+        var headerLineBytes = Encoding.UTF8.GetBytes(headerLine);
+        headerLineBytes.CopyTo(headerBuffer, offset);
+        offset += headerLineBytes.Length;
+      }
+      // Write the end of the headers
+      var endOfHeaders = "\r\n";
+      var endOfHeadersBytes = Encoding.UTF8.GetBytes(endOfHeaders);
+      endOfHeadersBytes.CopyTo(headerBuffer, offset);
+      offset += endOfHeadersBytes.Length;
+
+      // Write the headers to the stream
+      await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset));
+
+      // Copy the body from the request to the response
+      await response.Content.CopyToAsync(requestStreamForResponse);
+      await requestStreamForResponse.FlushAsync();
+      requestStreamForResponse.Close();
+      duplexContent.Complete();
+    }
+    finally
+    {
+      ArrayPool<byte>.Shared.Return(headerBuffer);
+    }
   }
 
   private int _closeStarted = 0;
