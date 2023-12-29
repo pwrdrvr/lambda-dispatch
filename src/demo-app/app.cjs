@@ -41,11 +41,15 @@ app.get("/health", async (req, res) => {
   res.send("OK");
 });
 
-app.post("/echo", express.raw({ type: "*/*" }), async (req, res) => {
-  const contentType = req.get("Content-Type");
-  res.set("Content-Type", contentType);
-  res.send(req.body);
-});
+app.post(
+  "/echo",
+  express.raw({ type: "*/*", limit: "40mb" }),
+  async (req, res) => {
+    const contentType = req.get("Content-Type");
+    res.set("Content-Type", contentType);
+    res.send(req.body);
+  }
+);
 
 app.get("/read", async (req, res) => {
   // Log that we got a request
