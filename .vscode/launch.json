@@ -16,11 +16,16 @@
       "preLaunchTask": "build",
       "program": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Debug/net8.0/bootstrap",
       "args": [],
-      "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB",
+      "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
       "console": "internalConsole",
       "env": {
-        "STATIC_RESPONSE": "true",
+        // "STATIC_RESPONSE": "true",
+        "AWS_LAMBDA_RUNTIME_API": "localhost:5051",
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "test-access-key-id",
+        "AWS_SECRET_ACCESS_KEY": "test-secret-access-key",
+        "AWS_SESSION_TOKEN": "test-session-token"
       }
     },
     {
@@ -30,7 +35,7 @@
       "preLaunchTask": "build-release",
       "program": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/bootstrap",
       "args": [],
-      "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.LambdaLB",
+      "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
       "console": "internalConsole"
     },
