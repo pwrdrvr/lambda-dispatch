@@ -189,6 +189,9 @@ public class LambdaConnection
         // Read up to max headers size of data
         // Read until we fill the bufer OR we get an EOF
         int totalBytesRead = 0;
+        int idxToExamine = 0;
+        int idxPriorLineFeed = -1;
+        int idxHeadersLast = -1;
         while (true)
         {
           if (totalBytesRead >= headerBuffer.Length)
@@ -205,7 +208,39 @@ public class LambdaConnection
           }
 
           totalBytesRead += bytesRead;
+
+          // Check if we have a `\r\n\r\n` sequence
+          // We have to check for this in the buffer because we can't
+          // read past the end of the stream
+          for (int i = idxToExamine; i < totalBytesRead; i++)
+          {
+            // If this is a `\n` and the -1 or -2 character is `\n` then we we are done
+            if (headerBuffer[i] == (byte)'\n' && (idxPriorLineFeed == i - 1 || (idxPriorLineFeed == i - 2 && headerBuffer[i - 1] == (byte)'\r')))
+            {
+              // We found the `\r\n\r\n` sequence
+              // We are done reading
+              idxHeadersLast = i;
+              break;
+            }
+            else if (headerBuffer[i] == (byte)'\n')
+            {
+              // Update the last line feed index
+              idxPriorLineFeed = i;
+            }
+          }
+
+          if (idxHeadersLast != -1)
+          {
+            // We found the `\r\n\r\n` sequence
+            // We are done reading
+            break;
+          }
         }
+
+        //
+        // NOTE: This starts reading the buffer again at the start
+        // This could be combined with the end of headers check above to read only once
+        //
 
         // Read the status line
         int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n');
