@@ -131,18 +131,16 @@ public class LambdaConnection
       await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {header.Value}\r\n"));
     }
 
+    // Send the end of the headers
+    await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+
     // Only copy the request body if the request has a body
     if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding") && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
     {
-      {
-        await this.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
-      }
-
       _logger.LogDebug("Sending incoming request body to Lambda");
 
       // Send the body to the Lambda
-      await Response.BodyWriter.FlushAsync();
-      await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter.AsStream());
+      await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter);
       await incomingRequest.BodyReader.CompleteAsync();
 
       _logger.LogDebug("Finished sending incoming request body to Lambda");
@@ -185,7 +183,6 @@ public class LambdaConnection
 
       _logger.LogDebug("Copying response body from Lambda");
 
-#if true
       var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
       try
       {
@@ -288,47 +285,7 @@ public class LambdaConnection
       }
 
       // Copy the rest of the response body
-      await Request.Body.CopyToAsync(response.BodyWriter.AsStream());
-#else
-      // Send the body to the caller
-      using var lambdaResponseReader = new StreamReader(this.Request.BodyReader.AsStream(), leaveOpen: true);
-      string? line;
-      // First line should be status
-      line = await lambdaResponseReader.ReadLineAsync();
-      _logger.LogDebug("Got status line from lambda: {line}", line);
-      response.StatusCode = int.Parse(line.Split(' ')[1]);
-      while (!string.IsNullOrEmpty(line = await lambdaResponseReader.ReadLineAsync()))
-      {
-        _logger.LogDebug("Got header line from lambda: {line}", line);
-
-        // Parse the header
-        var parts = line.Split(new[] { ": " }, 2, StringSplitOptions.None);
-        var key = parts[0];
-        // Join all the parts after the first one
-        var value = string.Join(": ", parts.Skip(1));
-        if (key == "Transfer-Encoding")
-        {
-          // Don't set the Transfer-Encoding header as it breaks the response
-          continue;
-        }
-
-        // Set the header on the Kestrel response
-        response.Headers[parts[0]] = parts[1];
-      }
-
-# if true
-      // This can be useful for debugging, but it will mangle-non-UTF-8 bytes
-      while ((line = await lambdaResponseReader.ReadLineAsync()) != null)
-      {
-        _logger.LogDebug("Got body line from lambda: {line}", line);
-        await response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes($"{line}\r\n"));
-      }
-# else
-      // Note: This will lose bytes at the start of the body that were buffered by the StreamReader
-      // TODO: Use IO Pipelines instead
-      await lambdaResponseReader.BaseStream.CopyToAsync(response.Body);
-# endif
-#endif
+      await Request.BodyReader.CopyToAsync(response.BodyWriter);
 
       _logger.LogDebug("Copied response body from Lambda");
     }
