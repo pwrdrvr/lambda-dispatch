@@ -292,15 +292,15 @@ public class LambdaConnection
 
           var key = parts[0];
           // Join all the parts after the first one
-          var value = string.Join(": ", parts.Skip(1));
-          if (key == "Transfer-Encoding")
+          var value = string.Join(", ", parts.Skip(1));
+          if (string.Compare(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase) == 0)
           {
             // Don't set the Transfer-Encoding header as it breaks the response
             continue;
           }
 
           // Set the header on the Kestrel response
-          response.Headers[parts[0]] = parts[1];
+          response.Headers[key] = value;
 
           // Move the start to the character after '\n'
           startOfNextLine = endOfLine + 1;
