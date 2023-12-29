@@ -297,12 +297,7 @@ public class Function
                                             _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
                                         }
 
-                                        // Get the response body and dump it
-                                        // var responseBody = await response.Content.ReadAsStringAsync();
-
                                         // Send the response back
-                                        // TODO: Only send the headers
-                                        // TODO: Use CopyToAsync on the body
                                         await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
                                     }
                                     else

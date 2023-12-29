@@ -1,8 +1,4 @@
-// #define USE_SOCKETS_HTTP_HANDLER
-// #define USE_INSECURE_CIPHER_FOR_WIRESHARK
-
 using System.Net;
-using System.Net.Security;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -103,6 +99,9 @@ public class HttpReverseRequester
     //
     var receivedRequest = new HttpRequestMessage();
 
+    //
+    // TODO: We need to read the request headers into a buffer
+    //
     using (var responseContentReaderForRequest = new StreamReader(await response.Content.ReadAsStreamAsync(), Encoding.UTF8, leaveOpen: true))
     {
       try
