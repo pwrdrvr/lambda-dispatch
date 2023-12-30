@@ -90,36 +90,6 @@ public class LeastOutstandingQueue
     return queueList;
   }
 
-  // public async Task CloseMostIdleInstance()
-  // {
-  //   for (var i = 0; i < availableInstances.Length - 1; i++)
-  //   {
-  //     if (availableInstances[i].TryDequeue(out var instance))
-  //     {
-  //       // We got an instance with, what we think, is the least outstanding requests
-  //       // But, the instance may actually be closed or full due to disconnects
-  //       // So we'll check that here
-  //       if (instance.State != LambdaInstanceState.Open)
-  //       {
-  //         // The instance is not open, so we'll drop it on the floor and move on
-  //         continue;
-  //       }
-  //       if (instance.AvailableConnectionCount == 0)
-  //       {
-  //         // The instance is full, so we'll put it in the full instances
-  //         fullInstances.TryAdd(instance.Id, instance);
-  //         continue;
-  //       }
-
-  //       // Note: this is the only time we own this instance
-
-  //       // Close this instance
-  //       await instance.Close();
-  //       break;
-  //     }
-  //   }
-  // }
-
   /// <summary>
   /// Remove the least busy instance from the queue
   /// 
