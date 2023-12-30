@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace PwrDrvr.LambdaDispatch.Router;
@@ -117,6 +118,7 @@ public class LambdaConnection
     this.TCS.SetResult();
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public async Task ProxyRequestToLambda(HttpRequest incomingRequest)
   {
     // Send the incoming Request on the lambda's Response
@@ -150,7 +152,7 @@ public class LambdaConnection
       offset += 2;
 
       // Send the headers to the Lambda
-      await this.Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset));
+      await this.Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
 
       // Only copy the request body if the request has a body
       if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding") && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
@@ -158,15 +160,15 @@ public class LambdaConnection
         _logger.LogDebug("Sending incoming request body to Lambda");
 
         // Send the body to the Lambda
-        await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter);
-        await incomingRequest.BodyReader.CompleteAsync();
+        await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter).ConfigureAwait(false);
+        await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
 
         _logger.LogDebug("Finished sending incoming request body to Lambda");
       }
 
       // Mark that the Request has been sent on the LambdaInstances
-      await this.Response.BodyWriter.CompleteAsync();
-      await Response.CompleteAsync();
+      await this.Response.BodyWriter.CompleteAsync().ConfigureAwait(false);
+      await Response.CompleteAsync().ConfigureAwait(false);
 
       // Get the response from the lambda request and relay it back to the caller
       _logger.LogDebug("Finished sending entire request to Lambda");
@@ -180,6 +182,7 @@ public class LambdaConnection
   /// <summary>
   /// Run the request on the Lambda
   /// </summary>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public async Task RunRequest(HttpRequest request, HttpResponse response)
   {
     try
@@ -196,7 +199,7 @@ public class LambdaConnection
       //
       // Send the incoming request to the Lambda
       //
-      await this.ProxyRequestToLambda(request);
+      await this.ProxyRequestToLambda(request).ConfigureAwait(false);
 
       //
       //
@@ -224,7 +227,7 @@ public class LambdaConnection
             break;
           }
 
-          var bytesRead = await Request.Body.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead);
+          var bytesRead = await Request.Body.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead).ConfigureAwait(false);
           if (bytesRead == 0)
           {
             // Done reading
@@ -335,7 +338,7 @@ public class LambdaConnection
         {
           // There are bytes left in the buffer
           // Copy them to the response
-          await response.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine));
+          await response.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine)).ConfigureAwait(false);
         }
       }
       finally
@@ -344,7 +347,7 @@ public class LambdaConnection
       }
 
       // Copy the rest of the response body
-      await Request.BodyReader.CopyToAsync(response.BodyWriter);
+      await Request.BodyReader.CopyToAsync(response.BodyWriter).ConfigureAwait(false);
 
       _logger.LogDebug("Copied response body from Lambda");
     }
@@ -373,7 +376,7 @@ public class LambdaConnection
       // Set the state to closed
       State = LambdaConnectionState.Closed;
 
-      try { await response.CompleteAsync(); } catch { }
+      try { await response.CompleteAsync().ConfigureAwait(false); } catch { }
 
       // Mark that the Response has been sent on the LambdaInstance
       this.TCS.SetResult();

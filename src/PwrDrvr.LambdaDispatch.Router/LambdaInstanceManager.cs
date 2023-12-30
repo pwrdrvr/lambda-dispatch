@@ -73,7 +73,7 @@ public class LambdaInstanceManager
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var connection = await instance.AddConnection(request, response, channelId, immediateDispatch);
+      var connection = await instance.AddConnection(request, response, channelId, immediateDispatch).ConfigureAwait(false);
 
       // Check where this instance is in the least outstanding queue
       if (!immediateDispatch)
