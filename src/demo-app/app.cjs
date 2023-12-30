@@ -2,6 +2,8 @@ import express from "express";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { promisify } from "util";
 import path from "path";
+// import https from "https";
+// import fs from "fs";
 
 const sleep = promisify(setTimeout);
 
@@ -39,6 +41,10 @@ app.get("/health", async (req, res) => {
   }
 
   res.send("OK");
+});
+
+app.get("/ping", async (req, res) => {
+  res.send("pong");
 });
 
 app.post(
@@ -89,3 +95,12 @@ app.get("/read", async (req, res) => {
 app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
 });
+
+// SSL options
+// const options = {
+//   key: fs.readFileSync("../../certs/lambdadispatch.local.key"),
+//   cert: fs.readFileSync("../../certs/lambdadispatch.local.crt"),
+// };
+// https.createServer(options, app).listen(443, () => {
+//   console.log(`App listening at https://localhost:${443}`);
+// });
