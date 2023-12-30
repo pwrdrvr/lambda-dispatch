@@ -282,7 +282,7 @@ public class LeastOutstandingQueue
 
       // Add the instance to a non-full queue
       try { availableInstances[index].Enqueue(instance); }
-      catch (IndexOutOfRangeException ex)
+      catch (IndexOutOfRangeException)
       {
         _logger.LogError("Exception adding instance to queue, proposed index: {index}, array length {arrayLength}", index, availableInstances.Length);
       }
@@ -361,7 +361,7 @@ public class LeastOutstandingQueue
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(1000));
+      await Task.Delay(TimeSpan.FromMilliseconds(1000)).ConfigureAwait(false);
     }
   }
 
@@ -375,32 +375,32 @@ public class LeastOutstandingQueue
       // Log the size of each queue in availableInstances
       for (var i = 0; i < availableInstances.Length; i++)
       {
-        await stringWriter.WriteLineAsync($"Queue {i} size: {availableInstances[i].Count}");
+        stringWriter.WriteLine($"Queue {i} size: {availableInstances[i].Count}");
 
         // Print the OutstandingRequestCount of the items in the queue
         foreach (var instance in availableInstances[i])
         {
-          await stringWriter.WriteLineAsync($"Instance {instance.Id} state: {instance.State}, OutstandingRequestCount: {instance.OutstandingRequestCount}, AvailableConnectionCount: {instance.AvailableConnectionCount}");
+          stringWriter.WriteLine($"Instance {instance.Id} state: {instance.State}, OutstandingRequestCount: {instance.OutstandingRequestCount}, AvailableConnectionCount: {instance.AvailableConnectionCount}");
         }
       }
 
       // Log the size of fullInstances
-      await stringWriter.WriteLineAsync($"Full instances size: {fullInstances.Count}");
+      stringWriter.WriteLine($"Full instances size: {fullInstances.Count}");
 
       // Log the AvailableConnectionCount of each instance in fullInstances
       foreach (var instance in fullInstances.Values)
       {
-        await stringWriter.WriteLineAsync($"Full instance {instance.Id} state: {instance.State}, OutstandingRequestCount: {instance.OutstandingRequestCount}, AvailableConnectionCount: {instance.AvailableConnectionCount}");
+        stringWriter.WriteLine($"Full instance {instance.Id} state: {instance.State}, OutstandingRequestCount: {instance.OutstandingRequestCount}, AvailableConnectionCount: {instance.AvailableConnectionCount}");
       }
 
-      await stringWriter.FlushAsync();
+      stringWriter.Flush();
 
       var output = Encoding.UTF8.GetString(stream.ToArray());
 
       _logger.LogInformation("Queue Sizes:\n{output}", output);
 
       // Wait a bit
-      await Task.Delay(TimeSpan.FromSeconds(10));
+      await Task.Delay(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
     }
   }
 }

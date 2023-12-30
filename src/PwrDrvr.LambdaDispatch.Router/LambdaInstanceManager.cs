@@ -73,7 +73,7 @@ public class LambdaInstanceManager
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var connection = await instance.AddConnection(request, response, channelId, immediateDispatch);
+      var connection = await instance.AddConnection(request, response, channelId, immediateDispatch).ConfigureAwait(false);
 
       // Check where this instance is in the least outstanding queue
       if (!immediateDispatch)
@@ -93,7 +93,7 @@ public class LambdaInstanceManager
       await response.StartAsync();
       await response.WriteAsync("Lambda instance does not exist");
       await response.CompleteAsync();
-      try { await request.Body.CopyToAsync(Stream.Null); } catch { }
+      try { await request.BodyReader.CopyToAsync(Stream.Null); } catch { }
     }
     catch (Exception ex)
     {

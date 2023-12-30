@@ -96,7 +96,7 @@ public class Dispatcher
 
       try
       {
-        await lambdaConnection.RunRequest(incomingRequest, incomingResponse);
+        await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
       }
       finally
       {
@@ -195,7 +195,7 @@ public class Dispatcher
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
       try
       {
-        await connection.RunRequest(pendingRequest.Request, pendingRequest.Response);
+        await connection.RunRequest(pendingRequest.Request, pendingRequest.Response).ConfigureAwait(false);
       }
       finally
       {
@@ -228,7 +228,6 @@ public class Dispatcher
 
   private async Task BackgroundPendingRequestDispatcher()
   {
-    // TODO: This should be starting more instances if the queue is building
     while (true)
     {
       // Wait for the signal or 1 second
@@ -286,7 +285,7 @@ public class Dispatcher
         _logger.LogDebug("TryBackgroundDispatchOne - No connections available");
 
         // Start more instances if needed
-        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount).ConfigureAwait(false);
         return false;
       }
 
@@ -313,7 +312,7 @@ public class Dispatcher
 
         try
         {
-          await lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response);
+          await lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ConfigureAwait(false);
         }
         finally
         {

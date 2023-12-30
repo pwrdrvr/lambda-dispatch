@@ -126,7 +126,7 @@ public class Function
         {
             try
             {
-                response = await client.GetAsync(healthCheckUrl);
+                response = await client.GetAsync(healthCheckUrl).ConfigureAwait(false);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     break;
@@ -137,7 +137,7 @@ public class Function
                 // Ignore exceptions caused by the server not being ready
             }
 
-            await Task.Delay(1000); // Wait for a second before polling again
+            await Task.Delay(1000).ConfigureAwait(false); // Wait for a second before polling again
         }
         while (true);
     }
@@ -230,7 +230,7 @@ public class Function
                                 _logger.LogDebug("Getting request from Router");
 
                                 (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
-                                    = await reverseRequester.GetRequest(channelId);
+                                    = await reverseRequester.GetRequest(channelId).ConfigureAwait(false);
 
                                 lastWakeupTime = DateTime.Now;
 
@@ -289,7 +289,8 @@ public class Function
                                     {
                                         // TODO: Return after headers are received
                                         _logger.LogDebug("Sending request to Contained App");
-                                        using var response = await appHttpClient.SendAsync(receivedRequest);
+                                        using var response = await appHttpClient.SendAsync(receivedRequest).ConfigureAwait(false);
+
                                         _logger.LogDebug("Got response from Contained App");
 
                                         if ((int)response.StatusCode >= 500)
@@ -297,26 +298,21 @@ public class Function
                                             _logger.LogError("Contained App returned status code {StatusCode}", response.StatusCode);
                                         }
 
-                                        // Get the response body and dump it
-                                        // var responseBody = await response.Content.ReadAsStringAsync();
-
                                         // Send the response back
-                                        // TODO: Only send the headers
-                                        // TODO: Use CopyToAsync on the body
-                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
                                     }
                                     else
                                     {
+                                        // NOTE: Static response is only for testing
                                         // Read the bytes off the request body, if any
-                                        // TODO: This is not always a string
-                                        var requestBody = await receivedRequest.Content.ReadAsStringAsync();
+                                        var requestBody = await receivedRequest.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                                         using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                                         {
                                             Content = new StringContent($"Hello from LambdaLB")
                                         };
 
-                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
                                     }
 
 #if !NATIVE_AOT
@@ -324,6 +320,26 @@ public class Function
 #endif
 
                                     _logger.LogDebug("Sent response to Router");
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Exception caught in task");
+
+                                    try
+                                    {
+                                        // We need to send a response back to the Router
+                                        var response = new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                                        {
+                                            Content = new StringContent(ex.Message)
+                                        };
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
+                                    }
+                                    catch (Exception ex2)
+                                    {
+                                        _logger.LogError(ex2, "Exception caught sending error response");
+                                    }
+
+                                    throw;
                                 }
                                 finally
                                 {
@@ -426,7 +442,7 @@ public class Function
                 {
                     try
                     {
-                        var completedTask = await Task.WhenAny(tcsShutdown.Task, Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token));
+                        var completedTask = await Task.WhenAny(tcsShutdown.Task, Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token)).ConfigureAwait(false);
 
                         if (completedTask == tcsShutdown.Task)
                         {

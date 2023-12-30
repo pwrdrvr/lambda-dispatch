@@ -105,10 +105,6 @@ public class ChunkedController : ControllerBase
         // If you set this it hangs... it's implied that the transfer-encoding is chunked
         // and is already handled by the server
 
-        // TODO: Lookup the LambdaInstance for this request
-        // Based on the X-Lambda-Id header
-        // We should have this LambdaInstance in a dictionary keyed by the X-Lambda-Id header
-
         // Register this Lambda with the Dispatcher
         var result = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId, channelId);
 

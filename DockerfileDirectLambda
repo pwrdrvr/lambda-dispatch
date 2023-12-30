@@ -27,6 +27,7 @@ FROM --platform=linux/arm64 public.ecr.aws/lambda/nodejs:20
 
 # Copy the node.js app
 COPY --from=node-build-env /app/dist/*.?js ./
+COPY --from=node-build-env /app/public/* ./public/
 
 # Set the entrypoint
 CMD ["directlambda.handler"]

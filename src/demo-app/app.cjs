@@ -1,6 +1,9 @@
 import express from "express";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { promisify } from "util";
+import path from "path";
+// import https from "https";
+// import fs from "fs";
 
 const sleep = promisify(setTimeout);
 
@@ -29,6 +32,9 @@ export async function performInit() {
   );
 }
 
+// Serve static files from the "public" directory
+app.use("/public", express.static(path.join(__dirname, "public")));
+
 app.get("/health", async (req, res) => {
   if (!initPerformed) {
     performInit();
@@ -36,6 +42,20 @@ app.get("/health", async (req, res) => {
 
   res.send("OK");
 });
+
+app.get("/ping", async (req, res) => {
+  res.send("pong");
+});
+
+app.post(
+  "/echo",
+  express.raw({ type: "*/*", limit: "40mb" }),
+  async (req, res) => {
+    const contentType = req.get("Content-Type");
+    res.set("Content-Type", contentType);
+    res.send(req.body);
+  }
+);
 
 app.get("/read", async (req, res) => {
   // Log that we got a request
@@ -75,3 +95,12 @@ app.get("/read", async (req, res) => {
 app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
 });
+
+// SSL options
+// const options = {
+//   key: fs.readFileSync("../../certs/lambdadispatch.local.key"),
+//   cert: fs.readFileSync("../../certs/lambdadispatch.local.crt"),
+// };
+// https.createServer(options, app).listen(443, () => {
+//   console.log(`App listening at https://localhost:${443}`);
+// });

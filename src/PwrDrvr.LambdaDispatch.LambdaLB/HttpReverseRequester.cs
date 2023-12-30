@@ -1,12 +1,86 @@
-// #define USE_SOCKETS_HTTP_HANDLER
-// #define USE_INSECURE_CIPHER_FOR_WIRESHARK
-
+using System.Buffers;
 using System.Net;
-using System.Net.Security;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
+
+public class CustomStream : Stream
+{
+  private MemoryStream _bufferStream;
+  private Stream _responseStream;
+  private bool _bufferStreamRead = false;
+
+  public CustomStream(MemoryStream bufferStream, Stream responseStream)
+  {
+    _bufferStream = bufferStream;
+    _responseStream = responseStream;
+  }
+
+  public override bool CanRead => _bufferStream.CanRead || _responseStream.CanRead;
+
+  public override bool CanSeek => false;
+
+  public override bool CanWrite => false;
+
+  public override long Length => throw new NotSupportedException();
+
+  public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+  public override void Flush()
+  {
+    throw new IOException();
+  }
+
+  public override int Read(byte[] buffer, int offset, int count)
+  {
+    if (_bufferStreamRead)
+    {
+      return _responseStream.Read(buffer, offset, count);
+    }
+
+    int bytesRead = _bufferStream.Read(buffer, offset, count);
+    if (bytesRead == 0)
+    {
+      _bufferStreamRead = true;
+      return _responseStream.Read(buffer, offset, count);
+    }
+    return bytesRead;
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+  {
+    if (_bufferStreamRead)
+    {
+      return _responseStream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+
+    int bytesRead = _bufferStream.Read(buffer, offset, count);
+    if (bytesRead == 0)
+    {
+      _bufferStreamRead = true;
+      return _responseStream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+    return Task.FromResult(bytesRead);
+  }
+
+  public override long Seek(long offset, SeekOrigin origin)
+  {
+    throw new NotSupportedException();
+  }
+
+  public override void SetLength(long value)
+  {
+    throw new NotSupportedException();
+  }
+
+  public override void Write(byte[] buffer, int offset, int count)
+  {
+    throw new NotSupportedException();
+  }
+}
 
 public class HttpReverseRequester
 {
@@ -74,16 +148,10 @@ public class HttpReverseRequester
     // Read the Response before sending the Request
     // TODO: We can await the pair of the Response or Request closing to avoid deadlocks
     //
-    var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+    var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
     // Get the stream that we can write the response to
-    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync();
-
-    // HH: This is from the dotnet example, but they do not await the SendAsync that
-    // returns when the response headers are read. I don't think we need this
-    // since we await it.
-    // Flush the content stream. Otherwise, the request headers are not guaranteed to be sent.
-    // await requestStreamForResponse.FlushAsync();
+    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync().ConfigureAwait(false);
     if (response.StatusCode != HttpStatusCode.OK)
     {
       _logger.LogWarning("CLOSING - Got a {status} on the outer request LambdaId: {id}, ChannelId: {channelId}", response.StatusCode, _id, channelId);
@@ -102,88 +170,197 @@ public class HttpReverseRequester
     // Read the actual request off the Response from the router
     //
     var receivedRequest = new HttpRequestMessage();
-
-    using (var responseContentReaderForRequest = new StreamReader(await response.Content.ReadAsStreamAsync(), Encoding.UTF8, leaveOpen: true))
+    // TODO: Get the 32 KB header size limit from configuration
+    var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    try
     {
-      try
+      var requestStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+
+      // Read up to max headers size of data
+      // Read until we fill the bufer OR we get an EOF
+      int totalBytesRead = 0;
+      int idxToExamine = 0;
+      int idxPriorLineFeed = -1;
+      int idxHeadersLast = -1;
+      while (true)
       {
-        // Read the request line
-        var firstLine = await responseContentReaderForRequest.ReadLineAsync();
-        if (string.IsNullOrEmpty(firstLine))
+        if (totalBytesRead >= headerBuffer.Length)
         {
-          // We need to let go of the request body
-          throw new EndOfStreamException("End of stream reached while reading request line");
-        }
-        else if (firstLine == "GOAWAY")
-        {
-          _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
-          // Clean up
-          // Indicate that we don't need the response body anymore
-          try { response.Content.Dispose(); } catch { }
-          // Close the request body
-          try { requestStreamForResponse.Close(); } catch { }
-          try { duplexContent?.Complete(); } catch { }
-          return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
+          // Buffer is full
+          break;
         }
 
-        var partsOfFirstLine = firstLine.Split(' ');
-        if (partsOfFirstLine.Length != 3)
+        var bytesRead = await requestStream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead).ConfigureAwait(false);
+        if (bytesRead == 0)
         {
-          throw new Exception($"Invalid request line: {firstLine}");
+          // Done reading
+          break;
         }
-        receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
-        receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
-        receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
 
-        // Read the headers
-        string? requestHeaderLine;
-        var contentHeaders = new List<(string, string)>();
-        while (!string.IsNullOrEmpty(requestHeaderLine = await responseContentReaderForRequest.ReadLineAsync()))
+        totalBytesRead += bytesRead;
+
+        // Check if we have a `\r\n\r\n` sequence
+        // We have to check for this in the buffer because we can't
+        // read past the end of the stream
+        for (int i = idxToExamine; i < totalBytesRead; i++)
         {
-          // Split the header into key and value
-          var parts = requestHeaderLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
-          var key = parts[0];
-          var value = parts[1];
-          if (parts.Length != 2)
+          // If this is a `\n` and the -1 or -2 character is `\n` then we we are done
+          if (headerBuffer[i] == (byte)'\n' && (idxPriorLineFeed == i - 1 || (idxPriorLineFeed == i - 2 && headerBuffer[i - 1] == (byte)'\r')))
           {
-            throw new Exception($"Invalid header line: {requestHeaderLine}");
+            // We found the `\r\n\r\n` sequence
+            // We are done reading
+            idxHeadersLast = i;
+            break;
           }
-
-          if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
+          else if (headerBuffer[i] == (byte)'\n')
           {
-            contentHeaders.Add((key, value));
-            // The Host header is not allowed to be set by the client
-            // DotNet will throw `System.InvalidOperationException` if you try to set it
-          }
-          else
-          {
-            receivedRequest.Headers.Add(key, value);
+            // Update the last line feed index
+            idxPriorLineFeed = i;
           }
         }
 
-        // Set the request body
-        // TODO: The StreamReader will have stolen and buffered some of the underlying stream data
-        receivedRequest.Content = new StreamContent(responseContentReaderForRequest.BaseStream);
+        if (idxHeadersLast != -1)
+        {
+          // We found the `\r\n\r\n` sequence
+          // We are done reading
+          break;
+        }
+      }
+
+      //
+      // NOTE: This starts reading the buffer again at the start
+      // This could be combined with the end of headers check above to read only once
+      //
+
+      // Read the status line
+      int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n');
+      if (endOfStatusLine == -1)
+      {
+        // Handle error: '\n' not found in the buffer
+        throw new Exception("Status line not found in response");
+      }
+
+      string firstLine = Encoding.UTF8.GetString(headerBuffer, 0, endOfStatusLine);
+
+      if (string.IsNullOrEmpty(firstLine))
+      {
+        // We need to let go of the request body
+        throw new EndOfStreamException("End of stream reached while reading request line");
+      }
+      else if (firstLine.StartsWith("GOAWAY"))
+      {
+        _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+        // Clean up
+        // Indicate that we don't need the response body anymore
+        try { response.Content.Dispose(); } catch { }
+        // Close the request body
+        try { requestStreamForResponse.Close(); } catch { }
+        try { duplexContent?.Complete(); } catch { }
+        return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
+      }
+
+      var partsOfFirstLine = firstLine.Split(' ');
+      if (partsOfFirstLine.Length != 3)
+      {
+        throw new Exception($"Invalid request line: {firstLine}");
+      }
+      receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
+      receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
+      receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
+
+      // Start processing the rest of the headers from the character after '\n'
+      int startOfNextLine = endOfStatusLine + 1;
+      var contentHeaders = new List<(string, string)>();
+
+      // Process the rest of the headers
+      var hasBody = false;
+      while (startOfNextLine < totalBytesRead)
+      {
+        // Find the index of the next '\n' in headerBuffer
+        int endOfLine = Array.IndexOf(headerBuffer, (byte)'\n', startOfNextLine);
+        if (endOfLine == -1)
+        {
+          // No more '\n' found
+          break;
+        }
+
+        // Check if this is the end of the headers
+        if (endOfLine == startOfNextLine || (endOfLine == startOfNextLine + 1 && headerBuffer[startOfNextLine] == '\r'))
+        {
+          // End of headers
+          // Move the start to the character after '\n'
+          startOfNextLine = endOfLine + 1;
+          break;
+        }
+
+        // We don't want the \n or the possibly proceeding \r
+        var endOfHeaderIdx = endOfLine;
+        if (headerBuffer[endOfHeaderIdx - 1] == '\r')
+        {
+          endOfHeaderIdx--;
+        }
+
+        // Extract the line
+        string headerLine = Encoding.UTF8.GetString(headerBuffer, startOfNextLine, endOfHeaderIdx - startOfNextLine);
+
+        // Parse the line as a header
+        var parts = headerLine.Split(new[] { ": " }, 2, StringSplitOptions.None);
+
+        var key = parts[0];
+        // Join all the parts after the first one
+        var value = string.Join(", ", parts.Skip(1));
+        if (string.Compare(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase) == 0)
+        {
+          hasBody = true;
+          // Don't set the Transfer-Encoding header as it breaks the response
+          continue;
+        }
+        else if (string.Compare(key, "Content-Type", StringComparison.OrdinalIgnoreCase) == 0)
+        {
+          contentHeaders.Add((key, value));
+        }
+        else if (string.Compare(key, "Content-Length", StringComparison.OrdinalIgnoreCase) == 0)
+        {
+          hasBody = true;
+          contentHeaders.Add((key, value));
+        }
+        else
+        {
+          receivedRequest.Headers.Add(key, value);
+        }
+
+        // Move the start to the character after '\n'
+        startOfNextLine = endOfLine + 1;
+      }
+
+      // Flush any remaining bytes in the buffer
+      MemoryStream accumulatedBuffer = new MemoryStream();
+      if (startOfNextLine < totalBytesRead)
+      {
+        // Write the bytes after the headers to the memory stream
+        accumulatedBuffer.Write(headerBuffer.AsSpan(startOfNextLine, totalBytesRead - startOfNextLine));
+        accumulatedBuffer.Flush();
+        accumulatedBuffer.Position = 0;
+      }
+
+      // Set the request body, if there is one
+      if (hasBody)
+      {
+        Stream customStream = new CustomStream(accumulatedBuffer, requestStream);
+        receivedRequest.Content = new StreamContent(customStream);
 
         // Add all the content headers
         foreach (var (key, value) in contentHeaders)
         {
           receivedRequest.Content.Headers.Add(key, value);
         }
-
-        return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
       }
-      catch (Exception ex)
-      {
-        _logger.LogError(ex, "Error reading request from response");
-        // Indicate that we don't need the response body anymore
-        try { response.Content.Dispose(); } catch { }
-        // Close the request body
-        try { requestStreamForResponse.Close(); } catch { }
-        try { duplexContent?.Complete(); } catch { }
 
-        throw;
-      }
+      return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
+    }
+    finally
+    {
+      ArrayPool<byte>.Shared.Return(headerBuffer);
     }
   }
 
@@ -194,33 +371,69 @@ public class HttpReverseRequester
   public async Task SendResponse(HttpResponseMessage response, HttpRequestMessage requestForResponse, Stream requestStreamForResponse, HttpDuplexContent duplexContent, string channelId)
   {
     // Write the status line
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n"));
-    // Copy the headers
-    foreach (var header in response.Headers)
+    // TODO: Get the 32 KB header size limit from configuration
+    var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    try
     {
-      if (string.Compare(header.Key, "Keep-Alive", true) == 0)
+      int offset = 0;
+      // TODO: Which HTTP version should be using here?  It seems this should be 1.1 always
+      var statusLine = $"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n";
+      var statusLineBytes = Encoding.UTF8.GetBytes(statusLine);
+      statusLineBytes.CopyTo(headerBuffer, offset);
+      offset += statusLineBytes.Length;
+      // Copy the headers
+      foreach (var header in response.Headers)
       {
-        // Don't send the Keep-Alive header
-        continue;
-      }
-      if (string.Compare(header.Key, "Connection", true) == 0)
-      {
-        // Don't send the Connection header
-        continue;
-      }
-      await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes($"{header.Key}: {string.Join(',', header.Value)}\r\n"));
-    }
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Lambda-Id: " + _id + "\r\n"));
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("X-Channel-Id: " + channelId + "\r\n"));
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Server: PwrDrvr.LambdaDispatch.LambdaLB\r\n"));
-    await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
+        if (string.Compare(header.Key, "Keep-Alive", true) == 0)
+        {
+          // Don't send the Keep-Alive header
+          continue;
+        }
+        if (string.Compare(header.Key, "Connection", true) == 0)
+        {
+          // Don't send the Connection header
+          continue;
+        }
 
-    // Copy the body from the request to the response
-    await response.Content.CopyToAsync(requestStreamForResponse);
-    // await requestStreamForResponse.WriteAsync(Encoding.UTF8.GetBytes("Hello World!\r\n"));
-    await requestStreamForResponse.FlushAsync();
-    requestStreamForResponse.Close();
-    duplexContent.Complete();
+        var headerLine = $"{header.Key}: {string.Join(',', header.Value)}\r\n";
+        var headerLineBytes = Encoding.UTF8.GetBytes(headerLine);
+        headerLineBytes.CopyTo(headerBuffer, offset);
+        offset += headerLineBytes.Length;
+      }
+
+      // Add the control headers
+      var controlHeaders = new Dictionary<string, string>
+      {
+        { "X-Lambda-Id", _id },
+        { "X-Channel-Id", channelId },
+        { "Server", "PwrDrvr.LambdaDispatch.LambdaLB" },
+      };
+      foreach (var (key, value) in controlHeaders)
+      {
+        var headerLine = $"{key}: {value}\r\n";
+        var headerLineBytes = Encoding.UTF8.GetBytes(headerLine);
+        headerLineBytes.CopyTo(headerBuffer, offset);
+        offset += headerLineBytes.Length;
+      }
+      // Write the end of the headers
+      var endOfHeaders = "\r\n";
+      var endOfHeadersBytes = Encoding.UTF8.GetBytes(endOfHeaders);
+      endOfHeadersBytes.CopyTo(headerBuffer, offset);
+      offset += endOfHeadersBytes.Length;
+
+      // Write the headers to the stream
+      await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
+
+      // Copy the body from the request to the response
+      await response.Content.CopyToAsync(requestStreamForResponse).ConfigureAwait(false);
+      await requestStreamForResponse.FlushAsync().ConfigureAwait(false);
+      requestStreamForResponse.Close();
+      duplexContent.Complete();
+    }
+    finally
+    {
+      ArrayPool<byte>.Shared.Return(headerBuffer);
+    }
   }
 
   private int _closeStarted = 0;
@@ -249,7 +462,7 @@ public class HttpReverseRequester
       request.Headers.Host = "lambdadispatch.local:5003";
       request.Headers.Add("X-Lambda-Id", _id);
 
-      using var response = await _client.SendAsync(request);
+      using var response = await _client.SendAsync(request).ConfigureAwait(false);
 
       if (response.StatusCode != HttpStatusCode.OK)
       {
@@ -283,7 +496,7 @@ public class HttpReverseRequester
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
 
-    using var response = await _client.SendAsync(request);
+    using var response = await _client.SendAsync(request).ConfigureAwait(false);
 
     if (response.StatusCode != HttpStatusCode.OK)
     {

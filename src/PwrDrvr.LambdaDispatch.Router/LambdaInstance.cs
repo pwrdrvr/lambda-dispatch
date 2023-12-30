@@ -167,7 +167,7 @@ public class LambdaInstance
         await response.StartAsync();
         await response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {Id}, X-Channel-Id: {channelId}, closing");
         await response.CompleteAsync();
-        try { await request.Body.CopyToAsync(Stream.Null); } catch { }
+        try { await request.BodyReader.CopyToAsync(Stream.Null); } catch { }
       }
       catch (Exception ex)
       {
@@ -470,7 +470,7 @@ public class LambdaInstance
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
   }
 
-  public async Task ReenqueueUnusedConnection(LambdaConnection connection)
+  public async ValueTask ReenqueueUnusedConnection(LambdaConnection connection)
   {
     // If the lambda is closing then we don't re-enqueue the connection
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)

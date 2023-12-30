@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "npm run build:app && npm run build:directlambda && npm run build:serverlessloader",
+    "build": "npm run build:app && npm run build:directlambda && npm run build:serverlessloader && npm run build:public",
+    "build:public": "cp -r public dist/public",
     "build:app": "esbuild app.cjs --bundle --platform=node --outfile=dist/app.cjs",
     "build:directlambda": "esbuild directlambda.mjs --bundle --platform=node --format=esm --external:./serverlessloader.cjs --outfile=dist/directlambda.mjs",
     "build:serverlessloader": "esbuild serverlessloader.cjs --bundle --platform=node --format=cjs --outfile=dist/serverlessloader.cjs",
