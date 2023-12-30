@@ -40,6 +40,11 @@ public class LeastOutstandingQueue : IDisposable
 
   public LeastOutstandingQueue(int maxConcurrentCount)
   {
+    if (maxConcurrentCount <= 0)
+    {
+      throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be greater than 0");
+    }
+
     this.maxConcurrentCount = maxConcurrentCount;
 
     availableInstances = InitQueues(maxConcurrentCount);
@@ -231,6 +236,10 @@ public class LeastOutstandingQueue : IDisposable
   /// <param name="instance"></param>
   public void AddInstance(ILambdaInstance instance)
   {
+    if (instance == null)
+    {
+      throw new ArgumentNullException(nameof(instance));
+    }
 
     var proposedIndex = GetFloorQueueIndex(instance.OutstandingRequestCount);
 
