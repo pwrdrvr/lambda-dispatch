@@ -22,7 +22,7 @@ public class LambdaInstanceManager
   /// Used to lookup instances by ID
   /// This allows associating the connecitons with their owning lambda instance
   /// </summary>
-  private readonly ConcurrentDictionary<string, LambdaInstance> _instances = new();
+  private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
   public LambdaInstanceManager(int maxConcurrentCount)
   {
@@ -132,7 +132,7 @@ public class LambdaInstanceManager
   // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
   private async Task ManageCapacity()
   {
-    Dictionary<string, LambdaInstance> stoppingInstances = [];
+    Dictionary<string, ILambdaInstance> stoppingInstances = [];
 
     while (true)
     {
@@ -344,7 +344,7 @@ public class LambdaInstanceManager
   /// Gracefully close an instance
   /// </summary>
   /// <param name="instance"></param>
-  public void CloseInstance(LambdaInstance instance)
+  public void CloseInstance(ILambdaInstance instance)
   {
     _logger.LogInformation("Closing instance {instanceId}", instance.Id);
 

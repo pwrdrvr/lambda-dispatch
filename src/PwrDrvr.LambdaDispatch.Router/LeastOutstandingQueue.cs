@@ -25,9 +25,9 @@ public class LeastOutstandingQueue
 
   private readonly int maxConcurrentCount;
 
-  private readonly ConcurrentQueue<LambdaInstance>[] availableInstances;
+  private readonly ConcurrentQueue<ILambdaInstance>[] availableInstances;
 
-  private readonly ConcurrentDictionary<string, LambdaInstance> fullInstances = new();
+  private readonly ConcurrentDictionary<string, ILambdaInstance> fullInstances = new();
 
   public LeastOutstandingQueue(int maxConcurrentCount)
   {
@@ -69,7 +69,7 @@ public class LeastOutstandingQueue
   /// <param name="maxConcurrentCount"></param>
   /// <returns></returns>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  static private ConcurrentQueue<LambdaInstance>[] InitQueues(int maxConcurrentCount)
+  static private ConcurrentQueue<ILambdaInstance>[] InitQueues(int maxConcurrentCount)
   {
     // TODO: Get up to 10 primes from 1 to maxCurrentCount that are at least 2x the previous prime
     // But... for now, just reject anything over 10
@@ -79,12 +79,12 @@ public class LeastOutstandingQueue
     }
 
     // If an instance has maxConcurrentCount outstanding it goes in the full list
-    var queueList = new ConcurrentQueue<LambdaInstance>[maxConcurrentCount];
+    var queueList = new ConcurrentQueue<ILambdaInstance>[maxConcurrentCount];
 
     // Initialize the queues
     for (var i = 0; i < queueList.Length; i++)
     {
-      queueList[i] = new ConcurrentQueue<LambdaInstance>();
+      queueList[i] = new ConcurrentQueue<ILambdaInstance>();
     }
 
     return queueList;
@@ -99,7 +99,7 @@ public class LeastOutstandingQueue
   /// </summary>
   /// <param name="instance"></param>
   /// <returns></returns>
-  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out LambdaInstance? instance)
+  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out ILambdaInstance? instance)
   {
     instance = null;
 
@@ -220,7 +220,7 @@ public class LeastOutstandingQueue
   /// Add a new instance to the queue
   /// </summary>
   /// <param name="instance"></param>
-  public void AddInstance(LambdaInstance instance)
+  public void AddInstance(ILambdaInstance instance)
   {
 
     var proposedIndex = GetFloorQueueIndex(instance.OutstandingRequestCount);
@@ -236,7 +236,7 @@ public class LeastOutstandingQueue
     availableInstances[proposedIndex].Enqueue(instance);
   }
 
-  public void ReinstateFullInstance(LambdaInstance instance)
+  public void ReinstateFullInstance(ILambdaInstance instance)
   {
     // Remove the instance from the full instances
     if (fullInstances.TryRemove(instance.Id, out var _))

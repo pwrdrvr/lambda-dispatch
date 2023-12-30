@@ -1,13 +1,11 @@
+using Moq;
 using NUnit.Framework;
 using PwrDrvr.LambdaDispatch.Router;
-using System.Linq;
 
 namespace PwrDrvr.LambdaDispatch.Tests
 {
   public class LeastOutstandingQueueTests
   {
-    private readonly int _maxConcurrentCount = 10;
-
     [SetUp]
     public void Setup()
     {
@@ -16,9 +14,10 @@ namespace PwrDrvr.LambdaDispatch.Tests
     [Test]
     public void AddInstance_ShouldAddInstanceToQueue()
     {
-      var queue = new LeastOutstandingQueue(_maxConcurrentCount);
+      var maxConcurrentCount = 10;
+      var queue = new LeastOutstandingQueue(maxConcurrentCount);
 
-      var instance = new LambdaInstance(_maxConcurrentCount);
+      var instance = new LambdaInstance(maxConcurrentCount);
 
       queue.AddInstance(instance);
 
@@ -31,15 +30,26 @@ namespace PwrDrvr.LambdaDispatch.Tests
     [Test]
     public void TryGetLeastOutstandingConnection_ShouldReturnConnection()
     {
-      var queue = new LeastOutstandingQueue(_maxConcurrentCount);
-      var instance = new LambdaInstance(_maxConcurrentCount);
+      var maxConcurrentCount = 10;
+      var queue = new LeastOutstandingQueue(maxConcurrentCount);
 
-      var connection = instance.AddConnection(null, null, "");
+      var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
+      var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
+      request.Setup(i => i.HttpContext).Returns(requestContext.Object);
+      var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
-      queue.AddInstance(instance);
+      var instance = new Mock<ILambdaInstance>();
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
 
+      var id = "instance-1";
+      instance.Setup(i => i.Id).Returns(id);
+      instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
+      instance.Setup(i => i.AvailableConnectionCount).Returns(1);
+      var connectionObject = connection.Object;
+      instance.Setup(i => i.TryGetConnection(out connectionObject)).Returns(true);
 
-      Assert.IsNotNull(connection);
+      // Add the instance
+      queue.AddInstance(instance.Object);
 
       var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
 
