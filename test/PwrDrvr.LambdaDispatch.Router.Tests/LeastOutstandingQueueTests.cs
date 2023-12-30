@@ -12,13 +12,11 @@ namespace PwrDrvr.LambdaDispatch.Tests
     }
 
     [Test]
-    public void AddInstance_ShouldAddInstanceToQueue()
+    public void AddInstance_ShouldNotReturnInvlaidInstanceFromQueue()
     {
       var maxConcurrentCount = 10;
-      var queue = new LeastOutstandingQueue(maxConcurrentCount);
-
+      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
       var instance = new LambdaInstance(maxConcurrentCount);
-
       queue.AddInstance(instance);
 
       var result = queue.TryGetLeastOustandingConnection(out var connection);
@@ -31,7 +29,7 @@ namespace PwrDrvr.LambdaDispatch.Tests
     public void TryGetLeastOutstandingConnection_ShouldReturnConnection()
     {
       var maxConcurrentCount = 10;
-      var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();

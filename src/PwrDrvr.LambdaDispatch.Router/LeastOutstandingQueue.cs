@@ -17,7 +17,7 @@ public interface ILeastOutstandingItem
 /// Gives approximate least outstanding requests for items that may
 /// have changes in outstanding requests asynchronously in the background
 /// </summary>
-public class LeastOutstandingQueue
+public class LeastOutstandingQueue : IDisposable
 {
   private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
 
@@ -28,6 +28,15 @@ public class LeastOutstandingQueue
   private readonly ConcurrentQueue<ILambdaInstance>[] availableInstances;
 
   private readonly ConcurrentDictionary<string, ILambdaInstance> fullInstances = new();
+
+  // Token to cancel the background tasks
+  private readonly CancellationTokenSource cancellationTokenSource = new();
+
+  public void Dispose()
+  {
+    cancellationTokenSource.Cancel();
+    GC.SuppressFinalize(this);
+  }
 
   public LeastOutstandingQueue(int maxConcurrentCount)
   {
@@ -261,7 +270,7 @@ public class LeastOutstandingQueue
 
   private async Task RebalanceQueue()
   {
-    while (true)
+    while (!cancellationTokenSource.IsCancellationRequested)
     {
       _logger.LogDebug("Rebalancing queue");
 
@@ -331,13 +340,20 @@ public class LeastOutstandingQueue
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(1000)).ConfigureAwait(false);
+      try
+      {
+        await Task.Delay(TimeSpan.FromMilliseconds(1000), cancellationTokenSource.Token).ConfigureAwait(false);
+      }
+      catch (TaskCanceledException)
+      {
+        break;
+      }
     }
   }
 
   private async Task LogQueueSizes()
   {
-    while (true)
+    while (!cancellationTokenSource.IsCancellationRequested)
     {
       using var stream = new MemoryStream();
       using var stringWriter = new StreamWriter(stream);
@@ -370,7 +386,14 @@ public class LeastOutstandingQueue
       _logger.LogInformation("Queue Sizes:\n{output}", output);
 
       // Wait a bit
-      await Task.Delay(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+      try
+      {
+        await Task.Delay(TimeSpan.FromSeconds(10), cancellationTokenSource.Token).ConfigureAwait(false);
+      }
+      catch (TaskCanceledException)
+      {
+        break;
+      }
     }
   }
 }
