@@ -305,7 +305,10 @@ public class Function
                                     {
                                         // NOTE: Static response is only for testing
                                         // Read the bytes off the request body, if any
-                                        var requestBody = await receivedRequest.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                        if (receivedRequest.Content != null)
+                                        {
+                                            await receivedRequest.Content.CopyToAsync(Stream.Null).ConfigureAwait(false);
+                                        }
 
                                         using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                                         {
