@@ -12,7 +12,7 @@ public class GetCallbackIP
 
   static private ReaderWriterLockSlim rwLock = new();
 
-  static public async Task<string> Get()
+  static public async ValueTask<string> Get()
   {
     // Once it is set, it is set, we don't have to lock
     if (callbackUrl != null)
