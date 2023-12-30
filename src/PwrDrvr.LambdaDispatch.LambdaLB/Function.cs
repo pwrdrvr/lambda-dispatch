@@ -72,7 +72,7 @@ public class Function
         {
             _logger.LogInformation("Static Response Enabled - Skipping Contained App Startup");
         }
-#if !NATIVE_AOT
+#if !SKIP_METRICS
         Task.Run(() => MetricsRegistry.PrintMetrics(ctsShutdown.Token)).ConfigureAwait(false);
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
@@ -161,7 +161,7 @@ public class Function
             var exitTime = DateTime.Now + initialRemainingTime;
 
             // Reset the metrics
-#if !NATIVE_AOT
+#if !SKIP_METRICS
             MetricsRegistry.Metrics.Manage.Reset();
 #endif
 
@@ -205,7 +205,7 @@ public class Function
                 {
                     using var taskNumberScope = _logger.BeginScope("TaskNumber: {TaskNumber}", taskNumber);
 
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsOpen);
 #endif
 
@@ -217,13 +217,13 @@ public class Function
                             var channelId = Guid.NewGuid().ToString();
                             using var channelIdScope = _logger.BeginScope("ChannelId: {ChannelId}", channelId);
 
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LastWakeupTime, () => (DateTime.Now - lastWakeupTime).TotalMilliseconds);
 #endif
 
                             try
                             {
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                                 using var timer = MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.IncomingRequestTimer);
 #endif
 
@@ -240,7 +240,7 @@ public class Function
                                 // This is NOT the status of the Lambda function's Response
                                 if (outerStatus == (int)HttpStatusCode.Conflict)
                                 {
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 #endif
 
@@ -251,7 +251,7 @@ public class Function
                                 }
                                 else if (outerStatus != (int)HttpStatusCode.OK)
                                 {
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestConflictCount);
 #endif
 
@@ -261,7 +261,7 @@ public class Function
                                     return;
                                 }
 
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                                 MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
 #endif
 
@@ -318,7 +318,7 @@ public class Function
                                         await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
                                     }
 
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                                     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RespondedCount);
 #endif
 
@@ -428,7 +428,7 @@ public class Function
                     }
                     finally
                     {
-#if !NATIVE_AOT
+#if !SKIP_METRICS
                         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.ChannelsOpen);
                         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ChannelsClosed);
 #endif
@@ -512,7 +512,7 @@ public class Function
         finally
         {
             // Dump the metrics one last time
-#if !NATIVE_AOT
+#if !SKIP_METRICS
             await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync());
 #endif
         }
