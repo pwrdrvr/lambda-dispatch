@@ -144,7 +144,7 @@ public class LambdaConnection
       offset += 2;
 
       // Send the headers to the Lambda
-      await this.Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
+      await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
 
       // Only copy the request body if the request has a body
       if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding") && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
@@ -152,14 +152,14 @@ public class LambdaConnection
         _logger.LogDebug("Sending incoming request body to Lambda");
 
         // Send the body to the Lambda
-        await incomingRequest.BodyReader.CopyToAsync(this.Response.BodyWriter).ConfigureAwait(false);
+        await incomingRequest.BodyReader.CopyToAsync(Response.BodyWriter).ConfigureAwait(false);
         await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
 
         _logger.LogDebug("Finished sending incoming request body to Lambda");
       }
 
       // Mark that the Request has been sent on the LambdaInstances
-      await this.Response.BodyWriter.CompleteAsync().ConfigureAwait(false);
+      await Response.BodyWriter.CompleteAsync().ConfigureAwait(false);
       await Response.CompleteAsync().ConfigureAwait(false);
 
       // Get the response from the lambda request and relay it back to the caller

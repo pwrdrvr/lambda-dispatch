@@ -273,6 +273,7 @@ public class HttpReverseRequester
       var contentHeaders = new List<(string, string)>();
 
       // Process the rest of the headers
+      var hasBody = false;
       while (startOfNextLine < totalBytesRead)
       {
         // Find the index of the next '\n' in headerBuffer
@@ -310,6 +311,7 @@ public class HttpReverseRequester
         var value = string.Join(", ", parts.Skip(1));
         if (string.Compare(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase) == 0)
         {
+          hasBody = true;
           // Don't set the Transfer-Encoding header as it breaks the response
           continue;
         }
@@ -319,6 +321,7 @@ public class HttpReverseRequester
         }
         else if (string.Compare(key, "Content-Length", StringComparison.OrdinalIgnoreCase) == 0)
         {
+          hasBody = true;
           contentHeaders.Add((key, value));
         }
         else
@@ -340,14 +343,17 @@ public class HttpReverseRequester
         accumulatedBuffer.Position = 0;
       }
 
-      // Set the request body
-      Stream customStream = new CustomStream(accumulatedBuffer, requestStream);
-      receivedRequest.Content = new StreamContent(customStream);
-
-      // Add all the content headers
-      foreach (var (key, value) in contentHeaders)
+      // Set the request body, if there is one
+      if (hasBody)
       {
-        receivedRequest.Content.Headers.Add(key, value);
+        Stream customStream = new CustomStream(accumulatedBuffer, requestStream);
+        receivedRequest.Content = new StreamContent(customStream);
+
+        // Add all the content headers
+        foreach (var (key, value) in contentHeaders)
+        {
+          receivedRequest.Content.Headers.Add(key, value);
+        }
       }
 
       return ((int)response.StatusCode, receivedRequest, request, requestStreamForResponse, duplexContent);
