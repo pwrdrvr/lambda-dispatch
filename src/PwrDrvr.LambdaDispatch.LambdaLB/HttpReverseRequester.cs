@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -9,6 +10,7 @@ public class CustomStream : Stream
 {
   private MemoryStream _bufferStream;
   private Stream _responseStream;
+  private bool _bufferStreamRead = false;
 
   public CustomStream(MemoryStream bufferStream, Stream responseStream)
   {
@@ -33,17 +35,35 @@ public class CustomStream : Stream
 
   public override int Read(byte[] buffer, int offset, int count)
   {
-    throw new NotImplementedException();
-  }
+    if (_bufferStreamRead)
+    {
+      return _responseStream.Read(buffer, offset, count);
+    }
 
-  public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-  {
-    int bytesRead = await _bufferStream.ReadAsync(buffer, offset, count, cancellationToken);
+    int bytesRead = _bufferStream.Read(buffer, offset, count);
     if (bytesRead == 0)
     {
-      bytesRead = await _responseStream.ReadAsync(buffer, offset, count, cancellationToken);
+      _bufferStreamRead = true;
+      return _responseStream.Read(buffer, offset, count);
     }
     return bytesRead;
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+  {
+    if (_bufferStreamRead)
+    {
+      return _responseStream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+
+    int bytesRead = _bufferStream.Read(buffer, offset, count);
+    if (bytesRead == 0)
+    {
+      _bufferStreamRead = true;
+      return _responseStream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+    return Task.FromResult(bytesRead);
   }
 
   public override long Seek(long offset, SeekOrigin origin)
@@ -128,16 +148,10 @@ public class HttpReverseRequester
     // Read the Response before sending the Request
     // TODO: We can await the pair of the Response or Request closing to avoid deadlocks
     //
-    var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+    var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
     // Get the stream that we can write the response to
-    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync();
-
-    // HH: This is from the dotnet example, but they do not await the SendAsync that
-    // returns when the response headers are read. I don't think we need this
-    // since we await it.
-    // Flush the content stream. Otherwise, the request headers are not guaranteed to be sent.
-    // await requestStreamForResponse.FlushAsync();
+    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync().ConfigureAwait(false);
     if (response.StatusCode != HttpStatusCode.OK)
     {
       _logger.LogWarning("CLOSING - Got a {status} on the outer request LambdaId: {id}, ChannelId: {channelId}", response.StatusCode, _id, channelId);
@@ -160,7 +174,7 @@ public class HttpReverseRequester
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
     try
     {
-      var requestStream = await response.Content.ReadAsStreamAsync();
+      var requestStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
       // Read up to max headers size of data
       // Read until we fill the bufer OR we get an EOF
@@ -176,7 +190,7 @@ public class HttpReverseRequester
           break;
         }
 
-        var bytesRead = await requestStream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead);
+        var bytesRead = await requestStream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead).ConfigureAwait(false);
         if (bytesRead == 0)
         {
           // Done reading
@@ -321,8 +335,8 @@ public class HttpReverseRequester
       if (startOfNextLine < totalBytesRead)
       {
         // Write the bytes after the headers to the memory stream
-        await accumulatedBuffer.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine));
-        await accumulatedBuffer.FlushAsync();
+        accumulatedBuffer.Write(headerBuffer.AsSpan(startOfNextLine, totalBytesRead - startOfNextLine));
+        accumulatedBuffer.Flush();
         accumulatedBuffer.Position = 0;
       }
 
@@ -402,11 +416,11 @@ public class HttpReverseRequester
       offset += endOfHeadersBytes.Length;
 
       // Write the headers to the stream
-      await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset));
+      await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
 
       // Copy the body from the request to the response
-      await response.Content.CopyToAsync(requestStreamForResponse);
-      await requestStreamForResponse.FlushAsync();
+      await response.Content.CopyToAsync(requestStreamForResponse).ConfigureAwait(false);
+      await requestStreamForResponse.FlushAsync().ConfigureAwait(false);
       requestStreamForResponse.Close();
       duplexContent.Complete();
     }
@@ -442,7 +456,7 @@ public class HttpReverseRequester
       request.Headers.Host = "lambdadispatch.local:5003";
       request.Headers.Add("X-Lambda-Id", _id);
 
-      using var response = await _client.SendAsync(request);
+      using var response = await _client.SendAsync(request).ConfigureAwait(false);
 
       if (response.StatusCode != HttpStatusCode.OK)
       {
@@ -476,7 +490,7 @@ public class HttpReverseRequester
     request.Headers.Host = "lambdadispatch.local:5003";
     request.Headers.Add("X-Lambda-Id", _id);
 
-    using var response = await _client.SendAsync(request);
+    using var response = await _client.SendAsync(request).ConfigureAwait(false);
 
     if (response.StatusCode != HttpStatusCode.OK)
     {
