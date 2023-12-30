@@ -29,10 +29,10 @@ public class HttpDuplexContent : HttpContent
     // Flush the stream to force sending the request headers
     // If we do not do this we can deadlock
     // https://github.com/huntharo/httpclient-duplex-deadlock/tree/main
-    await stream.FlushAsync();
+    stream.Flush();
     _waitForCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     _waitForStream.SetResult(stream);
-    await _waitForCompletion.Task;
+    await _waitForCompletion.Task.ConfigureAwait(false);
   }
 
   public Task<Stream> WaitForStreamAsync()
