@@ -59,14 +59,6 @@ public class LambdaConnection
 
   public LambdaConnection(HttpRequest request, HttpResponse response, LambdaInstance instance, string channelId)
   {
-    // HttpRequestFeature foo = new HttpRequestFeature();
-
-    // System.Net.Http.HttpRequestMessage bar = new System.Net.Http.HttpRequestMessage();
-    // bar.Headers.Add("X-Lambda-Id", instance.Id);
-    // bar.Content = new StreamContent(request.BodyReader.AsStream());
-
-    // HttpParser.ParseRequestLine(feature, requestLineBuffer, out var method, out var requestUrl, out var version, out var badRequest)
-    // Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http.HttpParser parser = new Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http.HttpParser();
     Request = request;
     Response = response;
     Instance = instance;
