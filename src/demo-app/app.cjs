@@ -104,30 +104,20 @@ app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
 });
 
-const options = {
-  key: fs.readFileSync("../../certs/lambdadispatch.local.key"),
-  cert: fs.readFileSync("../../certs/lambdadispatch.local.crt"),
-};
+const certPath = "../../certs/lambdadispatch.local.crt";
+const keyPath = "../../certs/lambdadispatch.local.key";
 
-const server = spdy.createServer(options, app);
+if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+  const options = {
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath),
+  };
 
-// server.on("stream", (stream, headers) => {
-//   stream.respond({
-//     "content-type": "text/html",
-//     ":status": 200,
-//   });
-//   stream.end("<h1>Hello World</h1>");
-// });
+  const server = spdy.createServer(options, app);
 
-server.listen(spdyPort, () => {
-  console.log(`App listening at https://localhost:${spdyPort}`);
-});
-
-// SSL options
-// const options = {
-//   key: fs.readFileSync("../../certs/lambdadispatch.local.key"),
-//   cert: fs.readFileSync("../../certs/lambdadispatch.local.crt"),
-// };
-// https.createServer(options, app).listen(443, () => {
-//   console.log(`App listening at https://localhost:${443}`);
-// });
+  server.listen(spdyPort, () => {
+    console.log(`App listening at https://localhost:${spdyPort}`);
+  });
+} else {
+  console.log("Certificate or key file not found. HTTP/2 server not started.");
+}

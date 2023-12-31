@@ -14,7 +14,7 @@ COPY src/demo-app/package.json src/demo-app/package-lock.json ./
 RUN npm install
 
 # Copy everything from the current directory to the working directory in the image
-COPY src/demo-app .
+COPY src/demo-app/ ./
 
 # Build the app
 RUN npm run build
@@ -26,8 +26,7 @@ RUN npm run build
 FROM --platform=linux/arm64 public.ecr.aws/lambda/nodejs:20
 
 # Copy the node.js app
-COPY --from=node-build-env /app/dist/*.?js ./
-COPY --from=node-build-env /app/public/* ./public/
+COPY --from=node-build-env /app/dist/ ./
 
 # Set the entrypoint
 CMD ["directlambda.handler"]
