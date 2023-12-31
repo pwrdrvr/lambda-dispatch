@@ -74,15 +74,27 @@ namespace PwrDrvr.LambdaDispatch.Tests
       Assert.That(instance.TryGetConnection(out var connection), Is.True);
       Assert.That(connection, Is.Not.Null);
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(10));
-      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(10));
+      // Even though we have 10 available connections, we're only supposed to use 9 more of them
+      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(9));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(1));
 
       // Get another connection
       Assert.That(instance.TryGetConnection(out connection), Is.True);
       Assert.That(connection, Is.Not.Null);
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(9));
-      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(9));
+      // Even though we have 9 available connections, we're only supposed to use 8 more of them
+      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(8));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(2));
+
+      // Extract the remaining usable connections
+      while (instance.TryGetConnection(out connection))
+      {
+        Assert.That(connection, Is.Not.Null);
+      }
+      // Check that we have 1 connection but that it is not usable
+      Assert.That(instance.QueueApproximateCount, Is.EqualTo(1));
+      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(10));
     }
 
     [Test]

@@ -177,7 +177,7 @@ public class LambdaInstance : ILambdaInstance
   /// This reduces funny business like instances being in the idle queue
   /// but actually not having any available connections
   /// </summary>
-  private volatile int availableConnectionCount = 0;
+  private volatile int internalActualAvailableConnectionCount = 0;
 
   private volatile int outstandingRequestCount = 0;
 
@@ -188,9 +188,13 @@ public class LambdaInstance : ILambdaInstance
   /// But really the delta between the max concurrent count and the available connection count
   /// This prevents instances from being marked as idle when they are actually busy / have no available connections
   /// </summary>
-  public int OutstandingRequestCount => Math.Max(outstandingRequestCount, Math.Max(maxConcurrentCount - availableConnectionCount, 0));
+  public int OutstandingRequestCount => Math.Max(outstandingRequestCount, Math.Max(maxConcurrentCount - internalActualAvailableConnectionCount, 0));
 
-  public int AvailableConnectionCount => Math.Min(availableConnectionCount, maxConcurrentCount);
+  /// <summary>
+  /// The number of connections that we should use
+  /// We may have more connections than we are supposed to use, we hide these
+  /// </summary>
+  public int AvailableConnectionCount => Math.Min(Math.Max(maxConcurrentCount - OutstandingRequestCount, 0), internalActualAvailableConnectionCount);
 
   private int signaledStarting = 0;
 
@@ -274,7 +278,7 @@ public class LambdaInstance : ILambdaInstance
       // The response will then hang around waiting for the data to be written to it
       await response.StartAsync();
 
-      Interlocked.Increment(ref availableConnectionCount);
+      Interlocked.Increment(ref internalActualAvailableConnectionCount);
       connectionQueue.Enqueue(connection);
     }
 
@@ -302,10 +306,11 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // Loop through the connections until we find one that is available
-    while (connectionQueue.TryDequeue(out var dequeuedConnection))
+    while (AvailableConnectionCount > 0
+      && connectionQueue.TryDequeue(out var dequeuedConnection))
     {
       // We found an available connection
-      Interlocked.Decrement(ref availableConnectionCount);
+      Interlocked.Decrement(ref internalActualAvailableConnectionCount);
 
       // The connection should only be Closed unexpectedly, not Busy
       // This should not be a race condition as only one thread should
@@ -371,7 +376,7 @@ public class LambdaInstance : ILambdaInstance
     while (connectionQueue.TryDequeue(out var connection))
     {
       // Decrement the available connection count
-      Interlocked.Decrement(ref availableConnectionCount);
+      Interlocked.Decrement(ref internalActualAvailableConnectionCount);
 
       // If the connection is Closed we discard it (can happen on abnormal close during idle)
       if (connection.State == LambdaConnectionState.Closed)
@@ -500,7 +505,7 @@ public class LambdaInstance : ILambdaInstance
     {
       Id = Id,
       DispatcherUrl = await GetCallbackIP.Get(),
-      NumberOfChannels = maxConcurrentCount,
+      NumberOfChannels = maxConcurrentCount * 2,
       SentTime = DateTime.Now
     };
 
@@ -555,7 +560,7 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // Increment the available connection count
-    Interlocked.Increment(ref availableConnectionCount);
+    Interlocked.Increment(ref internalActualAvailableConnectionCount);
 
     // Re-enqueue the connection
     connectionQueue.Enqueue(connection);
