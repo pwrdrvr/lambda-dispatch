@@ -40,15 +40,22 @@ namespace PwrDrvr.LambdaDispatch.Tests
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(1));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(1));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(9));
-
       instance.AddConnection(request.Object, response.Object, "channel-2", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(8));
       instance.AddConnection(request.Object, response.Object, "channel-3", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(7));
       instance.AddConnection(request.Object, response.Object, "channel-4", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(6));
       instance.AddConnection(request.Object, response.Object, "channel-5", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(5));
       instance.AddConnection(request.Object, response.Object, "channel-6", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(4));
       instance.AddConnection(request.Object, response.Object, "channel-7", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(3));
       instance.AddConnection(request.Object, response.Object, "channel-8", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(2));
       instance.AddConnection(request.Object, response.Object, "channel-9", false);
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(1));
       instance.AddConnection(request.Object, response.Object, "channel-10", false);
 
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(10));
@@ -62,6 +69,20 @@ namespace PwrDrvr.LambdaDispatch.Tests
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(11));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(10));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
+
+      // Get one connection
+      Assert.That(instance.TryGetConnection(out var connection), Is.True);
+      Assert.That(connection, Is.Not.Null);
+      Assert.That(instance.QueueApproximateCount, Is.EqualTo(10));
+      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(10));
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(1));
+
+      // Get another connection
+      Assert.That(instance.TryGetConnection(out connection), Is.True);
+      Assert.That(connection, Is.Not.Null);
+      Assert.That(instance.QueueApproximateCount, Is.EqualTo(9));
+      Assert.That(instance.AvailableConnectionCount, Is.EqualTo(9));
+      Assert.That(instance.OutstandingRequestCount, Is.EqualTo(2));
     }
 
     [Test]

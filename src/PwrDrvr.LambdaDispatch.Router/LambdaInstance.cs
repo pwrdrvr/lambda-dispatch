@@ -179,6 +179,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   private volatile int availableConnectionCount = 0;
 
+  private volatile int outstandingRequestCount = 0;
+
   private volatile int openConnectionCount = 0;
 
   /// <summary>
@@ -186,7 +188,7 @@ public class LambdaInstance : ILambdaInstance
   /// But really the delta between the max concurrent count and the available connection count
   /// This prevents instances from being marked as idle when they are actually busy / have no available connections
   /// </summary>
-  public int OutstandingRequestCount => Math.Max(maxConcurrentCount - availableConnectionCount, 0);
+  public int OutstandingRequestCount => Math.Max(outstandingRequestCount, Math.Max(maxConcurrentCount - availableConnectionCount, 0));
 
   public int AvailableConnectionCount => Math.Min(availableConnectionCount, maxConcurrentCount);
 
@@ -323,6 +325,17 @@ public class LambdaInstance : ILambdaInstance
       }
 
       connection = dequeuedConnection;
+
+      Interlocked.Increment(ref outstandingRequestCount);
+
+      connection.Response.OnCompleted(Task () =>
+      {
+        // Increment the available connection count
+        Interlocked.Decrement(ref outstandingRequestCount);
+
+        return Task.CompletedTask;
+      });
+
       return true;
     }
 
