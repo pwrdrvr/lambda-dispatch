@@ -191,11 +191,11 @@ public class Function
 
             var NumberOfChannels = request.NumberOfChannels;
 
-            if (ThreadPool.ThreadCount < NumberOfChannels)
-            {
-                _logger.LogDebug("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
-                ThreadPool.SetMinThreads(NumberOfChannels * 2, NumberOfChannels * 2);
-            }
+            // if (ThreadPool.ThreadCount < NumberOfChannels)
+            // {
+            //     _logger.LogDebug("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
+            //     ThreadPool.SetMinThreads(NumberOfChannels, NumberOfChannels);
+            // }
 
             CancellationTokenSource cts = new CancellationTokenSource();
 
