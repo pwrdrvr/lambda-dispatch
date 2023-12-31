@@ -21,7 +21,7 @@ public class LeastOutstandingQueue : IDisposable
 {
   private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
 
-  public int MaxConcurrentCount { get; }
+  public int MaxConcurrentCount { get => maxConcurrentCount; }
 
   private readonly int maxConcurrentCount;
 
