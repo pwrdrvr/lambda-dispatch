@@ -123,8 +123,7 @@ public class LambdaInstanceManager
 
     // Calculate the desired count
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-    // TODO: Load the 2x factor from the configuration
-    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
+    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount);
 
     // Special case for 0 pending or running requests
     if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
