@@ -2,13 +2,15 @@ import express from "express";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { promisify } from "util";
 import path from "path";
+import spdy from "spdy";
 // import https from "https";
-// import fs from "fs";
+import fs from "fs";
 
 const sleep = promisify(setTimeout);
 
 export const app = express();
 const port = 3000;
+const spdyPort = 3001;
 
 // Create a DynamoDB client
 const dbClient = new DynamoDBClient({});
@@ -45,6 +47,12 @@ app.get("/health", async (req, res) => {
 
 app.get("/ping", async (req, res) => {
   res.send("pong");
+});
+
+app.get("/delay", async (req, res) => {
+  const delay = req.query.delay || 20;
+  await sleep(delay);
+  res.send(`Delayed for ${delay} ms`);
 });
 
 app.post(
@@ -96,11 +104,20 @@ app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
 });
 
-// SSL options
-// const options = {
-//   key: fs.readFileSync("../../certs/lambdadispatch.local.key"),
-//   cert: fs.readFileSync("../../certs/lambdadispatch.local.crt"),
-// };
-// https.createServer(options, app).listen(443, () => {
-//   console.log(`App listening at https://localhost:${443}`);
-// });
+const certPath = "../../certs/lambdadispatch.local.crt";
+const keyPath = "../../certs/lambdadispatch.local.key";
+
+if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+  const options = {
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath),
+  };
+
+  const server = spdy.createServer(options, app);
+
+  server.listen(spdyPort, () => {
+    console.log(`App listening at https://localhost:${spdyPort}`);
+  });
+} else {
+  console.log("Certificate or key file not found. HTTP/2 server not started.");
+}

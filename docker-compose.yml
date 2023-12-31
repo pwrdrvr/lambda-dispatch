@@ -11,12 +11,15 @@ services:
     networks:
       - mynetwork
     environment:
+      # Limit spins to save 75% CPU
+      # https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757
       - AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051
       - AWS_REGION=us-east-2
       - AWS_ACCESS_KEY_ID=test-access-key-id
       - AWS_SECRET_ACCESS_KEY=test-secret-access-key
       - AWS_SESSION_TOKEN=test-session-token
       - ROUTER_CALLBACK_HOST=router
+      - DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=6
 
   lambdalb:
     depends_on:
@@ -27,6 +30,9 @@ services:
     networks:
       - mynetwork
     environment:
+      # Limit spins to save 75% CPU
+      # https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757
+      - DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=6
       - AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051
       - AWS_REGION=us-east-2
       - AWS_ACCESS_KEY_ID=test-access-key-id

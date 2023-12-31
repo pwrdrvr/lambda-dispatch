@@ -43,7 +43,7 @@ COPY src/demo-app/package.json src/demo-app/package-lock.json ./
 RUN npm install
 
 # Copy everything from the current directory to the working directory in the image
-COPY src/demo-app .
+COPY src/demo-app/ ./
 
 # Build the app
 RUN npm run build
@@ -66,7 +66,7 @@ RUN dnf install -y nodejs
 COPY --from=build-env /app/out/bootstrap .
 
 # Copy the node.js app
-COPY --from=node-build-env /app/dist/*.?js dist/
+COPY --from=node-build-env /app/dist/ dist/
 COPY --from=node-build-env /app/startapp.sh ./
 
 # Set the entrypoint

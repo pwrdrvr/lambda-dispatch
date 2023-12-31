@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Rout
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.Router.Tests", "test\PwrDrvr.LambdaDispatch.Router.Tests\PwrDrvr.LambdaDispatch.Router.Tests.csproj", "{462C1425-7514-4F30-9DF1-93F296605597}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PwrDrvr.LambdaDispatch.HttpTestClient", "test\PwrDrvr.LambdaDispatch.HttpTestClient\PwrDrvr.LambdaDispatch.HttpTestClient.csproj", "{5190D3B1-DB1C-49AC-8950-11DE1C283B63}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -58,6 +60,10 @@ Global
 		{462C1425-7514-4F30-9DF1-93F296605597}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{462C1425-7514-4F30-9DF1-93F296605597}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{462C1425-7514-4F30-9DF1-93F296605597}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5190D3B1-DB1C-49AC-8950-11DE1C283B63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5190D3B1-DB1C-49AC-8950-11DE1C283B63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5190D3B1-DB1C-49AC-8950-11DE1C283B63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5190D3B1-DB1C-49AC-8950-11DE1C283B63}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{5FB1EC44-572C-42BC-BAA4-E22644D242E4} = {57510FFB-6217-43EC-A3D8-A7EB62F4627B}
@@ -67,5 +73,6 @@ Global
 		{37AF82C7-00E3-4205-ACC5-C1A9305A20D3} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
 		{39DCB83C-433B-4B43-ABE6-2E5FD2BB7788} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
 		{462C1425-7514-4F30-9DF1-93F296605597} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
+		{5190D3B1-DB1C-49AC-8950-11DE1C283B63} = {9ED25737-5A8B-4AC7-AA2F-A0978FF072CD}
 	EndGlobalSection
 EndGlobal
