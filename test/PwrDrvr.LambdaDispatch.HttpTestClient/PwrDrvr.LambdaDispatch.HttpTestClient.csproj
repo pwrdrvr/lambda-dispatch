@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <EnablePreviewFeatures>true</EnablePreviewFeatures>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <!-- <ItemGroup>
+    <Reference Include="System.Net.Http">
+      <HintPath>/Users/huntharo/pwrdrvr/dotnet/runtime/artifacts/bin/System.Net.Http/Release/net8.0-osx/System.Net.Http.dll</HintPath>
+    </Reference>
+  </ItemGroup> -->
+</Project>

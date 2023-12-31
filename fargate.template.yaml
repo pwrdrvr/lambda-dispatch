@@ -58,6 +58,9 @@ Resources:
         - Name: lambda-dispatch-router
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
+          Environment:
+            - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
+              Value: "6"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -483,6 +486,9 @@ Resources:
       VpcConfig:
         SecurityGroupIds: [!Ref LambdaLBSG]
         SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      Environment:
+        Variables:
+          DOTNET_ThreadPool_UnfairSemaphoreSpinLimit: "6"
 
   DirectLambda:
     Type: AWS::Lambda::Function

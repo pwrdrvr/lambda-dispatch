@@ -2,13 +2,15 @@ import express from "express";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { promisify } from "util";
 import path from "path";
+import spdy from "spdy";
 // import https from "https";
-// import fs from "fs";
+import fs from "fs";
 
 const sleep = promisify(setTimeout);
 
 export const app = express();
 const port = 3000;
+const spdyPort = 3001;
 
 // Create a DynamoDB client
 const dbClient = new DynamoDBClient({});
@@ -45,6 +47,12 @@ app.get("/health", async (req, res) => {
 
 app.get("/ping", async (req, res) => {
   res.send("pong");
+});
+
+app.get("/delay", async (req, res) => {
+  const delay = req.query.delay || 20;
+  await sleep(delay);
+  res.send(`Delayed for ${delay} ms`);
 });
 
 app.post(
@@ -94,6 +102,25 @@ app.get("/read", async (req, res) => {
 
 app.listen(port, () => {
   console.log(`App listening at http://localhost:${port}`);
+});
+
+const options = {
+  key: fs.readFileSync("../../certs/lambdadispatch.local.key"),
+  cert: fs.readFileSync("../../certs/lambdadispatch.local.crt"),
+};
+
+const server = spdy.createServer(options, app);
+
+// server.on("stream", (stream, headers) => {
+//   stream.respond({
+//     "content-type": "text/html",
+//     ":status": 200,
+//   });
+//   stream.end("<h1>Hello World</h1>");
+// });
+
+server.listen(spdyPort, () => {
+  console.log(`App listening at https://localhost:${spdyPort}`);
 });
 
 // SSL options
