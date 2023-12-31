@@ -4,6 +4,14 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 
+
+public struct LambdaInstanceCapacityMessage
+{
+  public int PendingRequests { get; set; }
+  public int RunningRequests { get; set; }
+}
+
+
 public class LambdaInstanceManager
 {
   private readonly ILogger<LambdaInstanceManager> _logger = LoggerInstance.CreateLogger<LambdaInstanceManager>();
@@ -100,12 +108,6 @@ public class LambdaInstanceManager
     }
 
     return null;
-  }
-
-  private struct LambdaInstanceCapacityMessage
-  {
-    public int PendingRequests { get; set; }
-    public int RunningRequests { get; set; }
   }
 
   private Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(1)
