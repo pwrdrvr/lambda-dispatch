@@ -412,6 +412,15 @@ public class HttpReverseRequester
         offset += headerLineBytes.Length;
       }
 
+      // Copy content headers
+      foreach (var header in response.Content?.Headers)
+      {
+        var headerLine = $"{header.Key}: {string.Join(',', header.Value)}\r\n";
+        var headerLineBytes = Encoding.UTF8.GetBytes(headerLine);
+        headerLineBytes.CopyTo(headerBuffer, offset);
+        offset += headerLineBytes.Length;
+      }
+
       // Add the control headers
       var controlHeaders = new Dictionary<string, string>
       {
