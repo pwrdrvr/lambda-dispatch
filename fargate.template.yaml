@@ -61,6 +61,8 @@ Resources:
           Environment:
             - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
               Value: "6"
+            - Name: CONCURRENT_REQUESTS_PER_LAMBDA
+              Value: "5"
           LogConfiguration:
             LogDriver: awslogs
             Options:
