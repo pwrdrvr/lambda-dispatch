@@ -5,6 +5,9 @@
 using System.Net.Security;
 #endif
 
+using System.Security.Authentication;
+
+
 /// <summary>
 /// Use an insecure cipher to allow Wireshark to decrypt the traffic, if desired
 /// </summary>
@@ -45,6 +48,9 @@ public static class SetupHttpClient
 #else
   private static HttpClientHandler CreateHandler() => new HttpClientHandler()
   {
+#if USE_INSECURE_HTTP2
+    SslProtocols = SslProtocols.None,
+#endif
     ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
     {
       // If the certificate is a valid, signed certificate, return true.
@@ -72,6 +78,7 @@ public static class SetupHttpClient
     return new HttpClient(handler, true)
     {
       DefaultRequestVersion = new Version(2, 0),
+      DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
       Timeout = TimeSpan.FromMinutes(15),
     };
   }

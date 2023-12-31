@@ -22,7 +22,7 @@ public class LambdaInstanceManager
   /// Used to lookup instances by ID
   /// This allows associating the connecitons with their owning lambda instance
   /// </summary>
-  private readonly ConcurrentDictionary<string, LambdaInstance> _instances = new();
+  private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
   public LambdaInstanceManager(int maxConcurrentCount)
   {
@@ -63,7 +63,6 @@ public class LambdaInstanceManager
     {
       _logger.LogWarning("ReenqueueUnusedConnection - Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409", lambdaId);
     }
-
   }
 
   public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false)
@@ -124,6 +123,13 @@ public class LambdaInstanceManager
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
     // TODO: Load the 2x factor from the configuration
     var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
+
+    // Special case for 0 pending or running requests
+    if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
+    {
+      desiredInstanceCount = 0;
+    }
+
     return desiredInstanceCount;
   }
 
@@ -132,7 +138,7 @@ public class LambdaInstanceManager
   // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
   private async Task ManageCapacity()
   {
-    Dictionary<string, LambdaInstance> stoppingInstances = [];
+    Dictionary<string, ILambdaInstance> stoppingInstances = [];
 
     while (true)
     {
@@ -158,19 +164,7 @@ public class LambdaInstanceManager
 
         _logger.LogDebug("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
-        var cleanPendingRequests = Math.Max(pendingRequests, 0);
-        var cleanRunningRequests = Math.Max(runningRequests, 0);
-
-        // Calculate the desired count
-        var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-        // TODO: Load the 2x factor from the configuration
-        var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
-
-        // Special case for 0 pending or running
-        if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
-        {
-          desiredInstanceCount = 0;
-        }
+        var desiredInstanceCount = ComputeDesiredInstanceCount(pendingRequests, runningRequests);
 
         _logger.LogDebug("UpdateDesiredCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
@@ -344,7 +338,7 @@ public class LambdaInstanceManager
   /// Gracefully close an instance
   /// </summary>
   /// <param name="instance"></param>
-  public void CloseInstance(LambdaInstance instance)
+  public void CloseInstance(ILambdaInstance instance)
   {
     _logger.LogInformation("Closing instance {instanceId}", instance.Id);
 

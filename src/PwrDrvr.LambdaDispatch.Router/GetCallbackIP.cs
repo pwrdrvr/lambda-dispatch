@@ -70,7 +70,11 @@ public class GetCallbackIP
         // Ignore
       }
 
+#if USE_INSECURE_HTTP2
+      callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5001/api/chunked";
+#else
       callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5003/api/chunked";
+#endif
       return callbackUrl;
     }
     finally

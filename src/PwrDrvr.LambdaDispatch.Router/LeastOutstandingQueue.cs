@@ -17,20 +17,34 @@ public interface ILeastOutstandingItem
 /// Gives approximate least outstanding requests for items that may
 /// have changes in outstanding requests asynchronously in the background
 /// </summary>
-public class LeastOutstandingQueue
+public class LeastOutstandingQueue : IDisposable
 {
   private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
 
-  public int MaxConcurrentCount { get; }
+  public int MaxConcurrentCount { get => maxConcurrentCount; }
 
   private readonly int maxConcurrentCount;
 
-  private readonly ConcurrentQueue<LambdaInstance>[] availableInstances;
+  private readonly ConcurrentQueue<ILambdaInstance>[] availableInstances;
 
-  private readonly ConcurrentDictionary<string, LambdaInstance> fullInstances = new();
+  private readonly ConcurrentDictionary<string, ILambdaInstance> fullInstances = new();
+
+  // Token to cancel the background tasks
+  private readonly CancellationTokenSource cancellationTokenSource = new();
+
+  public void Dispose()
+  {
+    cancellationTokenSource.Cancel();
+    GC.SuppressFinalize(this);
+  }
 
   public LeastOutstandingQueue(int maxConcurrentCount)
   {
+    if (maxConcurrentCount <= 0)
+    {
+      throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be greater than 0");
+    }
+
     this.maxConcurrentCount = maxConcurrentCount;
 
     availableInstances = InitQueues(maxConcurrentCount);
@@ -69,7 +83,7 @@ public class LeastOutstandingQueue
   /// <param name="maxConcurrentCount"></param>
   /// <returns></returns>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  static private ConcurrentQueue<LambdaInstance>[] InitQueues(int maxConcurrentCount)
+  static private ConcurrentQueue<ILambdaInstance>[] InitQueues(int maxConcurrentCount)
   {
     // TODO: Get up to 10 primes from 1 to maxCurrentCount that are at least 2x the previous prime
     // But... for now, just reject anything over 10
@@ -79,12 +93,12 @@ public class LeastOutstandingQueue
     }
 
     // If an instance has maxConcurrentCount outstanding it goes in the full list
-    var queueList = new ConcurrentQueue<LambdaInstance>[maxConcurrentCount];
+    var queueList = new ConcurrentQueue<ILambdaInstance>[maxConcurrentCount];
 
     // Initialize the queues
     for (var i = 0; i < queueList.Length; i++)
     {
-      queueList[i] = new ConcurrentQueue<LambdaInstance>();
+      queueList[i] = new ConcurrentQueue<ILambdaInstance>();
     }
 
     return queueList;
@@ -99,7 +113,7 @@ public class LeastOutstandingQueue
   /// </summary>
   /// <param name="instance"></param>
   /// <returns></returns>
-  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out LambdaInstance? instance)
+  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out ILambdaInstance? instance)
   {
     instance = null;
 
@@ -220,8 +234,12 @@ public class LeastOutstandingQueue
   /// Add a new instance to the queue
   /// </summary>
   /// <param name="instance"></param>
-  public void AddInstance(LambdaInstance instance)
+  public void AddInstance(ILambdaInstance instance)
   {
+    if (instance == null)
+    {
+      throw new ArgumentNullException(nameof(instance));
+    }
 
     var proposedIndex = GetFloorQueueIndex(instance.OutstandingRequestCount);
 
@@ -236,7 +254,7 @@ public class LeastOutstandingQueue
     availableInstances[proposedIndex].Enqueue(instance);
   }
 
-  public void ReinstateFullInstance(LambdaInstance instance)
+  public void ReinstateFullInstance(ILambdaInstance instance)
   {
     // Remove the instance from the full instances
     if (fullInstances.TryRemove(instance.Id, out var _))
@@ -261,7 +279,7 @@ public class LeastOutstandingQueue
 
   private async Task RebalanceQueue()
   {
-    while (true)
+    while (!cancellationTokenSource.IsCancellationRequested)
     {
       _logger.LogDebug("Rebalancing queue");
 
@@ -331,13 +349,20 @@ public class LeastOutstandingQueue
       }
 
       // Wait for a short period before checking again
-      await Task.Delay(TimeSpan.FromMilliseconds(1000)).ConfigureAwait(false);
+      try
+      {
+        await Task.Delay(TimeSpan.FromMilliseconds(1000), cancellationTokenSource.Token).ConfigureAwait(false);
+      }
+      catch (TaskCanceledException)
+      {
+        break;
+      }
     }
   }
 
   private async Task LogQueueSizes()
   {
-    while (true)
+    while (!cancellationTokenSource.IsCancellationRequested)
     {
       using var stream = new MemoryStream();
       using var stringWriter = new StreamWriter(stream);
@@ -370,7 +395,14 @@ public class LeastOutstandingQueue
       _logger.LogInformation("Queue Sizes:\n{output}", output);
 
       // Wait a bit
-      await Task.Delay(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+      try
+      {
+        await Task.Delay(TimeSpan.FromSeconds(10), cancellationTokenSource.Token).ConfigureAwait(false);
+      }
+      catch (TaskCanceledException)
+      {
+        break;
+      }
     }
   }
 }

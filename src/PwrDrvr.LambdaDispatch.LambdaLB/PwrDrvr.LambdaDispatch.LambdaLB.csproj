@@ -27,7 +27,7 @@
     <IncludeSystemTextJsonSourceGenerator>true</IncludeSystemTextJsonSourceGenerator>
   </PropertyGroup>
   <PropertyGroup Condition="'$(NativeAot)' == 'true'">
-    <DefineConstants>NATIVE_AOT</DefineConstants>
+    <DefineConstants>NATIVE_AOT,SKIP_METRICS</DefineConstants>
   </PropertyGroup>
   <!-- Use a pattern like this if testing a locally compiled version of a dotnet/runtime library -->
   <!-- <ItemGroup>

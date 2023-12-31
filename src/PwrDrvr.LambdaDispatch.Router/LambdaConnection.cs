@@ -45,7 +45,7 @@ public class LambdaConnection
   /// <summary>
   /// Handle back to the Lambda Instance that owns this Connection
   /// </summary>
-  public LambdaInstance Instance { get; private set; }
+  public ILambdaInstance Instance { get; private set; }
 
   /// <summary>
   /// The channel id for this connection
@@ -57,7 +57,7 @@ public class LambdaConnection
   /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
-  public LambdaConnection(HttpRequest request, HttpResponse response, LambdaInstance instance, string channelId)
+  public LambdaConnection(HttpRequest request, HttpResponse response, ILambdaInstance instance, string channelId)
   {
     Request = request;
     Response = response;
