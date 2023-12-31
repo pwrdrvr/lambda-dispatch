@@ -156,28 +156,9 @@ public class LambdaInstance : ILambdaInstance
   // and then we can wait on it to know when the lambda is done
   private readonly TaskCompletionSource<bool> _tcs = new();
 
-  private static AmazonLambdaConfig CreateConfig()
-  {
-    // Set env var AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051
-    // When testing with LambdaTestTool hosted outside of the dev container
-    var serviceUrl = System.Environment.GetEnvironmentVariable("AWS_LAMBDA_SERVICE_URL");
-    var config = new AmazonLambdaConfig
-    {
-      Timeout = TimeSpan.FromMinutes(15),
-      MaxErrorRetry = 8
-    };
-
-    if (!string.IsNullOrEmpty(serviceUrl))
-    {
-      config.ServiceURL = serviceUrl;
-    }
-
-    return config;
-  }
-
-  public static readonly AmazonLambdaClient LambdaClient = new(CreateConfig());
-
   private readonly int maxConcurrentCount;
+
+  private readonly IAmazonLambda LambdaClient;
 
   public string Id { get; private set; } = Guid.NewGuid().ToString();
 
@@ -205,16 +186,23 @@ public class LambdaInstance : ILambdaInstance
   /// But really the delta between the max concurrent count and the available connection count
   /// This prevents instances from being marked as idle when they are actually busy / have no available connections
   /// </summary>
-  public int OutstandingRequestCount => maxConcurrentCount - availableConnectionCount;
+  public int OutstandingRequestCount => Math.Max(maxConcurrentCount - availableConnectionCount, 0);
 
-  public int AvailableConnectionCount => availableConnectionCount;
+  public int AvailableConnectionCount => Math.Min(availableConnectionCount, maxConcurrentCount);
 
   private int signaledStarting = 0;
 
   private int signalClosing = 0;
 
-  public LambdaInstance(int maxConcurrentCount)
+  public LambdaInstance(int maxConcurrentCount, IAmazonLambda? lambdaClient = null)
   {
+    if (maxConcurrentCount < 1)
+    {
+      throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Must be greater than 0");
+    }
+
+    LambdaClient = lambdaClient ?? LambdaClientConfig.LambdaClient;
+
     this.maxConcurrentCount = maxConcurrentCount;
   }
 
@@ -230,16 +218,16 @@ public class LambdaInstance : ILambdaInstance
   /// <param name="response"></param>
   public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false)
   {
-    if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
+    if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed || State == LambdaInstanceState.Initial)
     {
-      _logger.LogWarning("Connection added to Lambda Instance that is closing or closed - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+      _logger.LogWarning("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
 
       // Close the connection
       try
       {
         response.StatusCode = 409;
         await response.StartAsync();
-        await response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {Id}, X-Channel-Id: {channelId}, closing");
+        await response.WriteAsync($"LambdaInstance not in Open or Starting state for X-Lambda-Id: {Id}, X-Channel-Id: {channelId}, closing");
         await response.CompleteAsync();
         try { await request.BodyReader.CopyToAsync(Stream.Null); } catch { }
       }
