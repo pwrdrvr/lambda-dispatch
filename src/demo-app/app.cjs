@@ -1,9 +1,9 @@
 import express from "express";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { promisify } from "util";
 import path from "path";
 import spdy from "spdy";
-// import https from "https";
 import fs from "fs";
 
 const sleep = promisify(setTimeout);
@@ -12,8 +12,9 @@ export const app = express();
 const port = 3000;
 const spdyPort = 3001;
 
-// Create a DynamoDB client
+// Create clients
 const dbClient = new DynamoDBClient({});
+const s3Client = new S3Client({});
 
 // Start a heartbeat log
 // setInterval(() => {
@@ -23,14 +24,16 @@ const dbClient = new DynamoDBClient({});
 let initPerformed = false;
 
 export async function performInit() {
-  initPerformed = true;
-  debugger;
   console.log(
-    `${new Date().toISOString()} Contained App - Performing Init - Delaying 8 seconds`
+    `${new Date().toISOString()} Contained App - Performing Init - Delaying 7 seconds`
   );
-  await sleep(8000);
+  await sleep(7000);
+
+  // All the healthchecks should wait until one of them has performed the init
+  initPerformed = true;
+
   console.log(
-    `${new Date().toISOString()} Contained App - Performed Init - Delayed 8 seconds`
+    `${new Date().toISOString()} Contained App - Performed Init - Delayed 7 seconds`
   );
 }
 
@@ -39,7 +42,7 @@ app.use("/public", express.static(path.join(__dirname, "public")));
 
 app.get("/health", async (req, res) => {
   if (!initPerformed) {
-    performInit();
+    await performInit();
   }
 
   res.send("OK");
@@ -86,6 +89,39 @@ app.post(
     }
   }
 );
+
+app.get("/read-s3", async (req, res) => {
+  // Create a GetObjectCommand
+  const command = new GetObjectCommand({
+    Bucket: "pwrdrvr-lambdadispatch-demo",
+    Key: "silly-test-image.jpg",
+  });
+
+  try {
+    // Send the command to S3
+    const data = await s3Client.send(command);
+
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=silly-test-image.jpg"
+    );
+    // Pipe the S3 Object content to the response
+    data.Body.pipe(res).on("error", (err) => {
+      console.error(
+        `${new Date().toISOString()} Contained App - Failed to read item`,
+        err
+      );
+      res.status(500).send(err.toString());
+    });
+  } catch (err) {
+    console.error(
+      `${new Date().toISOString()} Contained App - Failed to read item`,
+      err
+    );
+    res.status(500).send(err.toString());
+  }
+});
 
 app.get("/read", async (req, res) => {
   // Log that we got a request
