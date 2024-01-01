@@ -45,6 +45,7 @@ jobs:
           file: ./DockerfileRouter
           push: false
           tags: pwrdrvr/lambda-dispatch-router:latest
+          build-args: BUILD_ARCH=linux-x64
           # platforms: linux/arm64
 
   build-lambdalb:
