@@ -483,6 +483,8 @@ Resources:
           CidrIp: !GetAtt MyVPC.CidrBlock
         - IpProtocol: '-1'
           DestinationPrefixListId: 'pl-4ca54025' # US East 2 DynamoDB Prefix List
+        - IpProtocol: '-1'
+          DestinationPrefixListId: 'pl-7ba54012' # US East 2 S3 Prefix List
 
   LambdaLB:
     Type: AWS::Lambda::Function
