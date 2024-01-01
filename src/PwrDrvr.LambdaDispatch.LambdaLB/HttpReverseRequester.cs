@@ -447,8 +447,10 @@ public class HttpReverseRequester
 
       // Copy the body from the request to the response
       // NOTE: CopyToAsync will only start sending when EOF is read on the response stream
-      // await response.Content.CopyToAsync(requestStreamForResponse).ConfigureAwait(false);
-      var bytes = ArrayPool<byte>.Shared.Rent(32 * 1024);
+#if false
+      await response.Content.CopyToAsync(requestStreamForResponse).ConfigureAwait(false);
+#else
+      var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
       try
       {
         // Read from the source stream and write to the destination stream in a loop
@@ -464,6 +466,7 @@ public class HttpReverseRequester
       {
         ArrayPool<byte>.Shared.Return(bytes);
       }
+#endif
       await requestStreamForResponse.FlushAsync().ConfigureAwait(false);
       requestStreamForResponse.Close();
       duplexContent.Complete();
