@@ -25,15 +25,15 @@ let initPerformed = false;
 
 export async function performInit() {
   console.log(
-    `${new Date().toISOString()} Contained App - Performing Init - Delaying 8 seconds`
+    `${new Date().toISOString()} Contained App - Performing Init - Delaying 7 seconds`
   );
-  await sleep(8000);
+  await sleep(7000);
 
   // All the healthchecks should wait until one of them has performed the init
   initPerformed = true;
 
   console.log(
-    `${new Date().toISOString()} Contained App - Performed Init - Delayed 8 seconds`
+    `${new Date().toISOString()} Contained App - Performed Init - Delayed 7 seconds`
   );
 }
 
