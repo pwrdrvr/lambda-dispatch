@@ -24,12 +24,14 @@ const s3Client = new S3Client({});
 let initPerformed = false;
 
 export async function performInit() {
-  initPerformed = true;
-  debugger;
   console.log(
     `${new Date().toISOString()} Contained App - Performing Init - Delaying 8 seconds`
   );
   await sleep(8000);
+
+  // All the healthchecks should wait until one of them has performed the init
+  initPerformed = true;
+
   console.log(
     `${new Date().toISOString()} Contained App - Performed Init - Delayed 8 seconds`
   );
@@ -40,7 +42,7 @@ app.use("/public", express.static(path.join(__dirname, "public")));
 
 app.get("/health", async (req, res) => {
   if (!initPerformed) {
-    performInit();
+    await performInit();
   }
 
   res.send("OK");
