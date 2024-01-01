@@ -370,10 +370,10 @@ public class LambdaConnection
         // Read from the source stream and write to the destination stream in a loop
         int bytesRead;
         var responseStream = Request.Body;
-        while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length)) > 0)
+        while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length).ConfigureAwait(false)) > 0)
         {
-          await response.Body.WriteAsync(bytes, 0, bytesRead);
-          await response.Body.FlushAsync();
+          await response.Body.WriteAsync(bytes, 0, bytesRead).ConfigureAwait(false);
+          await response.Body.FlushAsync().ConfigureAwait(false);
         }
       }
       finally
