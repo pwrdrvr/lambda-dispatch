@@ -21,7 +21,8 @@ RUN dotnet restore src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.La
 COPY . ./
 
 # Build the project
-RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime linux-arm64 -o out /p:NativeAot=true
+ARG BUILD_ARCH=linux-arm64
+RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime $BUILD_ARCH -o out /p:NativeAot=true
 
 # We do not need the ~40 MB of ICU libs
 RUN rm out/libicu*
@@ -54,7 +55,7 @@ RUN npm run build
 #
 # Use the runtime image for ARM64
 # FROM amazonlinux:2023
-FROM --platform=linux/arm64 public.ecr.aws/lambda/provided:al2023
+FROM public.ecr.aws/lambda/provided:al2023
 
 # Set the working directory
 WORKDIR /app
