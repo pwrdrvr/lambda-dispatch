@@ -25,7 +25,7 @@ ARG BUILD_ARCH=linux-arm64
 RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime $BUILD_ARCH -o out /p:NativeAot=true
 
 # We do not need the ~40 MB of ICU libs
-RUN rm out/libicu*
+RUN rm out/libicu* || true
 
 
 #
