@@ -60,8 +60,14 @@ app.post(
   express.raw({ type: "*/*", limit: "40mb" }),
   async (req, res) => {
     const contentType = req.get("Content-Type");
-    res.set("Content-Type", contentType);
-    res.send(req.body);
+    if (contentType) {
+      res.set("Content-Type", contentType);
+    }
+    if (req.body) {
+      res.send(req.body);
+    } else {
+      res.send("");
+    }
   }
 );
 
