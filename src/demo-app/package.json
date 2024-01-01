@@ -16,7 +16,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.476.0",
-    "@codegenie/serverless-express": "^4.13.0",
+    "@h4ad/serverless-adapter": "4.0.1",
     "express": "^4.18.2",
     "spdy": "^4.0.2"
   },
