@@ -388,7 +388,8 @@ public class HttpReverseRequester
     {
       int offset = 0;
       // TODO: Which HTTP version should be using here?  It seems this should be 1.1 always
-      var statusLine = $"HTTP/{requestForResponse.Version} {(int)response.StatusCode} {response.ReasonPhrase}\r\n";
+      // {requestForResponse.Version}
+      var statusLine = $"HTTP/1.1 {(int)response.StatusCode} {response.ReasonPhrase}\r\n";
       var statusLineBytes = Encoding.UTF8.GetBytes(statusLine);
       statusLineBytes.CopyTo(headerBuffer, offset);
       offset += statusLineBytes.Length;
@@ -445,7 +446,27 @@ public class HttpReverseRequester
       await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
 
       // Copy the body from the request to the response
+      // NOTE: CopyToAsync will only start sending when EOF is read on the response stream
+#if false
       await response.Content.CopyToAsync(requestStreamForResponse).ConfigureAwait(false);
+#else
+      var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
+      try
+      {
+        // Read from the source stream and write to the destination stream in a loop
+        int bytesRead;
+        var responseStream = response.Content.ReadAsStream();
+        while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length)) > 0)
+        {
+          await requestStreamForResponse.WriteAsync(bytes, 0, bytesRead);
+          await requestStreamForResponse.FlushAsync();
+        }
+      }
+      finally
+      {
+        ArrayPool<byte>.Shared.Return(bytes);
+      }
+#endif
       await requestStreamForResponse.FlushAsync().ConfigureAwait(false);
       requestStreamForResponse.Close();
       duplexContent.Complete();

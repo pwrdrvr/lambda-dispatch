@@ -55,6 +55,22 @@ app.get("/delay", async (req, res) => {
   res.send(`Delayed for ${delay} ms`);
 });
 
+app.get("/chunked-response", async (req, res) => {
+  // Send headers right away
+  res.setHeader("Content-Type", "text/plain");
+  res.setHeader("Transfer-Encoding", "chunked");
+  res.status(200);
+
+  // Send initial payload
+  res.write("INITIAL PAYLOAD RESPONSE\n");
+
+  // Wait for 5 seconds
+  await sleep(5000);
+
+  // Send final payload and close out the response
+  res.end("FINAL PAYLOAD RESPONSE\n");
+});
+
 app.post(
   "/echo",
   express.raw({ type: "*/*", limit: "40mb" }),

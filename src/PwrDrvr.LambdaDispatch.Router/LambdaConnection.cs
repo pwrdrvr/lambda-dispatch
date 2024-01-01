@@ -152,7 +152,28 @@ public class LambdaConnection
         _logger.LogDebug("Sending incoming request body to Lambda");
 
         // Send the body to the Lambda
+        // TODO: This is going to buffer the entire request before sending some bytes
+        // to the contained app
+#if false
         await incomingRequest.BodyReader.CopyToAsync(Response.BodyWriter).ConfigureAwait(false);
+#else
+        var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
+        try
+        {
+          // Read from the source stream and write to the destination stream in a loop
+          int bytesRead;
+          var responseStream = incomingRequest.Body;
+          while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length)) > 0)
+          {
+            await Response.Body.WriteAsync(bytes, 0, bytesRead);
+            await Response.Body.FlushAsync();
+          }
+        }
+        finally
+        {
+          ArrayPool<byte>.Shared.Return(bytes);
+        }
+#endif
         await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
 
         _logger.LogDebug("Finished sending incoming request body to Lambda");
@@ -315,6 +336,7 @@ public class LambdaConnection
           if (string.Compare(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase) == 0)
           {
             // Don't set the Transfer-Encoding header as it breaks the response
+            startOfNextLine = endOfLine + 1;
             continue;
           }
 
@@ -339,7 +361,26 @@ public class LambdaConnection
       }
 
       // Copy the rest of the response body
+#if false
       await Request.BodyReader.CopyToAsync(response.BodyWriter).ConfigureAwait(false);
+#else
+      var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
+      try
+      {
+        // Read from the source stream and write to the destination stream in a loop
+        int bytesRead;
+        var responseStream = Request.Body;
+        while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length)) > 0)
+        {
+          await response.Body.WriteAsync(bytes, 0, bytesRead);
+          await response.Body.FlushAsync();
+        }
+      }
+      finally
+      {
+        ArrayPool<byte>.Shared.Return(bytes);
+      }
+#endif
 
       _logger.LogDebug("Copied response body from Lambda");
     }

@@ -287,9 +287,9 @@ public class Function
 
                                     if (!_staticResponse)
                                     {
-                                        // TODO: Return after headers are received
+                                        // Return after headers are received
                                         _logger.LogDebug("Sending request to Contained App");
-                                        using var response = await appHttpClient.SendAsync(receivedRequest).ConfigureAwait(false);
+                                        using var response = await appHttpClient.SendAsync(receivedRequest, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
                                         _logger.LogDebug("Got response from Contained App");
 
