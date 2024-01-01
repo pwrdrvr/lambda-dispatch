@@ -152,6 +152,8 @@ public class LambdaConnection
         _logger.LogDebug("Sending incoming request body to Lambda");
 
         // Send the body to the Lambda
+        // TODO: This is going to buffer the entire request before sending some bytes
+        // to the contained app
         await incomingRequest.BodyReader.CopyToAsync(Response.BodyWriter).ConfigureAwait(false);
         await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
 
@@ -315,6 +317,7 @@ public class LambdaConnection
           if (string.Compare(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase) == 0)
           {
             // Don't set the Transfer-Encoding header as it breaks the response
+            startOfNextLine = endOfLine + 1;
             continue;
           }
 
