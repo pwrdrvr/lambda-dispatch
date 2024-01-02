@@ -1,6 +1,52 @@
-## Overview
+# Overview
 
 Captures performance comparisons between direct invoked lambdas and the lambda dispatcher.
+
+All of the tests are run from a CloudWatch Shell within the same region as the lambdas to eliminate long and variable RTTs (round trip times) as a contributing factor to the results.
+
+# Table of Contents <!-- omit in toc -->
+- [Overview](#overview)
+- [Test Cases](#test-cases)
+  - [GET: Text/Plain Ping](#get-textplain-ping)
+    - [Commands](#commands)
+    - [Results](#results)
+      - [Lambda Dispatcher](#lambda-dispatcher)
+      - [Direct Lambda](#direct-lambda)
+  - [GET: Image/Jpeg Served from S3](#get-imagejpeg-served-from-s3)
+    - [Commands](#commands-1)
+    - [Results](#results-1)
+      - [Lambda Dispatcher - 20 Warm / 20 Needed / 100 Concurrent](#lambda-dispatcher---20-warm--20-needed--100-concurrent)
+      - [Lambda Dispatcher - 2 Warm / 20 Needed / 100 Concurrent](#lambda-dispatcher---2-warm--20-needed--100-concurrent)
+      - [Lambda Dispatcher - 2 Warm / 2 Needed / 10 Concurrent](#lambda-dispatcher---2-warm--2-needed--10-concurrent)
+      - [Direct Lambda - 100 Warm / 100 Concurrent](#direct-lambda---100-warm--100-concurrent)
+      - [Direct Lambda - 10 Warm / 100 Concurrent](#direct-lambda---10-warm--100-concurrent)
+      - [Direct Lambda - 10 Warm / 10 Concurrent](#direct-lambda---10-warm--10-concurrent)
+      - [Direct Lambda - 1 Warm / 10 Concurrent](#direct-lambda---1-warm--10-concurrent)
+  - [GET: Image/Jpeg File Stored in Lambda Image](#get-imagejpeg-file-stored-in-lambda-image)
+    - [Commands](#commands-2)
+    - [Results](#results-2)
+      - [Lambda Dispatcher](#lambda-dispatcher-1)
+      - [Direct Lambda](#direct-lambda-1)
+  - [POST: Image/Jpeg Echo](#post-imagejpeg-echo)
+    - [Commands](#commands-3)
+    - [Results](#results-3)
+      - [Lambda Dispatcher](#lambda-dispatcher-2)
+      - [Direct Lambda](#direct-lambda-2)
+  - [POST: 9 MB Binary Echo](#post-9-mb-binary-echo)
+    - [Commands](#commands-4)
+    - [Results](#results-4)
+      - [Lambda Dispatcher](#lambda-dispatcher-3)
+
+# Test Cases
+
+| Test Case                                   | Route (path)                 | Concurrent | Total<br>Reqs | Direct<br>Instances | Direct<br>RPS | Direct<br>Avg (ms) | Direct<br>Max (ms) | Dispatch<br>Instances | Dispatch<br>RPS | Dispatch<br>Avg (ms) | Dispatch<br>Max (ms) |
+| ------------------------------------------- | ---------------------------- | ---------: | ------------: | ------------------: | ------------: | -----------------: | -----------------: | --------------------: | --------------: | -------------------: | -------------------: |
+| GET Text/Plain Ping                         | /ping                        |        100 |        10,000 |                 100 |         5,552 |               17.3 |              193.0 |                  ✅ 20 |           2,740 |                 34.3 |                234.3 |
+| GET Image/Jpeg Served from S3 - Warm        | /read-s3                     |        100 |         1,000 |                 100 |         🟡 457 |            🟡 202.3 |            🟡 455.8 |                    20 |           🟡 451 |              ✅ 188.4 |              ✅ 446.7 |
+| GET Image/Jpeg Served from S3 - Scale Up    | /read-s3                     |        100 |         1,000 |       10 warm / 100 |            98 |              873.0 |          🔴 8,786.0 |           2 warm / 20 |            🟡 81 |            🟡 1,167.0 |            ✅ 2,710.0 |
+| GET: Image/Jpeg File Stored in Lambda Image | /public/silly-test-image.jpg |        100 |         1,000 |                 100 |           480 |              196.6 |              431.3 |                    20 |           ✅ 644 |              ✅ 132.9 |              ✅ 395.4 |
+| POST: Image/Jpeg Echo                       | /echo                        |        100 |         1,000 |                 100 |           241 |              396.5 |              767.7 |                    20 |           ✅ 320 |              ✅ 285.8 |                844.1 |
+| POST: 9 MB Binary Echo                      | /echo                        |         10 |            60 |                 ❌ 0 |         ❌ n/a |              ❌ n/a |              ❌ n/a |                     2 |             ✅ 6 |            ✅ 1,530.0 |            ✅ 2,579.3 |
 
 ## GET: Text/Plain Ping
 
@@ -127,11 +173,14 @@ Status code distribution:
   [200] 10000 responses
 ```
 
-## GET: Image/Jpeg S3
+## GET: Image/Jpeg Served from S3
 
 ### Commands
 
 ```sh
+./hey_linux_amd64 -h2 -c 100 -n 1000 https://lambdadispatch.ghpublic.pwrdrvr.com/read-s3
+
+./hey_linux_amd64 -h2 -c 100 -n 1000 https://lambdadispatch.ghpublic.pwrdrvr.com/read-s3
 ```
 
 ### Results
@@ -473,7 +522,7 @@ Status code distribution:
   [200] 1000 responses
 ```
 
-## GET: Image/Jpeg Local
+## GET: Image/Jpeg File Stored in Lambda Image
 
 - Lambda Dispatcher:
   - 20 instances
