@@ -4,23 +4,7 @@ This performs reverse routing with Lambda functions, where the Lambda functions 
 
 Additionally, when there are more parallel requests than expected execution environments, a queue is formed while additional execution environments are spun up.  Requests are dispatched from the front of the queue to the next available execution environment. This differs substantially from Lambda's built-in dispatch which will allocate a request to a new execution environment, wait for the cold start (even if several seconds) and then dispatch the request on that new execution environment even if there are already idle execution environments available.
 
-> Reduce your Lambd costs by up to 80% and avoid cold starts completely!
-
-## Origination
-
-It all started with a tweet: https://x.com/huntharo/status/1527256565941673984?s=20
-
-![Tweet describing the problem and proposed solution](docs/lambda-dispatch-tweet-2022-05-19.jpg)
-
-The desire was to enable easily migrating an existing Next.js web application with a nominal response time of 100 ms and a cold start time of 8 seconds to Lambda. The problem is that the cold start time is 80x the response time, so any burst of traffic will potentially cause a large number of requests to wait for the cold start time. This is a common problem with Lambda and is the reason that many web applications cannot be migrated to Lambda.
-
-Moving this application from EKS with multiple concurrent requests per pod to Lambda with 1 request per exec env would require paying to wait for all remote service calls while the CPU was idle and unable to perform page rendering tasks.
-
-The response size limitations would also require careful evaluation to ensure that no response size was ever large enough to require a work around.
-
-AWS has been offering near-solutions to this problem such as `Snap Start` and pre-emptive scale up.  But `Snap Start` still only exists for Java and pre-emptive exec env scale up is not sufficient to address this issue.
-
-Application-specific solutions such as webpack bundling the server-side code can help reduce the cold start time down to 2-4 seconds, but the effort required to apply these solutions is immense and presents runtime risks due to changes in how environment variables are evaluated at build time instead of runtime, etc.
+> Reduce your AWS Lambda costs by up to 80% and avoid cold starts completely!
 
 ## Advantages
 
@@ -64,7 +48,13 @@ Feedback is welcome and encouraged. Please open an issue for any questions, comm
 
 ## Request Distribution
 
-![Request Distribution](docs/request-distribution.png)
+### Comparison with Lambda's Built-In Dispatch
+
+![Request Distribution Comparison](docs/request-distribution-comparison.png)
+
+### Lambda Dispatch - Detail
+
+![Lambda Dispatch Request Distribution](docs/request-distribution.png)
 
 ## Project Implementation
 
@@ -88,6 +78,22 @@ See [PERFORMANCE.md](PERFORMANCE.md) for details on performance testing.
 | -------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | LambdaDispatch | ![LambdaDispatch Steady State](docs/perf-lambdadispatch-steady.jpg) | ![LambdaDispatch Scale Up](docs/perf-lambdadispatch-scaleup.jpg) |
 | DirectLambda   | ![DirectLambda Steady State](docs/perf-directlambda-steady.jpg)     | ![DirectLambda Scale Up](docs/perf-directlambda-scaleup.jpg)     |
+
+## Origination
+
+It all started with a tweet: https://x.com/huntharo/status/1527256565941673984?s=20
+
+![Tweet describing the problem and proposed solution](docs/lambda-dispatch-tweet-2022-05-19.jpg)
+
+The desire was to enable easily migrating an existing Next.js web application with a nominal response time of 100 ms and a cold start time of 8 seconds to Lambda. The problem is that the cold start time is 80x the response time, so any burst of traffic will potentially cause a large number of requests to wait for the cold start time. This is a common problem with Lambda and is the reason that many web applications cannot be migrated to Lambda.
+
+Moving this application from EKS with multiple concurrent requests per pod to Lambda with 1 request per exec env would require paying to wait for all remote service calls while the CPU was idle and unable to perform page rendering tasks.
+
+The response size limitations would also require careful evaluation to ensure that no response size was ever large enough to require a work around.
+
+AWS has been offering near-solutions to this problem such as `Snap Start` and pre-emptive scale up.  But `Snap Start` still only exists for Java and pre-emptive exec env scale up is not sufficient to address this issue.
+
+Application-specific solutions such as webpack bundling the server-side code can help reduce the cold start time down to 2-4 seconds, but the effort required to apply these solutions is immense and presents runtime risks due to changes in how environment variables are evaluated at build time instead of runtime, etc.
 
 ## Similar / Related Projects
 
