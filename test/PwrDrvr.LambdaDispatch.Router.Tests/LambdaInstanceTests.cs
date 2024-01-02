@@ -41,15 +41,15 @@ namespace PwrDrvr.LambdaDispatch.Tests
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(1));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(9));
 
-      instance.AddConnection(request.Object, response.Object, "channel-2", false);
-      instance.AddConnection(request.Object, response.Object, "channel-3", false);
-      instance.AddConnection(request.Object, response.Object, "channel-4", false);
-      instance.AddConnection(request.Object, response.Object, "channel-5", false);
-      instance.AddConnection(request.Object, response.Object, "channel-6", false);
-      instance.AddConnection(request.Object, response.Object, "channel-7", false);
-      instance.AddConnection(request.Object, response.Object, "channel-8", false);
-      instance.AddConnection(request.Object, response.Object, "channel-9", false);
-      instance.AddConnection(request.Object, response.Object, "channel-10", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-2", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-3", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-4", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-5", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-6", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-7", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-8", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-9", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-10", false);
 
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(10));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(10));
@@ -57,7 +57,7 @@ namespace PwrDrvr.LambdaDispatch.Tests
 
       // Can have more connections than maxConcurrentCount?
       // This kinda makes sense
-      instance.AddConnection(request.Object, response.Object, "channel-11", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-11", false);
 
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(11));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(10));
@@ -79,15 +79,15 @@ namespace PwrDrvr.LambdaDispatch.Tests
       // Start the Lambda
       await instance.Start();
 
-      instance.AddConnection(request.Object, response.Object, "channel-1", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-1", false);
 
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(1));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(1));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(9));
 
-      instance.AddConnection(request.Object, response.Object, "channel-2", false);
-      instance.AddConnection(request.Object, response.Object, "channel-3", false);
-      instance.AddConnection(request.Object, response.Object, "channel-4", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-2", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-3", false);
+      await instance.AddConnection(request.Object, response.Object, "channel-4", false);
 
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(4));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(4));
@@ -101,7 +101,7 @@ namespace PwrDrvr.LambdaDispatch.Tests
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(7));
 
       // Reinstate the connection
-      instance.ReenqueueUnusedConnection(connection);
+      await instance.ReenqueueUnusedConnection(connection);
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(4));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(4));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(6));
