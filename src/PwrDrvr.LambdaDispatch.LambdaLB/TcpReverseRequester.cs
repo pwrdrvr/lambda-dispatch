@@ -1,9 +1,11 @@
+#if !EXCLUDE_TCPREVERSEREQUESTER
 using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace PwrDrvr.LambdaDispatch.LambdaLB;
 
+[Obsolete("TcpReverseRequester is not used and has been replaced with HttpReverseRequester")]
 public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
 {
   private readonly ILogger<TcpReverseRequester> _logger = LoggerInstance.CreateLogger<TcpReverseRequester>();
@@ -276,3 +278,4 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
     await _stream.FlushAsync();
   }
 }
+#endif
