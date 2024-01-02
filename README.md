@@ -84,6 +84,11 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for details on how to build and run the pro
 
 See [PERFORMANCE.md](PERFORMANCE.md) for details on performance testing.
 
+|                | Steady State                                                        | Scale Up                                                         |
+| -------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| LambdaDispatch | ![LambdaDispatch Steady State](docs/perf-lambdadispatch-steady.jpg) | ![LambdaDispatch Scale Up](docs/perf-lambdadispatch-scaleup.jpg) |
+| DirectLambda   | ![DirectLambda Steady State](docs/perf-directlambda-steady.jpg)     | ![DirectLambda Scale Up](docs/perf-directlambda-scaleup.jpg)     |
+
 ## Similar / Related Projects
 
 - [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter)
