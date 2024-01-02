@@ -101,7 +101,12 @@ app.get("/read-s3", async (req, res) => {
     // Send the command to S3
     const data = await s3Client.send(command);
 
-    res.setHeader("Content-Type", "image/jpeg");
+    if (data.ContentLength) {
+      res.setHeader("Content-Length", data.ContentLength);
+    }
+    if (data.ContentType) {
+      res.setHeader("Content-Type", data.ContentType);
+    }
     res.setHeader(
       "Content-Disposition",
       "attachment; filename=silly-test-image.jpg"
