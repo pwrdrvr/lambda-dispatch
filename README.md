@@ -1,275 +1,91 @@
 # Overview
 
-This performs reverse routing with Lambda functions, where the Lambda functions continue running and call back to the router to pickup requests.  This allows explicit control and determination of the number of available execution environments for the Lambda functions, allowing for a more predictable and consistent performance profile by mostly avoiding requests waiting for cold starts.
+This performs reverse routing with Lambda functions, where the Lambda functions continue running and call back to the router to pickup requests. This allows explicit control and determination of the number of available execution environments for the Lambda functions, allowing for a more predictable and consistent performance profile by mostly avoiding requests waiting for cold starts.
 
-Additionally, when there are  more parallel requests than expected execution environments, a queue is formed while additional execution environments are spun up.  Requests are dispatched from the front of the queue to the next available execution environment.  This differs substantially from Lambda's built-in dispatch which will allocate a request to a new execution environment, wait for the cold start (even if several seconds) and then dispatch the request on that new execution environment even if there are already idle execution environments available.
+Additionally, when there are more parallel requests than expected execution environments, a queue is formed while additional execution environments are spun up.  Requests are dispatched from the front of the queue to the next available execution environment. This differs substantially from Lambda's built-in dispatch which will allocate a request to a new execution environment, wait for the cold start (even if several seconds) and then dispatch the request on that new execution environment even if there are already idle execution environments available.
 
-# Packaging DotNet 8 for Lambda
+> Reduce your Lambd costs by up to 80% and avoid cold starts completely!
 
-https://coderjony.com/blogs/running-net-8-lambda-functions-on-aws-using-custom-runtime-and-lambda-internals-for-net-developers?sc_channel=sm&sc_campaign=Developer_Campaigns&sc_publisher=TWITTER&sc_geo=GLOBAL&sc_outcome=awareness&trk=Developer_Campaigns&linkId=250770379
+## Origination
 
-# Testing Lambda Locally
+It all started with a tweet: https://x.com/huntharo/status/1527256565941673984?s=20
 
-https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool
+![Tweet describing the problem and proposed solution](docs/lambda-dispatch-tweet-2022-05-19.jpg)
 
-# Developer Setup
+The desire was to enable easily migrating an existing Next.js web application with a nominal response time of 100 ms and a cold start time of 8 seconds to Lambda. The problem is that the cold start time is 80x the response time, so any burst of traffic will potentially cause a large number of requests to wait for the cold start time. This is a common problem with Lambda and is the reason that many web applications cannot be migrated to Lambda.
 
-## Prerequisites
+Moving this application from EKS with multiple concurrent requests per pod to Lambda with 1 request per exec env would require paying to wait for all remote service calls while the CPU was idle and unable to perform page rendering tasks.
 
-* [AWS CLI](https://aws.amazon.com/cli/)
-* [DotNet 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
-* [LambdaTestTool for DotNet 8](https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool)
-  * `dotnet tool install -g Amazon.Lambda.TestTool-8.0`
-  * `dotnet lambda-test-tool-8.0 --help`
+The response size limitations would also require careful evaluation to ensure that no response size was ever large enough to require a work around.
 
-## Install Lambda Templates
+AWS has been offering near-solutions to this problem such as `Snap Start` and pre-emptive scale up.  But `Snap Start` still only exists for Java and pre-emptive exec env scale up is not sufficient to address this issue.
 
-```bash
-dotnet new -i Amazon.Lambda.Templates
-```
+Application-specific solutions such as webpack bundling the server-side code can help reduce the cold start time down to 2-4 seconds, but the effort required to apply these solutions is immense and presents runtime risks due to changes in how environment variables are evaluated at build time instead of runtime, etc.
 
-## Building
+## Advantages
 
-```bash
-dotnet build
-```
+- Avoids cold start wait durations in most cases where at least 1 exec env is running
+  - Caveat: if the nubmer of queued requests (Q), divided by the total concurrent request capacity available (C), multiplied by the avg response time (t) is greater than the cold start time (T), then some requests will have to wait for the same duration as a cold start, `Q/C*t >= T`, example: Q = 100 queued requests, C = 10 request concurrent capacity, t = 1 second avg response time, T = 10 second cold start time, 100/10*1 = 10, 10 seconds of waiting for some requests
+  - Completely eliminates the blocking issue preventing many web apps from using Lambda, which is that an increase in total concurrent requests will cause a large portion of requests to wait for an entire cold start duration when other exec envs are available shortly after the request is received
+- Avoids `base64` encoding and decoding of requests and responses in both the Lambda function itself (where it costs CPU time) and in the API Gateway/ALB/Function URL (where it costs response time)
+- Allows sending first / streaming bytes of responses all the way to the client without waiting for entire response to be buffered
+  - For large responses this better utilizes the available bandwidth to the client and reduces the time to first byte
+- Eliminates the request / response body size limitations of API Gateway/ALB/Function URLs
+- Allows each exec env to handle multiple requests concurrently
+  - Eliminates "paying to wait" for I/O bound requests
+  - Allows increasing the CPU available to each exec env
+- Reduces costs up to 80% with similar throughput rates and response times
+  - Caveat: varies based on numerous factors
+- Continues the benefits of serverless for all application logic while, hopefully temporarily, adding a small amount of infrastructure to manage the routing
+- Demonstrates to AWS that there it is possible to build a better Lambda dispatch mechanism
 
-## Running Locally
+## Disadvantages
 
-```bash
-dotnet run --project PwrDrvr.LambdaDispatch.Router
-```
+- Requires an ECS Fargate cluster to run the router
+  - There is a cost to operating this component, but it should be minimal compared to the Lambdas
+- Requires a VPC for the Lambdas to connect to the router
 
-## Running Unit Tests
+## Project Status
 
-```bash
-dotnet test
-```
+Consider this a `0.9` release as of 2024-01-01.  This has been tested with billions of requests using `hey` but has not yet been tested with a production load.
 
-## Start the Lambda Test Tool
+This can be tested for production loads and can be carefully monitored in a production environment with a portion of traffic.
 
-```bash
-dotnet-lambda-test-tool-8.0
-```
+The `router` does not necessarily handle graceful shutdown of itself yet, but it does gracefully shutdown the Lambdas and not drop requests going to them.
 
-## Build for Deploy as NativeAoT Lambda
+Feedback is welcome and encouraged. Please open an issue for any questions, comments, or concerns.
 
-```bash
-dotnet build -c Release --sc true --arch arm64
-```
+## AWS Bills / Cost Risks
 
-## Send an HTTP Request to the Router
+- Your AWS bill is your own!
+- This project is not responsible for any AWS charges you incur
+- Contributors to this project are not responsible for any AWS charges you incur
+- Institute monitoring and alerting on Lambda costs and ECS Fargate costs to detect any potential runaway invokes immediatetly (as of 2024-01-01 there there are a few limited cases where this could happen but it has only been observed once in testing and development)
 
-```bash
-curl http://localhost:5002/fact
-```
+## Request Distribution
 
-## Deploy the ECR Template
+![Request Distribution](docs/request-distribution.png)
 
-```bash
-aws cloudformation create-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
+## Project Implementation
 
-aws cloudformation update-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
-```
+The project was built with DotNet 8 and C# and generates a single binary, similar to Go/Rust, that can be used within a Lambda to connect to the AWS Lambda Runtime API to receive invocations.  The structure is similar to the [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter) in that the adapter starts the contained application via a `bootstrap.sh` shell script then connects to that application on port 3000, and checks a `/health` route (which can perform cold start logic).  The adapter then connects to the Router over HTTP2 to pickup requests.
 
-## Publish the Docker Image - Router
+DotNet on Linux does suffer from a problem that is causing higher-than-necessary CPU usage due to the way spin locks are being used by the thread pool to poll for new work. [High CPU Problem on DotNet on Linux](https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757) There is a workaround (setting the `DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` env var to 0-6), but the CPU usage is still 2-3x higher than it should be. If this is not resolved in DotNet and if the project needs to exist for a long time, then the project may need to be rewritten in Go or Rust.
 
-```bash
-aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
+## Installation / Setup
 
-docker build --file DockerfileRouter -t lambda-dispatch-router . \
-&& docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
-```
+As of 2024-01-01, [fargate.template.yaml](fargate.template.yaml) contains an example deploy, [DockerfileLambda](DockerfileLambda) shows how to package the runtime with a Node.js lambda, and [DockerfileRouter](DockerfileRouter) packages up the router.
 
-## Publish the Docker Image - LambdaLB
+## Development
 
-```bash
-docker build --file DockerfileLambdaLB -t lambda-dispatch-lambdalb . \
-&& docker tag lambda-dispatch-lambdalb:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
-```
+See [DEVELOPMENT.md](DEVELOPMENT.md) for details on how to build and run the project locally.
 
-## Publish the Docker Image - DirectLambda
+## Performance
 
-```bash
-docker build --file DockerfileDirectLambda -t lambda-dispatch-directlambda . \
-&& docker tag lambda-dispatch-directlambda:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest
-```
+See [PERFORMANCE.md](PERFORMANCE.md) for details on performance testing.
 
-## Deploy the Fargate and Lambda Template
+## Similar / Related Projects
 
-```bash
-aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
-
-aws cloudformation update-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
-```
-
-## curl the Router
-
-```
-curl http://lambda-ECSFa-99YoLua7GcRe-1054486381.us-east-2.elb.amazonaws.com/fact
-```
-
-## Count Lines of Code
-
-```bash
-npm i -g cloc
-cloc --exclude-dir=bin,obj,captures,node_modules,dist --exclude-ext=csproj,sln,json,md,log,pcapng .
-```
-
-## Performance Analysis
-
-Install PerfView to analyze the `.nettrace` files: https://github.com/microsoft/perfview
-
-https://www.speedscope.app/
-
-```bash
-dotnet tool install --global dotnet-trace
-
-dotnet-trace collect -p <PID> --providers Microsoft-Windows-DotNETRuntime
-
-dotnet-trace collect -p <PID> --providers Microsoft-DotNETCore-SampleProfiler
-
-dotnet-trace convert --format speedscope trace.nettrace
-```
-
-## Memory Profiling with Son of Strike and lldb
-
-```bash
-dotnet tool install --global dotnet-sos
-dotnet-sos install
-
-dotnet tool install --global dotnet-dump
-dotnet-dump collect -p 39725
-
-dotnet tool install --global dotnet-gcdump
-dotnet-gcdump collect -p 39725
-
-
-# https://learn.microsoft.com/en-us/dotnet/core/diagnostics/sos-debugging-extension
-# https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-dump
-lldb process attach pid -p <PID>
-plugin load /usr/local/share/dotnet/shared/Microsoft.NETCore.App/<version>/libsosplugin.dylib
-plugin load /Users/huntharo/.dotnet/tools/.store/dotnet-sos/8.0.452401/dotnet-sos/8.0.452401/tools/net6.0/any/osx-arm64/libsosplugin.dylib 
-
-## Commands
-~sosCommand (null)
-~sosCommand (null)
-~ExtensionCommand analyzeoom
-~sosCommand bpmd
-~ExtensionCommand assemblies
-~ExtensionCommand clrmodules
-~sosCommand ClrStack
-~sosCommand Threads
-~sosCommand u
-~ExtensionCommand crashinfo
-~sosCommand dbgout
-~sosCommand DumpALC
-~sosCommand DumpArray
-~ExtensionCommand dumpasync
-~sosCommand DumpAssembly
-~sosCommand DumpClass
-~sosCommand DumpDelegate
-~sosCommand DumpDomain
-~sosCommand DumpGCData
-~ExtensionCommand dumpheap
-~sosCommand DumpIL
-~sosCommand DumpLog
-~sosCommand DumpMD
-~sosCommand DumpModule
-~sosCommand DumpMT
-~sosCommand DumpObj
-~ExtensionCommand dumpruntimetypes
-~sosCommand DumpSig
-~sosCommand DumpSigElem
-~sosCommand DumpStack
-~ExtensionCommand dumpstackobjects
-~ExtensionCommand dso
-~sosCommand DumpVC
-~ExtensionCommand eeheap
-~sosCommand EEStack
-~sosCommand EEVersion
-~sosCommand EHInfo
-~ExtensionCommand finalizequeue
-~sosCommand FindAppDomain
-~sosCommand FindRoots
-~sosCommand GCHandles
-~ExtensionCommand gcheapstat
-~sosCommand GCInfo
-~ExtensionCommand gcroot
-~ExtensionCommand gcwhere
-~sosCommand HistClear
-~sosCommand HistInit
-~sosCommand HistObj
-~sosCommand HistObjFind
-~sosCommand HistRoot
-~sosCommand HistStats
-~sosCommand IP2MD
-~ExtensionCommand listnearobj
-~ExtensionCommand loadsymbols
-~ExtensionCommand logging
-~sosCommand Name2EE
-~ExtensionCommand objsize
-~ExtensionCommand pathto
-~sosCommand PrintException
-~sosCommand PrintException
-~sosCommand runtimes
-~sosCommand StopOnCatch
-~sosCommand SetClrPath
-~ExtensionCommand setsymbolserver
-~sosCommand Help
-~sosCommand SOSStatus
-~sosCommand SOSFlush
-~sosCommand SyncBlk
-~ExtensionCommand threadpool
-~sosCommand ThreadState
-~sosCommand token2ee
-~ExtensionCommand verifyheap
-~ExtensionCommand verifyobj
-~ExtensionCommand traverseheap
-
-sudo apt-get install lldb
-
-AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
-
-AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/bootstrap 2>&1 | tee lambdalb.log
-
-# Running the Native version under dev container
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/workspaces/lambda-dispatch/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/linux-arm64/
-AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token bin/Release/net8.0/linux-arm64/native/bootstrap
-```
-
-## Capturing Packets with tshark
-
-- Overall:
-  - We have to use an insecure cipher that does not use a Diffie-Hellman key exchange because HttpClient does not write the key exchange to a file that WireShark can use to decrypt
-  - We cannot capture directly in Wireshark because the UI becomes unresponsive when given several GB of data
-  - Instead we capture with the CLI tools then open a portion of the data with the error in Wireshark
-- Define `USE_SOCKETS_HTTP_HANDLER` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
-- Define `USE_INSECURE_CIPHER_FOR_WIRESHARK` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
-- `dotnet build -c Release`
-- Start the Router and Lambda following instructions above
-- Run a million requests at a time until `hey` reports that some of the requests timed out
-  - `hey -n 1000000 -c 1000000 http://localhost:5002/fact`
-- After capturing the error, stop `tshark` with Ctrl-C then stop the Lambda and the Router with Ctrl-C
-- Run the commands below to capture packets
-- Run the command below to split the capture into multiple files:
-  - `editcap -c 1000000 proto-error.pcapng proto-error-split.pcapng`
-- Find the file with the first timestamp before the error happened
-- Open the file in Wireshark
-- Scroll down to the timestamp of the error
-- If the packets at that time to do not have the protocol as HTTP2 then it means that the beginning of that HTTP2 socket was not in that capture file and you need to adjust the splits to a larger or smaller number of packets to shift where the files start
-  - One simple approach is to just double the size of the splits and try again
-
-```bash
-mkdir captures
-
-cd captures
-
-# This will capture and decrypt the packets
-# The saved file will be enormous (it takes millions of requests to capture the error)
-# The log file will take several minutes to finish writing after the capture is complete
-tshark -i lo0 -f "tcp port 5003" -o "tls.keys_list:0.0.0.0,5003,http,../certs/lambdadispatch.local.key" -w proto-error.pcapng -P > protoerror.log
-```
+- [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter)
+- [serverless-adapter](https://github.com/H4ad/serverless-adapter)
+- [serverless-express](https://github.com/CodeGenieApp/serverless-express)

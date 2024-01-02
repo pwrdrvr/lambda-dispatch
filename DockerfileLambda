@@ -53,18 +53,30 @@ RUN npm run build
 #
 # Use the Amazon Linux 2023 image as the runtime environment
 #
-# Use the runtime image for ARM64
-# FROM amazonlinux:2023
-FROM public.ecr.aws/lambda/provided:al2023
+FROM public.ecr.aws/lambda/provided:al2023 as libs
+
+# If using lambda/provided:al2023 as the runtime, we need to install Node
+# RUN dnf install -y nodejs
+
+
+# This almost works, but the bootstrap app gives this error:
+#   Cannot get required symbol EVP_rc2_cbc from libssl
+#   This indicates that we need to copy in libssl from the build environment
+FROM public.ecr.aws/lambda/nodejs:20
 
 # Set the working directory
 WORKDIR /app
 
-RUN dnf install -y nodejs
-
 # Copy the build output from the build environment
 # This is a self-contained single binary file
 COPY --from=build-env /app/out/bootstrap .
+
+# If using the public.ecr.aws/lambda/nodejs:20 Lambda image, we need to copy in the updated SSL libs
+COPY --from=libs /usr/lib64/libssl* /var/lang/lib/
+COPY --from=libs /usr/lib64/libcrypto* /var/lang/lib/
+# We have to either set LD_LIBRARY_PATH to include the current directory with the updated SSL libs
+# OR we have to copy the updated SSL libs to a directory in LD_LIBRARY_PATH
+# ENV LD_LIBRARY_PATH=/app:/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib
 
 # Copy the node.js app
 COPY --from=node-build-env /app/dist/ dist/
