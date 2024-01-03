@@ -11,6 +11,11 @@ Resources:
     Properties:
       RepositoryName: lambda-dispatch-lambdalb
 
+  ECRRepositoryLambdaDemoApp:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: lambda-dispatch-demo-app
+
   ECRRepositoryDirectLambda:
     Type: AWS::ECR::Repository
     Properties:

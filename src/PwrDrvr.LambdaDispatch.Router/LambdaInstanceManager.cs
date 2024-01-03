@@ -4,7 +4,30 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 
-public class LambdaInstanceManager
+public struct LambdaInstanceCapacityMessage
+{
+  public int PendingRequests { get; set; }
+  public int RunningRequests { get; set; }
+}
+
+public interface ILambdaInstanceManager
+{
+  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection);
+
+  bool ValidateLambdaId(string lambdaId);
+
+  Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
+
+  Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false);
+
+  Task UpdateDesiredCapacity(int pendingRequests, int runningRequests);
+
+  void CloseInstance(ILambdaInstance instance);
+
+  void CloseInstance(string instanceId);
+}
+
+public class LambdaInstanceManager : ILambdaInstanceManager
 {
   private readonly ILogger<LambdaInstanceManager> _logger = LoggerInstance.CreateLogger<LambdaInstanceManager>();
 
@@ -18,16 +41,22 @@ public class LambdaInstanceManager
 
   private readonly int _maxConcurrentCount;
 
+  private readonly string _functionName;
+
+  private readonly string? _functionNameQualifier;
+
   /// <summary>
   /// Used to lookup instances by ID
   /// This allows associating the connecitons with their owning lambda instance
   /// </summary>
   private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
-  public LambdaInstanceManager(int maxConcurrentCount)
+  public LambdaInstanceManager(IConfig config)
   {
-    _maxConcurrentCount = maxConcurrentCount;
-    _leastOutstandingQueue = new(maxConcurrentCount);
+    _maxConcurrentCount = config.MaxConcurrentCount;
+    _leastOutstandingQueue = new(_maxConcurrentCount);
+    _functionName = config.FunctionNameOnly;
+    _functionNameQualifier = config.FunctionNameQualifier;
 
     // Start the capacity manager
     Task.Run(ManageCapacity);
@@ -102,11 +131,6 @@ public class LambdaInstanceManager
     return null;
   }
 
-  private struct LambdaInstanceCapacityMessage
-  {
-    public int PendingRequests { get; set; }
-    public int RunningRequests { get; set; }
-  }
 
   private Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(1)
   {
@@ -132,7 +156,6 @@ public class LambdaInstanceManager
 
     return desiredInstanceCount;
   }
-
 
   // TODO: This should project excess capacity and not use 100% of max capacity at all times
   // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
@@ -262,7 +285,7 @@ public class LambdaInstanceManager
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
 
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(_maxConcurrentCount);
+    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier);
 
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))

@@ -3,13 +3,29 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Configuration;
 
 namespace PwrDrvr.LambdaDispatch.Router
 {
     public class Startup
     {
+        public IConfiguration Configuration { get; }
+
+        public Startup()
+        {
+            var configuration = new ConfigurationBuilder()
+                // .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                .AddEnvironmentVariables(prefix: "LAMBDA_DISPATCH_")
+                .Build();
+
+            Configuration = configuration;
+        }
+
         public void ConfigureServices(IServiceCollection services)
         {
+            var config = Config.CreateAndValidate(Configuration);
+            services.AddSingleton<IConfig>(config);
+
             services.Configure<KestrelServerOptions>(options =>
                 {
                     options.Limits.MinRequestBodyDataRate = null;
@@ -20,6 +36,7 @@ namespace PwrDrvr.LambdaDispatch.Router
             services.AddHealthChecks();
             services.AddControllers();
 
+            services.AddSingleton<ILambdaInstanceManager, LambdaInstanceManager>();
             services.AddSingleton<Dispatcher>();
 
             Task.Run(MetricsRegistry.PrintMetrics).ConfigureAwait(false);

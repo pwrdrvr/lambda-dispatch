@@ -156,6 +156,10 @@ public class LambdaInstance : ILambdaInstance
   // and then we can wait on it to know when the lambda is done
   private readonly TaskCompletionSource<bool> _tcs = new();
 
+  private readonly string functionName;
+
+  private readonly string? functionQualifier;
+
   private readonly int maxConcurrentCount;
 
   private readonly IAmazonLambda LambdaClient;
@@ -194,16 +198,22 @@ public class LambdaInstance : ILambdaInstance
 
   private int signalClosing = 0;
 
-  public LambdaInstance(int maxConcurrentCount, IAmazonLambda? lambdaClient = null)
+  public LambdaInstance(int maxConcurrentCount, string functionName, string? functionQualifier = null, IAmazonLambda? lambdaClient = null)
   {
+    if (string.IsNullOrWhiteSpace(functionName))
+    {
+      throw new ArgumentException("Cannot be null or whitespace", nameof(functionName));
+    }
+    this.functionName = functionName;
+    this.functionQualifier = functionQualifier;
+
     if (maxConcurrentCount < 1)
     {
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Must be greater than 0");
     }
+    this.maxConcurrentCount = maxConcurrentCount;
 
     LambdaClient = lambdaClient ?? LambdaClientConfig.LambdaClient;
-
-    this.maxConcurrentCount = maxConcurrentCount;
   }
 
   /// <summary>
@@ -494,11 +504,14 @@ public class LambdaInstance : ILambdaInstance
     // Invoke the Lambda
     var request = new InvokeRequest
     {
-      // TODO: Get this from the configuration
-      FunctionName = "lambda-dispatch-lambdalb",
+      FunctionName = functionName,
       InvocationType = InvocationType.RequestResponse,
-      Payload = JsonSerializer.Serialize(payload)
+      Payload = JsonSerializer.Serialize(payload),
     };
+    if (functionQualifier != null && functionQualifier != "$LATEST")
+    {
+      request.Qualifier = functionQualifier;
+    }
 
     // Should not wait here as we will not get a response until the Lambda is done
     var invokeTask = LambdaClient.InvokeAsync(request);

@@ -32,7 +32,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - lambda:InvokeFunction
-                Resource: !GetAtt LambdaLB.Arn
+                Resource: !GetAtt LambdaDemoApp.Arn
 
   CloudWatchLogsGroup:
     Type: AWS::Logs::LogGroup
@@ -61,6 +61,10 @@ Resources:
           Environment:
             - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
               Value: "6"
+            - Name: LAMBDA_DISPATCH_FunctionName
+              Value: !GetAtt LambdaDemoApp.Arn
+            - Name: LAMBDA_DISPATCH_MaxConcurrentCount
+              Value: "10"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -486,13 +490,13 @@ Resources:
         - IpProtocol: '-1'
           DestinationPrefixListId: 'pl-7ba54012' # US East 2 S3 Prefix List
 
-  LambdaLB:
+  LambdaDemoApp:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: "lambda-dispatch-lambdalb"
+      FunctionName: "lambda-dispatch-demo-app"
       Role: !GetAtt LambdaLBExecutionRole.Arn
       Code:
-        ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-lambdalb:latest
+        ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-demo-app:latest
       MemorySize: 256
       Timeout: 60
       PackageType: "Image"
