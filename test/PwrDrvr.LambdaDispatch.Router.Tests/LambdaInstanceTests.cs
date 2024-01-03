@@ -4,7 +4,7 @@ using PwrDrvr.LambdaDispatch.Router;
 using Amazon.Lambda;
 using Amazon.Lambda.Model;
 
-namespace PwrDrvr.LambdaDispatch.Tests
+namespace PwrDrvr.LambdaDispatch.Router.Tests
 {
   public class LambdaInstanceTests
   {

@@ -4,7 +4,7 @@ using Moq;
 using NUnit.Framework;
 using PwrDrvr.LambdaDispatch.Router;
 
-namespace PwrDrvr.LambdaDispatch.Tests
+namespace PwrDrvr.LambdaDispatch.Router.Tests
 {
   public class LeastOutstandingQueueTests
   {

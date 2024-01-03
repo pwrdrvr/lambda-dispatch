@@ -66,15 +66,23 @@ public class Config : IConfig
   private (string, string?) ParseFunctionName(string functionName)
   {
     var parts = functionName.Split(':');
-    if (parts.Length > 1)
+    if (parts.Length == 2 || parts.Length == 8)
     {
       var qualifier = parts.Last();
       var baseFunctionName = string.Join(':', parts.Take(parts.Length - 1));
       return (baseFunctionName, qualifier);
     }
+    else if (parts.Length == 7)
+    {
+      return (functionName, null);
+    }
+    else if (parts.Length == 1)
+    {
+      return (functionName, null);
+    }
     else
     {
-      return (parts[0], null);
+      throw new ApplicationException($"Invalid FunctionName in configuration: {functionName}");
     }
   }
 
