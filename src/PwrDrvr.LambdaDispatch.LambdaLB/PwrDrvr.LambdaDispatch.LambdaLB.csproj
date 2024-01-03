@@ -10,6 +10,7 @@
     <Nullable>enable</Nullable>
     <AWSProjectType>Lambda</AWSProjectType>
     <AssemblyName>bootstrap</AssemblyName>
+    <StaticOpenSslLinking>true</StaticOpenSslLinking>
     <!-- We don't do invariant comparisons and we can do without the 37 MB libicu -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- This property makes the build directory similar to a publish directory and helps the AWS .NET Lambda Mock Test Tool find project dependencies. -->
