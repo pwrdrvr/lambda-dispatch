@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  PublicLambdaDispatchExtensionRepo:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: lambda-dispatch-extension
+
+  PublicLambdaDispatchExtensionRepoDev:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: lambda-dispatch-extension-dev
+
+  PublicLambdaDispatchRouterRepo:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: lambda-dispatch-router
+
+  PublicLambdaDispatchRouterRepoDev:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: lambda-dispatch-router-dev
+
+  PublicLambdaDispatchDemoAppRepo:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: lambda-dispatch-demo-app
+
+  PublicLambdaDispatchDemoAppRepoDev:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: lambda-dispatch-demo-app-dev

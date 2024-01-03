@@ -1,9 +1,7 @@
 version: "3.3"
 services:
   router:
-    build:
-      context: .
-      dockerfile: DockerfileRouter
+    image: public.ecr.aws/e4p3x8r3/lambda-dispatch-router:pr-62
     ports:
       - 5002:5002
       - 5001:5001
@@ -13,28 +11,19 @@ services:
     environment:
       # Limit spins to save 75% CPU
       # https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757
+      - DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=6
       - AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051
       - AWS_REGION=us-east-2
       - AWS_ACCESS_KEY_ID=test-access-key-id
       - AWS_SECRET_ACCESS_KEY=test-secret-access-key
       - AWS_SESSION_TOKEN=test-session-token
       - ROUTER_CALLBACK_HOST=router
-      - DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=6
-
-  extension:
-    build:
-      context: .
-      dockerfile: DockerfileExtension
-    image: lambda-dispatch-extension
-    restart: no
-    entrypoint: ["/bin/sh", "-c", "echo 'exiting'"]
 
   lambdademoapp:
     depends_on:
       - router
-    build:
-      context: .
-      dockerfile: DockerfileLambdaDemoApp
+    image: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension:pr-62
+    # platform: linux/amd64
     networks:
       - mynetwork
     environment:

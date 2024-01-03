@@ -1,0 +1,39 @@
+#
+# Build the node.js app
+#
+# Build with whatever CPU the host OS has
+FROM node:20-alpine AS node-build-env
+
+# Set the working directory
+WORKDIR /app
+
+# Copy just files needed for npm install
+COPY src/demo-app/package.json src/demo-app/package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy everything from the current directory to the working directory in the image
+COPY src/demo-app/ ./
+
+# Build the app
+RUN npm run build
+
+
+FROM lambda-dispatch-extension AS extension
+
+#
+# Runtime image for demo-app
+#
+FROM public.ecr.aws/lambda/nodejs:20
+
+# Copy the build output from the build environment
+# This is a self-contained single binary file
+COPY --from=extension /var/task/bootstrap .
+
+# Copy the node.js app
+COPY --from=node-build-env /app/dist/ dist/
+COPY --from=node-build-env /app/startapp.sh ./
+
+# Set the entrypoint
+ENTRYPOINT ["./bootstrap"]
