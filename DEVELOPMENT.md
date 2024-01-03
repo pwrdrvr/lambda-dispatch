@@ -18,57 +18,65 @@ https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool
 
 ## Install Lambda Templates
 
-```bash
+```sh
 dotnet new -i Amazon.Lambda.Templates
 ```
 
 ## Building
 
-```bash
+```sh
 dotnet build
 ```
 
 ## Running Locally
 
-```bash
+```sh
 dotnet run --project PwrDrvr.LambdaDispatch.Router
 ```
 
 ## Running Unit Tests
 
-```bash
+```sh
 dotnet test
 ```
 
 ## Start the Lambda Test Tool
 
-```bash
+```sh
 dotnet-lambda-test-tool-8.0
 ```
 
 ## Build for Deploy as NativeAoT Lambda
 
-```bash
+```sh
 dotnet build -c Release --sc true --arch arm64
 ```
 
 ## Send an HTTP Request to the Router
 
-```bash
+```sh
 curl http://localhost:5002/fact
 ```
 
 ## Deploy the ECR Template
 
-```bash
+```sh
 aws cloudformation create-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
 
 aws cloudformation update-stack --stack-name lambda-dispatch-ecr --template-body file://ecr.template.yaml
 ```
 
+## Deploy the Public ECR Template to US East 1
+
+```sh
+aws cloudformation create-stack --stack-name lambda-dispatch-ecr-public --template-body file://ecr.public.template.yaml --region us-east-1
+
+aws cloudformation update-stack --stack-name lambda-dispatch-ecr-public --template-body file://ecr.public.template.yaml --region us-east-1
+```
+
 ## Publish the Docker Image - Router
 
-```bash
+```sh
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
 
 docker build --file DockerfileRouter -t lambda-dispatch-router . \
@@ -76,17 +84,23 @@ docker build --file DockerfileRouter -t lambda-dispatch-router . \
 && docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
 ```
 
-## Publish the Docker Image - LambdaLB
+## Build the Docker Image - Extension
 
-```bash
-docker build --file DockerfileLambdaLB -t lambda-dispatch-lambdalb . \
-&& docker tag lambda-dispatch-lambdalb:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-lambdalb:latest
+```sh
+docker build --file DockerfileExtension -t lambda-dispatch-extension .
+```
+
+## Publish the Docker Image - Lambda Demo App
+
+```sh
+docker build --file DockerfileLambdaDemoApp -t lambda-dispatch-demo-app . \
+&& docker tag lambda-dispatch-demo-app:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest \
+&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest
 ```
 
 ## Publish the Docker Image - DirectLambda
 
-```bash
+```sh
 docker build --file DockerfileDirectLambda -t lambda-dispatch-directlambda . \
 && docker tag lambda-dispatch-directlambda:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest \
 && docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest
@@ -94,7 +108,7 @@ docker build --file DockerfileDirectLambda -t lambda-dispatch-directlambda . \
 
 ## Deploy the Fargate and Lambda Template
 
-```bash
+```sh
 aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
 
 aws cloudformation update-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
@@ -108,7 +122,7 @@ curl http://lambda-ECSFa-99YoLua7GcRe-1054486381.us-east-2.elb.amazonaws.com/fac
 
 ## Count Lines of Code
 
-```bash
+```sh
 npm i -g cloc
 cloc --exclude-dir=bin,obj,captures,node_modules,dist --exclude-ext=csproj,sln,json,md,log,pcapng .
 ```
@@ -119,7 +133,7 @@ Install PerfView to analyze the `.nettrace` files: https://github.com/microsoft/
 
 https://www.speedscope.app/
 
-```bash
+```sh
 dotnet tool install --global dotnet-trace
 
 dotnet-trace collect -p <PID> --providers Microsoft-Windows-DotNETRuntime
@@ -131,7 +145,7 @@ dotnet-trace convert --format speedscope trace.nettrace
 
 ## Memory Profiling with Son of Strike and lldb
 
-```bash
+```sh
 dotnet tool install --global dotnet-sos
 dotnet-sos install
 
@@ -228,10 +242,10 @@ sudo apt-get install lldb
 
 AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
 
-AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/bootstrap 2>&1 | tee lambdalb.log
+AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap 2>&1 | tee lambdalb.log
 
 # Running the Native version under dev container
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/workspaces/lambda-dispatch/src/PwrDrvr.LambdaDispatch.LambdaLB/bin/Release/net8.0/linux-arm64/
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/workspaces/lambda-dispatch/src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/linux-arm64/
 AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token bin/Release/net8.0/linux-arm64/native/bootstrap
 ```
 
@@ -241,8 +255,8 @@ AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS
   - We have to use an insecure cipher that does not use a Diffie-Hellman key exchange because HttpClient does not write the key exchange to a file that WireShark can use to decrypt
   - We cannot capture directly in Wireshark because the UI becomes unresponsive when given several GB of data
   - Instead we capture with the CLI tools then open a portion of the data with the error in Wireshark
-- Define `USE_SOCKETS_HTTP_HANDLER` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
-- Define `USE_INSECURE_CIPHER_FOR_WIRESHARK` in ()[src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs]
+- Define `USE_SOCKETS_HTTP_HANDLER` in ()[src/PwrDrvr.LambdaDispatch.Extension/HttpReverseRequester.cs]
+- Define `USE_INSECURE_CIPHER_FOR_WIRESHARK` in ()[src/PwrDrvr.LambdaDispatch.Extension/HttpReverseRequester.cs]
 - `dotnet build -c Release`
 - Start the Router and Lambda following instructions above
 - Run a million requests at a time until `hey` reports that some of the requests timed out
@@ -257,7 +271,7 @@ AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS
 - If the packets at that time to do not have the protocol as HTTP2 then it means that the beginning of that HTTP2 socket was not in that capture file and you need to adjust the splits to a larger or smaller number of packets to shift where the files start
   - One simple approach is to just double the size of the splits and try again
 
-```bash
+```sh
 mkdir captures
 
 cd captures

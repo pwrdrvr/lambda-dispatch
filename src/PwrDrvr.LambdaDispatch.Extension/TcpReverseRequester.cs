@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
-namespace PwrDrvr.LambdaDispatch.LambdaLB;
+namespace PwrDrvr.LambdaDispatch.Extension;
 
 [Obsolete("TcpReverseRequester is not used and has been replaced with HttpReverseRequester")]
 public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
@@ -247,7 +247,7 @@ public class TcpReverseRequester : IAsyncDisposable, IReverseRequester
     var writer = new StringWriter();
     writer.Write("HTTP/1.1 200 OK\r\n");
     writer.Write("X-Lambda-Id: " + _id + "\r\n");
-    writer.Write("Server: PwrDrvr.LambdaDispatch.LambdaLB\r\n");
+    writer.Write("Server: PwrDrvr.LambdaDispatch.Extension\r\n");
     writer.Write("Content-Type: text/plain\r\n");
     writer.Write("Transfer-Encoding: chunked\r\n");
     writer.Write("\r\n");

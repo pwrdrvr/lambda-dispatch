@@ -11,5 +11,5 @@
   "function-runtime": "dotnet8",
   "function-memory-size": 256,
   "function-timeout": 900,
-  "function-handler": "PwrDrvr.LambdaDispatch.LambdaLB::PwrDrvr.LambdaDispatch.LambdaLB.Function::FunctionHandler"
+  "function-handler": "PwrDrvr.LambdaDispatch.Extension::PwrDrvr.LambdaDispatch.Extension.Function::FunctionHandler"
 }

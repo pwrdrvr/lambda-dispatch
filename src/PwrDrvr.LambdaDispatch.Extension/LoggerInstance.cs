@@ -1,4 +1,4 @@
-namespace PwrDrvr.LambdaDispatch.LambdaLB;
+namespace PwrDrvr.LambdaDispatch.Extension;
 
 using Microsoft.Extensions.Logging;
 using AWS.Logger;

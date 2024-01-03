@@ -1,0 +1,47 @@
+# Use the official .NET 8 SDK image as the build environment
+# Build with whatever CPU the host OS has
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-env
+
+# Needed for Native AOT compilation
+RUN apt update
+RUN apt install -y clang zlib1g-dev libssl-dev cmake
+
+# Set the working directory
+WORKDIR /app
+
+# Copy just files needed for dotnet restore
+COPY *.sln ./
+COPY src/PwrDrvr.LambdaDispatch.Extension/PwrDrvr.LambdaDispatch.Extension.csproj ./src/PwrDrvr.LambdaDispatch.Extension/
+COPY src/PwrDrvr.LambdaDispatch.Messages/PwrDrvr.LambdaDispatch.Messages.csproj ./src/PwrDrvr.LambdaDispatch.Messages/
+
+# Restore dependencies
+RUN dotnet restore src/PwrDrvr.LambdaDispatch.Extension/PwrDrvr.LambdaDispatch.Extension.csproj
+
+# Copy everything from the current directory to the working directory in the image
+COPY . ./
+
+# Build the project
+ARG BUILD_ARCH=linux-arm64
+RUN dotnet publish src/PwrDrvr.LambdaDispatch.Extension/PwrDrvr.LambdaDispatch.Extension.csproj -c Release --self-contained true --runtime $BUILD_ARCH -o out /p:NativeAot=true
+
+# We do not need the ~40 MB of ICU libs
+RUN rm out/libicu* || true
+
+
+#
+# Runtime image for the extension
+# This exec and entrypoint can be copied to another Lambda base image that
+# already includes a language runtime (e.g. for Node.js, DotNet, etc.)
+#
+# The bootstrap exec is statically linked and does not depend on any shared
+# libraries. It is built with the same CPU architecture as the host OS.
+# It should run and invoke the `./bootstrap.sh` shell script
+# which will start the desired app, such as `exec node index.js`.
+#
+FROM public.ecr.aws/lambda/provided:al2023
+
+# Copy the bootstrap executable
+COPY --from=build-env /app/out/bootstrap ./bootstrap
+
+# Set the entrypoint
+ENTRYPOINT ["./bootstrap"]

@@ -47,10 +47,10 @@ Once the nature of the problem was known, it was possible to view the `DATA` fra
 ## Exception Summary from LambdaLB
 
 ```log
-00:56:20.912 info: PwrDrvr.LambdaDispatch.LambdaLB.HttpReverseRequester[0]
+00:56:20.912 info: PwrDrvr.LambdaDispatch.Extension.HttpReverseRequester[0]
       => LambdaId: e9e56095-586f-45e0-97d0-505a93fe7048
       Pinged instance: e9e56095-586f-45e0-97d0-505a93fe7048, OK
-00:56:21.396 fail: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+00:56:21.396 fail: PwrDrvr.LambdaDispatch.Extension.Function[0]
       => LambdaId: e9e56095-586f-45e0-97d0-505a93fe7048 => TaskNumber: 2 => ChannelId: 7a0ebe6c-535a-408f-b069-f82b4e065c77
       HttpRequestException caught
       System.Net.Http.HttpRequestException: The HTTP/2 server sent invalid data on the connection. HTTP/2 error code 'PROTOCOL_ERROR' (0x1). (HttpProtocolError)
@@ -95,10 +95,10 @@ Once the nature of the problem was known, it was possible to view the `DATA` fra
 ## Full LambdaLB Exception from HttpClient - First Instance
 
 ```log
-00:56:20.912 info: PwrDrvr.LambdaDispatch.LambdaLB.HttpReverseRequester[0]
+00:56:20.912 info: PwrDrvr.LambdaDispatch.Extension.HttpReverseRequester[0]
       => LambdaId: e9e56095-586f-45e0-97d0-505a93fe7048
       Pinged instance: e9e56095-586f-45e0-97d0-505a93fe7048, OK
-00:56:21.396 fail: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+00:56:21.396 fail: PwrDrvr.LambdaDispatch.Extension.Function[0]
       => LambdaId: e9e56095-586f-45e0-97d0-505a93fe7048 => TaskNumber: 2 => ChannelId: 7a0ebe6c-535a-408f-b069-f82b4e065c77
       HttpRequestException caught
       System.Net.Http.HttpRequestException: The HTTP/2 server sent invalid data on the connection. HTTP/2 error code 'PROTOCOL_ERROR' (0x1). (HttpProtocolError)
@@ -117,9 +117,9 @@ Once the nature of the problem was known, it was possible to view the `DATA` fra
          at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
          at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
          at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
-         at PwrDrvr.LambdaDispatch.LambdaLB.HttpReverseRequester.GetRequest(String channelId) in /Users/huntharo/pwrdrvr/lambda-dispatch/src/PwrDrvr.LambdaDispatch.LambdaLB/HttpReverseRequester.cs:line 157
-         at PwrDrvr.LambdaDispatch.LambdaLB.Function.<>c__DisplayClass3_1.<<FunctionHandler>b__1>d.MoveNext() in /Users/huntharo/pwrdrvr/lambda-dispatch/src/PwrDrvr.LambdaDispatch.LambdaLB/Function.cs:line 137
-00:56:21.396 fail: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+         at PwrDrvr.LambdaDispatch.Extension.HttpReverseRequester.GetRequest(String channelId) in /Users/huntharo/pwrdrvr/lambda-dispatch/src/PwrDrvr.LambdaDispatch.Extension/HttpReverseRequester.cs:line 157
+         at PwrDrvr.LambdaDispatch.Extension.Function.<>c__DisplayClass3_1.<<FunctionHandler>b__1>d.MoveNext() in /Users/huntharo/pwrdrvr/lambda-dispatch/src/PwrDrvr.LambdaDispatch.Extension/Function.cs:line 137
+00:56:21.396 fail: PwrDrvr.LambdaDispatch.Extension.Function[0]
 ```
 
 # Pre-Wireshark
@@ -141,7 +141,7 @@ lambda-dispatch-router-1    | 17:29:25.797 info: PwrDrvr.LambdaDispatch.Router.L
 lambda-dispatch-router-1    |       Starting Lambda Instance be8dc363-f20f-470f-a324-f6885d544fbe
 
 ## Lambda born at 17:29:26.032
-lambda-dispatch-lambdalb-1  | 17:29:26.032 info: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+lambda-dispatch-lambdalb-1  | 17:29:26.032 info: PwrDrvr.LambdaDispatch.Extension.Function[0]
 lambda-dispatch-lambdalb-1  |       Received WaiterRequest id: be8dc363-f20f-470f-a324-f6885d544fbe, dispatcherUrl: http://router:5003/api/chunked
 
 ## Router notices Lambda's first connection at 17:29:26.105
@@ -150,19 +150,19 @@ lambda-dispatch-router-1    |       LambdaInstance be8dc363-f20f-470f-a324-f6885
 lambda-dispatch-router-1    | 17:29:26.106 warn: PwrDrvr.LambdaDispatch.Router.Dispatcher[0] Dispatching (foreground) pending request that has been waiting for 5477.3411 ms, LambdaId: be8dc363-f20f-470f-a324-f6885d544fbe, ChannelId: 04bf96f2-358f-4bdc-beca-fe0e1778da40
 
 ## Lambda exception happens at 17:29:28.918
-lambda-dispatch-lambdalb-1  | 17:29:28.918 fail: PwrDrvr.LambdaDispatch.LambdaLB.HttpReverseRequester[0]
+lambda-dispatch-lambdalb-1  | 17:29:28.918 fail: PwrDrvr.LambdaDispatch.Extension.HttpReverseRequester[0]
 lambda-dispatch-lambdalb-1  |       => LambdaId: be8dc363-f20f-470f-a324-f6885d544fbe => TaskNumber: 4 => ChannelId: f349bf53-33b7-44bd-94f6-e7045de4963d
 lambda-dispatch-lambdalb-1  |       Error reading request from response
 lambda-dispatch-lambdalb-1  |       System.Net.Http.HttpProtocolException: The HTTP/2 server sent invalid data on the connection. HTTP/2 error code 'PROTOCOL_ERROR' (0x1). (HttpProtocolError)
 
 ## Lambda exception bubbles up at 17:29:28.923
-lambda-dispatch-lambdalb-1  | 17:29:28.923 fail: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+lambda-dispatch-lambdalb-1  | 17:29:28.923 fail: PwrDrvr.LambdaDispatch.Extension.Function[0]
 lambda-dispatch-lambdalb-1  |       => LambdaId: be8dc363-f20f-470f-a324-f6885d544fbe => TaskNumber: 4 => ChannelId: f349bf53-33b7-44bd-94f6-e7045de4963d
 lambda-dispatch-lambdalb-1  |       Exception caught in task
 lambda-dispatch-lambdalb-1  |       System.Net.Http.HttpProtocolException: The HTTP/2 server sent invalid data on the connection. HTTP/2 error code 'PROTOCOL_ERROR' (0x1). (HttpProtocolError)
 
 ## Lambda returns at 17:29:28.925
-lambda-dispatch-lambdalb-1  | 17:29:28.925 info: PwrDrvr.LambdaDispatch.LambdaLB.Function[0]
+lambda-dispatch-lambdalb-1  | 17:29:28.925 info: PwrDrvr.LambdaDispatch.Extension.Function[0]
 lambda-dispatch-lambdalb-1  |       => LambdaId: be8dc363-f20f-470f-a324-f6885d544fbe
 lambda-dispatch-lambdalb-1  |       Responding with WaiterResponse id: be8dc363-f20f-470f-a324-f6885d544fbe
 

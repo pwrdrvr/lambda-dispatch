@@ -16,6 +16,6 @@
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PwrDrvr.LambdaDispatch.LambdaLB\PwrDrvr.LambdaDispatch.LambdaLB.csproj" />
+    <ProjectReference Include="..\..\src\PwrDrvr.LambdaDispatch.Extension\PwrDrvr.LambdaDispatch.Extension.csproj" />
   </ItemGroup>
 </Project>

@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
-namespace PwrDrvr.LambdaDispatch.LambdaLB;
+namespace PwrDrvr.LambdaDispatch.Extension;
 
 public class CustomStream : Stream
 {
@@ -427,7 +427,7 @@ public class HttpReverseRequester
       {
         { "X-Lambda-Id", _id },
         { "X-Channel-Id", channelId },
-        { "Server", "PwrDrvr.LambdaDispatch.LambdaLB" },
+        { "Server", "PwrDrvr.LambdaDispatch.Extension" },
       };
       foreach (var (key, value) in controlHeaders)
       {

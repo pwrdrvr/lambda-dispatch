@@ -2,7 +2,7 @@ using NUnit.Framework;
 using Amazon.Lambda.TestUtilities;
 using PwrDrvr.LambdaDispatch.Messages;
 
-namespace PwrDrvr.LambdaDispatch.LambdaLB.Tests;
+namespace PwrDrvr.LambdaDispatch.Extension.Tests;
 
 public class FunctionTest
 {
