@@ -1,7 +1,8 @@
 version: "3.3"
 services:
   router:
-    image: public.ecr.aws/e4p3x8r3/lambda-dispatch-router:pr-62
+    image: public.ecr.aws/e4p3x8r3/lambda-dispatch-router-dev:pr-62
+    # platform: linux/amd64
     ports:
       - 5002:5002
       - 5001:5001
@@ -22,7 +23,7 @@ services:
   lambdademoapp:
     depends_on:
       - router
-    image: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension:pr-62
+    image: public.ecr.aws/e4p3x8r3/lambda-dispatch-demo-app-dev:pr-62
     # platform: linux/amd64
     networks:
       - mynetwork
