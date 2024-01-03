@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace PwrDrvr.LambdaDispatch.LambdaLB;
+namespace PwrDrvr.LambdaDispatch.Extension;
 
 /// <summary>
 /// Borrowed from tests in dotnet/runtime/src/libraries/System.Net.Http/tests/FunctionalTests/HttpClientHandlerTest.Http2.cs

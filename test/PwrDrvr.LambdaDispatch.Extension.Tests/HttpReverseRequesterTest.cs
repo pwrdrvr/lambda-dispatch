@@ -4,7 +4,7 @@ using Moq.Protected;
 using System.Net;
 using Microsoft.Extensions.Logging;
 
-namespace PwrDrvr.LambdaDispatch.LambdaLB.Tests;
+namespace PwrDrvr.LambdaDispatch.Extension.Tests;
 
 public class HttpReverseRequesterTest
 {

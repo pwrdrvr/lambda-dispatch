@@ -1,4 +1,4 @@
-namespace PwrDrvr.LambdaDispatch.LambdaLB;
+namespace PwrDrvr.LambdaDispatch.Extension;
 
 #if !SKIP_METRICS
 

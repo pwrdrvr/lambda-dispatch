@@ -11,18 +11,18 @@ WORKDIR /app
 
 # Copy just files needed for dotnet restore
 COPY *.sln ./
-COPY src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj ./src/PwrDrvr.LambdaDispatch.LambdaLB/
+COPY src/PwrDrvr.LambdaDispatch.Extension/PwrDrvr.LambdaDispatch.Extension.csproj ./src/PwrDrvr.LambdaDispatch.Extension/
 COPY src/PwrDrvr.LambdaDispatch.Messages/PwrDrvr.LambdaDispatch.Messages.csproj ./src/PwrDrvr.LambdaDispatch.Messages/
 
 # Restore dependencies
-RUN dotnet restore src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj
+RUN dotnet restore src/PwrDrvr.LambdaDispatch.Extension/PwrDrvr.LambdaDispatch.Extension.csproj
 
 # Copy everything from the current directory to the working directory in the image
 COPY . ./
 
 # Build the project
 ARG BUILD_ARCH=linux-arm64
-RUN dotnet publish src/PwrDrvr.LambdaDispatch.LambdaLB/PwrDrvr.LambdaDispatch.LambdaLB.csproj -c Release --self-contained true --runtime $BUILD_ARCH -o out /p:NativeAot=true
+RUN dotnet publish src/PwrDrvr.LambdaDispatch.Extension/PwrDrvr.LambdaDispatch.Extension.csproj -c Release --self-contained true --runtime $BUILD_ARCH -o out /p:NativeAot=true
 
 # We do not need the ~40 MB of ICU libs
 RUN rm out/libicu* || true

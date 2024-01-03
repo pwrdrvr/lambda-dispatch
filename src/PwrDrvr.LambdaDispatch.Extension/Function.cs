@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Net;
 
-namespace PwrDrvr.LambdaDispatch.LambdaLB;
+namespace PwrDrvr.LambdaDispatch.Extension;
 
 /// <summary>
 /// This class is used to register the input event and return type for the FunctionHandler method with the System.Text.Json source generator.
