@@ -10,7 +10,7 @@
       "request": "attach"
     },
     {
-      "name": "LambdaLB bootstrap (console)",
+      "name": "Extension bootstrap (console)",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
@@ -29,7 +29,7 @@
       }
     },
     {
-      "name": "LambdaLB bootstrap (console) - Release",
+      "name": "Extension bootstrap (console) - Release",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build-release",
@@ -52,7 +52,7 @@
       "internalConsoleOptions": "openOnSessionStart"
     },
     {
-      "name": "LambdaLB (console)",
+      "name": "Extension (console)",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
@@ -73,6 +73,7 @@
       "console": "internalConsole",
       "stopAtEntry": false,
       "env": {
+        "LAMBDA_DISPATCH_FunctionName": "arn:aws:lambda:us-east-2:220761759939:function:dogs",
         "AWS_ACCESS_KEY_ID": "test-access-key-id",
         "AWS_SECRET_ACCESS_KEY": "test-secret-access-key",
         "AWS_SESSION_TOKEN": "test-session-token",

@@ -40,7 +40,7 @@ public class Dispatcher
 {
   private readonly ILogger<Dispatcher> _logger;
 
-  private readonly LambdaInstanceManager _lambdaInstanceManager = new(10);
+  private readonly ILambdaInstanceManager _lambdaInstanceManager;
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
@@ -51,10 +51,11 @@ public class Dispatcher
   // We need to keep a count of the running requests so we can set the desired count
   private volatile int _runningRequestCount = 0;
 
-  public Dispatcher(ILogger<Dispatcher> logger)
+  public Dispatcher(ILogger<Dispatcher> logger, ILambdaInstanceManager lambdaInstanceManager)
   {
     _logger = logger;
     _logger.LogDebug("Dispatcher created");
+    _lambdaInstanceManager = lambdaInstanceManager;
 
     // Start the background task to process pending requests
     Task.Run(BackgroundPendingRequestDispatcher);

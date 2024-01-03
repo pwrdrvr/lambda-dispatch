@@ -16,8 +16,8 @@ namespace PwrDrvr.LambdaDispatch.Tests
     [Test]
     public void Constructor_ShouldRejectTooSmallMaxConcurrentCount()
     {
-      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0));
-      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1));
+      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0, "somefunc"));
+      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1, "somefunc"));
     }
 
     [Test]
@@ -25,7 +25,7 @@ namespace PwrDrvr.LambdaDispatch.Tests
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
-      var instance = new LambdaInstance(maxConcurrentCount, lambdaClient.Object);
+      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -69,7 +69,7 @@ namespace PwrDrvr.LambdaDispatch.Tests
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
-      var instance = new LambdaInstance(maxConcurrentCount, lambdaClient.Object);
+      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
