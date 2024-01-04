@@ -4,9 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Mvc;
 
-namespace PwrDrvr.LambdaDispatch.Router;
+namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 
-
+[Area("ControlChannels")]
 [Route("/reset")]
 public class ResetController : ControllerBase
 {

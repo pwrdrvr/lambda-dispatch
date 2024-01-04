@@ -7,8 +7,9 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Timeouts;
 using System.Globalization;
 
-namespace PwrDrvr.LambdaDispatch.Router;
+namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 
+[Area("ControlChannels")]
 [Route("api/chunked")]
 public class ChunkedController : ControllerBase
 {
