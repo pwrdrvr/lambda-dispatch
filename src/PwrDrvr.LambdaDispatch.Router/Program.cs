@@ -34,6 +34,17 @@ public class Program
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
+            .ConfigureAppConfiguration((hostingContext, config) =>
+            {
+                // Add other configuration sources as needed
+                // config.AddJsonFile("appsettings.json", optional: true);
+                config.AddEnvironmentVariables(prefix: "LAMBDA_DISPATCH_");
+            })
+            .ConfigureServices((hostContext, services) =>
+            {
+                var config = Config.CreateAndValidate(hostContext.Configuration);
+                services.AddSingleton<IConfig>(config);
+            })
             .ConfigureLogging(logging =>
             {
                 logging.ClearProviders();
@@ -53,17 +64,19 @@ public class Program
             })
             .ConfigureWebHostDefaults(webBuilder =>
             {
-                // 5002 - incoming requests
-                // 5001 - lambda interface HTTP
-                // 5003 - lambda interface HTTPS
-                // webBuilder.UseUrls("http://0.0.0.0:5002", "http://0.0.0.0:5001", "https://0.0.0.0:5003");
-                webBuilder.ConfigureKestrel(serverOptions =>
+                // 5001 - incoming requests
+                // 5003 - lambda interface HTTP
+                // 5004 - lambda interface HTTPS
+                // webBuilder.UseUrls("http://0.0.0.0:5001", "http://0.0.0.0:5003", "https://0.0.0.0:5004");
+                webBuilder.ConfigureKestrel((context, serverOptions) =>
                 {
+                    // We have to reparse the config once, bummer
+                    var config = Config.CreateAndValidate(context.Configuration);
 #if USE_INSECURE_HTTP2
-                    serverOptions.ListenLocalhost(5001, o => o.Protocols = HttpProtocols.Http2);
+                    serverOptions.ListenLocalhost(config.ControlChannelHTTPPort, o => o.Protocols = HttpProtocols.Http2);
 #endif
-                    serverOptions.ListenAnyIP(5002);
-                    serverOptions.ListenAnyIP(5003, listenOptions =>
+                    serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
+                    serverOptions.ListenAnyIP(config.ControlChannelHTTP2Port, listenOptions =>
                     {
                         listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"));
                     });

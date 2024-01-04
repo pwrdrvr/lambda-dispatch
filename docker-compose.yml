@@ -5,9 +5,9 @@ services:
       context: .
       dockerfile: DockerfileRouter
     ports:
-      - 5002:5002
       - 5001:5001
       - 5003:5003
+      - 5004:5004
     networks:
       - mynetwork
     environment:

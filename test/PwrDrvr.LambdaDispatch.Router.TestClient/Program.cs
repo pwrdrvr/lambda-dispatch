@@ -9,14 +9,14 @@ public class Program
 {
   static public async Task TestChunkedRequest()
   {
-    using (var client = new TcpClient("localhost", 5001))
+    using (var client = new TcpClient("localhost", 5003))
     using (var stream = client.GetStream())
     using (var writer = new StreamWriter(stream))
     using (var reader = new StreamReader(stream))
     {
       // Send the request headers
       await writer.WriteAsync("POST /api/chunked HTTP/1.1\r\n");
-      await writer.WriteAsync("Host: localhost:5001\r\n");
+      await writer.WriteAsync("Host: localhost:5003\r\n");
       await writer.WriteAsync("Content-Type: text/plain\r\n");
       await writer.WriteAsync("Transfer-Encoding: chunked\r\n");
       await writer.WriteAsync("\r\n");

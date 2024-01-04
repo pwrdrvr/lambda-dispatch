@@ -13,7 +13,7 @@ public class FunctionTest
         var function = new Function();
         var context = new TestLambdaContext();
         context.RemainingTime = TimeSpan.FromSeconds(10);
-        var request = new WaiterRequest { Id = "1234", DispatcherUrl = "http://localhost:5001" };
+        var request = new WaiterRequest { Id = "1234", DispatcherUrl = "http://localhost:5003" };
         var response = await Function.FunctionHandler(request, context);
 
         Assert.Equals(request.Id, response.Id);

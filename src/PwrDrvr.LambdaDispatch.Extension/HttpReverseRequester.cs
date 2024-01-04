@@ -98,17 +98,8 @@ public class HttpReverseRequester
     _logger = logger ?? LoggerInstance.CreateLogger<HttpReverseRequester>();
     _id = id;
     _dispatcherUrl = dispatcherUrl;
-
-    // Change Proto and Port
     _uri = new UriBuilder(_dispatcherUrl)
     {
-#if USE_INSECURE_HTTP2
-      Port = 5001,
-      Scheme = "http",
-#else
-      Port = 5003,
-      Scheme = "https",
-#endif
     }.Uri;
 
     _client = httpClient;
@@ -134,13 +125,6 @@ public class HttpReverseRequester
     var uri = new UriBuilder(_uri)
     {
       Path = $"{_uri.AbsolutePath}/request/{_id}/{channelId}",
-#if USE_INSECURE_HTTP2
-      Port = 5001,
-      Scheme = "http",
-#else
-      Port = 5003,
-      Scheme = "https",
-#endif
     }.Uri;
 
     var request = new HttpRequestMessage(HttpMethod.Post, uri)
@@ -148,7 +132,7 @@ public class HttpReverseRequester
       Version = new Version(2, 0),
       VersionPolicy = HttpVersionPolicy.RequestVersionExact,
     };
-    request.Headers.Host = "lambdadispatch.local:5003";
+    request.Headers.Host = "lambdadispatch.local:5004";
     request.Headers.Add("X-Lambda-Id", _id);
     request.Headers.Add("X-Channel-Id", channelId);
     request.Headers.Add("Date", DateTime.UtcNow.ToString("R"));
@@ -493,20 +477,13 @@ public class HttpReverseRequester
       var uri = new UriBuilder(_dispatcherUrl)
       {
         Path = $"{_uri.AbsolutePath}/close/{_id}",
-#if USE_INSECURE_HTTP2
-        Port = 5001,
-        Scheme = "http",
-#else
-        Port = 5003,
-        Scheme = "https",
-#endif
       }.Uri;
       var request = new HttpRequestMessage(HttpMethod.Get, uri)
       {
         Version = new Version(2, 0),
         VersionPolicy = HttpVersionPolicy.RequestVersionExact,
       };
-      request.Headers.Host = "lambdadispatch.local:5003";
+      request.Headers.Host = "lambdadispatch.local:5004";
       request.Headers.Add("X-Lambda-Id", _id);
 
       using var response = await _client.SendAsync(request).ConfigureAwait(false);
@@ -533,20 +510,13 @@ public class HttpReverseRequester
     var uri = new UriBuilder(_uri)
     {
       Path = $"{_uri.AbsolutePath}/ping/{_id}",
-#if USE_INSECURE_HTTP2
-      Port = 5001,
-      Scheme = "http",
-#else
-      Port = 5003,
-      Scheme = "https",
-#endif
     }.Uri;
     var request = new HttpRequestMessage(HttpMethod.Get, uri)
     {
       Version = new Version(2, 0),
       VersionPolicy = HttpVersionPolicy.RequestVersionExact,
     };
-    request.Headers.Host = "lambdadispatch.local:5003";
+    request.Headers.Host = "lambdadispatch.local:5004";
     request.Headers.Add("X-Lambda-Id", _id);
 
     using var response = await _client.SendAsync(request).ConfigureAwait(false);

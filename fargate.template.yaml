@@ -72,14 +72,14 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
           PortMappings:
-            - ContainerPort: 5002  # Lambda ReverseRouter port
-              HostPort: 5002
-              Protocol: tcp
-            - ContainerPort: 5001 # IncomingRequest port
+            - ContainerPort: 5001  # Lambda ReverseRouter port
               HostPort: 5001
               Protocol: tcp
             - ContainerPort: 5003 # IncomingRequest port
               HostPort: 5003
+              Protocol: tcp
+            - ContainerPort: 5004 # IncomingRequest port
+              HostPort: 5004
               Protocol: tcp
 
   ECSFargateService:
@@ -101,7 +101,7 @@ Resources:
       DesiredCount: 1
       LoadBalancers:
         - ContainerName: lambda-dispatch-router
-          ContainerPort: 5002
+          ContainerPort: 5001
           TargetGroupArn: !Ref FargateTargetGroup
 
   ECSCluster:
@@ -122,16 +122,16 @@ Resources:
           DestinationPrefixListId: 'pl-7ba54012' # US East 2 S3 Prefix List
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 5002
-          ToPort: 5002
-          CidrIp: !GetAtt MyVPC.CidrBlock
-        - IpProtocol: tcp
           FromPort: 5001
           ToPort: 5001
           CidrIp: !GetAtt MyVPC.CidrBlock
         - IpProtocol: tcp
           FromPort: 5003
           ToPort: 5003
+          CidrIp: !GetAtt MyVPC.CidrBlock
+        - IpProtocol: tcp
+          FromPort: 5004
+          ToPort: 5004
           CidrIp: !GetAtt MyVPC.CidrBlock
 
   MyVPC:
@@ -395,7 +395,7 @@ Resources:
     DependsOn: ECSFargateLoadBalancer
     Properties:
       HealthCheckPath: /health
-      Port: 5002
+      Port: 5001
       Protocol: HTTP
       VpcId: !Ref MyVPC
       TargetType: ip

@@ -4,9 +4,9 @@ services:
     image: public.ecr.aws/e4p3x8r3/lambda-dispatch-router-dev:pr-62
     # platform: linux/amd64
     ports:
-      - 5002:5002
       - 5001:5001
       - 5003:5003
+      - 5004:5004
     networks:
       - mynetwork
     environment:

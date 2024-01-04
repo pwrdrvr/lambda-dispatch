@@ -28,9 +28,9 @@
 		"AWS_PROFILE": "pwrdrvr-ghpublic-admin"
 	}
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [5000, 5001],
+	// "forwardPorts": [5000, 5003],
 	// "portsAttributes": {
-	//		"5001": {
+	//		"5003": {
 	//			"protocol": "https"
 	//		}
 	// }

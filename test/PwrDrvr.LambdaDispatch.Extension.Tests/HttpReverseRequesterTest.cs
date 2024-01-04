@@ -13,7 +13,7 @@ public class HttpReverseRequesterTest
   public async Task GetRequest_ReturnsExpectedResult()
   {
     // Arrange
-    var expectedUri = new Uri("https://test.com:5003/api/chunked");
+    var expectedUri = new Uri("https://test.com:5004/api/chunked");
     var expectedResponse = new HttpResponseMessage(HttpStatusCode.OK)
     {
       Content = new StringContent(@"GET / HTTP/1.1

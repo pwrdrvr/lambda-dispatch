@@ -55,7 +55,7 @@ dotnet build -c Release --sc true --arch arm64
 ## Send an HTTP Request to the Router
 
 ```sh
-curl http://localhost:5002/fact
+curl http://localhost:5001/fact
 ```
 
 ## Deploy the ECR Template
@@ -260,7 +260,7 @@ AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS
 - `dotnet build -c Release`
 - Start the Router and Lambda following instructions above
 - Run a million requests at a time until `hey` reports that some of the requests timed out
-  - `hey -n 1000000 -c 1000000 http://localhost:5002/fact`
+  - `hey -n 1000000 -c 1000000 http://localhost:5001/fact`
 - After capturing the error, stop `tshark` with Ctrl-C then stop the Lambda and the Router with Ctrl-C
 - Run the commands below to capture packets
 - Run the command below to split the capture into multiple files:
@@ -279,5 +279,5 @@ cd captures
 # This will capture and decrypt the packets
 # The saved file will be enormous (it takes millions of requests to capture the error)
 # The log file will take several minutes to finish writing after the capture is complete
-tshark -i lo0 -f "tcp port 5003" -o "tls.keys_list:0.0.0.0,5003,http,../certs/lambdadispatch.local.key" -w proto-error.pcapng -P > protoerror.log
+tshark -i lo0 -f "tcp port 5004" -o "tls.keys_list:0.0.0.0,5004,http,../certs/lambdadispatch.local.key" -w proto-error.pcapng -P > protoerror.log
 ```
