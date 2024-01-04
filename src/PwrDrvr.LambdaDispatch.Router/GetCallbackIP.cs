@@ -12,6 +12,18 @@ public class GetCallbackIP
 
   static private ReaderWriterLockSlim rwLock = new();
 
+  static private string scheme = "https";
+
+  static private int port = 5004;
+
+  static public ValueTask<string> Init(int port, string scheme)
+  {
+    GetCallbackIP.port = port;
+    GetCallbackIP.scheme = scheme;
+
+    return Get();
+  }
+
   static public async ValueTask<string> Get()
   {
     // Once it is set, it is set, we don't have to lock
@@ -55,7 +67,7 @@ public class GetCallbackIP
           {
             if (network.GetProperty("NetworkMode").GetString() == "awsvpc")
             {
-              callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5003/api/chunked";
+              callbackUrl = $"{scheme}://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:{port}/api/chunked";
               return callbackUrl;
             }
           }
@@ -70,11 +82,7 @@ public class GetCallbackIP
         // Ignore
       }
 
-#if USE_INSECURE_HTTP2
-      callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5003/api/chunked";
-#else
-      callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5004/api/chunked";
-#endif
+      callbackUrl = $"{scheme}://{Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:{port}/api/chunked";
       return callbackUrl;
     }
     finally

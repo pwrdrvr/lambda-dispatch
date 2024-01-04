@@ -98,17 +98,8 @@ public class HttpReverseRequester
     _logger = logger ?? LoggerInstance.CreateLogger<HttpReverseRequester>();
     _id = id;
     _dispatcherUrl = dispatcherUrl;
-
-    // Change Proto and Port
     _uri = new UriBuilder(_dispatcherUrl)
     {
-#if USE_INSECURE_HTTP2
-      Port = 5003,
-      Scheme = "http",
-#else
-      Port = 5004,
-      Scheme = "https",
-#endif
     }.Uri;
 
     _client = httpClient;
@@ -134,13 +125,6 @@ public class HttpReverseRequester
     var uri = new UriBuilder(_uri)
     {
       Path = $"{_uri.AbsolutePath}/request/{_id}/{channelId}",
-#if USE_INSECURE_HTTP2
-      Port = 5003,
-      Scheme = "http",
-#else
-      Port = 5004,
-      Scheme = "https",
-#endif
     }.Uri;
 
     var request = new HttpRequestMessage(HttpMethod.Post, uri)
@@ -493,13 +477,6 @@ public class HttpReverseRequester
       var uri = new UriBuilder(_dispatcherUrl)
       {
         Path = $"{_uri.AbsolutePath}/close/{_id}",
-#if USE_INSECURE_HTTP2
-        Port = 5003,
-        Scheme = "http",
-#else
-        Port = 5004,
-        Scheme = "https",
-#endif
       }.Uri;
       var request = new HttpRequestMessage(HttpMethod.Get, uri)
       {
@@ -533,13 +510,6 @@ public class HttpReverseRequester
     var uri = new UriBuilder(_uri)
     {
       Path = $"{_uri.AbsolutePath}/ping/{_id}",
-#if USE_INSECURE_HTTP2
-      Port = 5003,
-      Scheme = "http",
-#else
-      Port = 5004,
-      Scheme = "https",
-#endif
     }.Uri;
     var request = new HttpRequestMessage(HttpMethod.Get, uri)
     {
