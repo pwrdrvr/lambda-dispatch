@@ -172,8 +172,6 @@ public class Function
 
             var lastWakeupTime = DateTime.Now;
 
-            _logger.LogDebug("Thread pool size: {ThreadCount}", ThreadPool.ThreadCount);
-
             // Log if we got a late arriving Invoke packet (delayed before us)
             if ((DateTime.Now - request.SentTime).TotalSeconds > 1)
             {
@@ -192,12 +190,6 @@ public class Function
             using var appHttpClient = new HttpClient();
 
             var NumberOfChannels = request.NumberOfChannels;
-
-            if (ThreadPool.ThreadCount < NumberOfChannels)
-            {
-                _logger.LogDebug("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
-                ThreadPool.SetMinThreads(NumberOfChannels * 2, NumberOfChannels * 2);
-            }
 
             CancellationTokenSource cts = new CancellationTokenSource();
 
