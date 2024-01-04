@@ -64,10 +64,10 @@ public class Program
             })
             .ConfigureWebHostDefaults(webBuilder =>
             {
-                // 5002 - incoming requests
-                // 5001 - lambda interface HTTP
-                // 5003 - lambda interface HTTPS
-                // webBuilder.UseUrls("http://0.0.0.0:5002", "http://0.0.0.0:5001", "https://0.0.0.0:5003");
+                // 5001 - incoming requests
+                // 5003 - lambda interface HTTP
+                // 5004 - lambda interface HTTPS
+                // webBuilder.UseUrls("http://0.0.0.0:5001", "http://0.0.0.0:5003", "https://0.0.0.0:5004");
                 webBuilder.ConfigureKestrel((context, serverOptions) =>
                 {
                     // We have to reparse the config once, bummer

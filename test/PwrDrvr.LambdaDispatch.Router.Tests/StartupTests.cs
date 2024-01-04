@@ -26,9 +26,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
         [Test]
         [Ignore("This test is not working")]
-        public async Task TestRequestToPort5002()
+        public async Task TestRequestToPort5001()
         {
-            _client.BaseAddress = new Uri("http://localhost:5002");
+            _client.BaseAddress = new Uri("http://localhost:5001");
             var response = await _client.GetAsync("/");
             response.EnsureSuccessStatusCode();
 
@@ -38,9 +38,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
         [Test]
         [Ignore("This test is not working")]
-        public async Task TestRequestToPort5001()
+        public async Task TestRequestToPort5003()
         {
-            _client.BaseAddress = new Uri("http://localhost:5001");
+            _client.BaseAddress = new Uri("http://localhost:5003");
             var response = await _client.GetAsync("/api/chunked");
             response.EnsureSuccessStatusCode();
 

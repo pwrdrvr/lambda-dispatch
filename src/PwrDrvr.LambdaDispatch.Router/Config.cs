@@ -62,9 +62,10 @@ public class Config : IConfig
   {
     FunctionName = string.Empty;
     MaxConcurrentCount = 10;
-    IncomingRequestHTTPPort = 5002;
-    IncomingRequestHTTPSPort = 5004;
-    ControlChannelHTTP2Port = 5003;
+    IncomingRequestHTTPPort = 5001;
+    IncomingRequestHTTPSPort = 5002;
+    // ControlChannelInsecureHTTP2Port = 5003;
+    ControlChannelHTTP2Port = 5004;
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)

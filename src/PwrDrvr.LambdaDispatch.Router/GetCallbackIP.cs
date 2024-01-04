@@ -55,7 +55,7 @@ public class GetCallbackIP
           {
             if (network.GetProperty("NetworkMode").GetString() == "awsvpc")
             {
-              callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5001/api/chunked";
+              callbackUrl = $"http://{network.GetProperty("IPv4Addresses").EnumerateArray().First().GetString()}:5003/api/chunked";
               return callbackUrl;
             }
           }
@@ -71,9 +71,9 @@ public class GetCallbackIP
       }
 
 #if USE_INSECURE_HTTP2
-      callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5001/api/chunked";
-#else
       callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5003/api/chunked";
+#else
+      callbackUrl = $"http://{System.Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? "127.0.0.1"}:5004/api/chunked";
 #endif
       return callbackUrl;
     }
