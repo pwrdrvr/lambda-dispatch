@@ -6,7 +6,6 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
-        await GetCallbackIP.Get().ConfigureAwait(false);
         CreateHostBuilder(args).Build().Run();
     }
 
@@ -37,10 +36,12 @@ public class Program
                 // config.AddJsonFile("appsettings.json", optional: true);
                 config.AddEnvironmentVariables(prefix: "LAMBDA_DISPATCH_");
             })
-            .ConfigureServices((hostContext, services) =>
+            .ConfigureServices(async (hostContext, services) =>
             {
                 var config = Config.CreateAndValidate(hostContext.Configuration);
                 services.AddSingleton<IConfig>(config);
+
+                await GetCallbackIP.Init(port: config.ControlChannelHTTP2Port, scheme: "https").ConfigureAwait(false);
             })
             .ConfigureLogging(logging =>
             {
@@ -70,7 +71,7 @@ public class Program
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
 #if USE_INSECURE_HTTP2
-                    serverOptions.ListenLocalhost(config.ControlChannelHTTPPort, o => o.Protocols = HttpProtocols.Http2);
+                    serverOptions.ListenLocalhost(config.IncomingRequestHTTPPort, o => o.Protocols = HttpProtocols.Http2);
 #endif
                     serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
                     serverOptions.ListenAnyIP(config.ControlChannelHTTP2Port, listenOptions =>

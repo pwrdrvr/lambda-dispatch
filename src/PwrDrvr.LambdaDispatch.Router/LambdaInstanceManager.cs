@@ -20,6 +20,10 @@ public interface ILambdaInstanceManager
 
   Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false);
 
+#if DEBUG
+  void DebugAddInstance(string instanceId);
+#endif
+
   Task UpdateDesiredCapacity(int pendingRequests, int runningRequests);
 
   void CloseInstance(ILambdaInstance instance);
@@ -185,11 +189,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var pendingRequests = message.PendingRequests;
         var runningRequests = message.RunningRequests;
 
-        _logger.LogDebug("UpdateDesiredCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+        _logger.LogDebug("ManageCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
         var desiredInstanceCount = ComputeDesiredInstanceCount(pendingRequests, runningRequests);
 
-        _logger.LogDebug("UpdateDesiredCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+        _logger.LogDebug("ManageCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
         // Try to set the new desired count
         // Because we own setting this value we can do a simple compare and swap
@@ -198,14 +202,14 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // Start instances if needed
         while (_runningInstanceCount + _startingInstanceCount < desiredInstanceCount)
         {
-          _logger.LogDebug("UpdateDesiredCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+          _logger.LogDebug("ManageCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
           // Start a new instance
           await StartNewInstance();
         }
 
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
 
-        _logger.LogDebug("UpdateDesiredCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+        _logger.LogDebug("ManageCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
       }
       catch (OperationCanceledException)
       {
@@ -245,7 +249,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           {
             // We have no instances to close
             // This can happen if all instances are busy and we're starting a lot of new instances to replace them
-            _logger.LogError("UpdateDesiredCapacity - No instances to close - _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+            _logger.LogError("ManageCapacity - No instances to close - _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
             break;
           }
         }
@@ -274,6 +278,33 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       RunningRequests = runningRequests
     });
   }
+
+#if DEBUG
+  public void DebugAddInstance(string instanceId)
+  {
+    // Start a new LambdaInstance and add it to the list
+    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier);
+
+    instance.FakeStart(instanceId);
+
+    // Add the instance to the collection
+    if (!_instances.TryAdd(instance.Id, instance))
+    {
+      _logger.LogInformation("LambdaInstance {instanceId} fake already open", instance.Id);
+      return;
+    }
+
+    _logger.LogInformation("LambdaInstance {instanceId} fake opened", instance.Id);
+
+    // We need to keep track of how many Lambdas are running
+    // We will replace this one if it's still desired
+    Interlocked.Increment(ref _runningInstanceCount);
+    MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+
+    // Add the instance to the least outstanding queue
+    _leastOutstandingQueue.AddInstance(instance);
+  }
+#endif
 
   /// <summary>
   /// Start a new LambdaInstance and increment the desired count
