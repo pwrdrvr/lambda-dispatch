@@ -20,7 +20,7 @@ public interface ILambdaInstanceManager
 
   Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false);
 
-#if DEBUG
+#if TEST_RUNNERS
   void DebugAddInstance(string instanceId);
 #endif
 
@@ -279,7 +279,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     });
   }
 
-#if DEBUG
+#if TEST_RUNNERS
   public void DebugAddInstance(string instanceId)
   {
     // Start a new LambdaInstance and add it to the list
@@ -290,7 +290,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))
     {
-      _logger.LogInformation("LambdaInstance {instanceId} fake already open", instance.Id);
+      _logger.LogDebug("LambdaInstance {instanceId} fake already open", instance.Id);
       return;
     }
 

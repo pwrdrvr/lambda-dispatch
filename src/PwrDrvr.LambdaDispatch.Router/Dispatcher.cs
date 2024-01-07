@@ -145,7 +145,7 @@ public class Dispatcher
       return result;
     }
 
-#if DEBUG
+#if TEST_RUNNERS
     if (lambdaId.StartsWith("test"))
     {
       _lambdaInstanceManager.DebugAddInstance(lambdaId);

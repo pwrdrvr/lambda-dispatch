@@ -8,6 +8,10 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(TestRunners)' == 'true'">
+    <DefineConstants>TEST_RUNNERS</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="App.Metrics" Version="4.3.0" />
     <PackageReference Include="App.Metrics.Reporting.Console" Version="4.3.0" />

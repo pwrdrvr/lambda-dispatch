@@ -470,7 +470,7 @@ public class LambdaInstance : ILambdaInstance
     // their in flight request is finished
   }
 
-#if DEBUG
+#if TEST_RUNNERS
   public void FakeStart(string instanceId)
   {
     State = LambdaInstanceState.Starting;
