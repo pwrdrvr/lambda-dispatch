@@ -9,7 +9,11 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TestRunners)' == 'true'">
-    <DefineConstants>TEST_RUNNERS</DefineConstants>
+    <DefineConstants>$(DefineConstants);TEST_RUNNERS</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(UseInsecureHttp2)' == 'true'">
+    <DefineConstants>$(DefineConstants);USE_INSECURE_HTTP2</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

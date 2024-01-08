@@ -22,6 +22,7 @@
         "build",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary;ForceNoAlign",
+        "/property:TestRunners=true",
         "/property:DefineConstants=USE_INSECURE_HTTP2"
       ],
       "problemMatcher": "$msCompile"

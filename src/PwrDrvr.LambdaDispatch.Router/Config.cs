@@ -58,13 +58,15 @@ public class Config : IConfig
 
   public int ControlChannelHTTP2Port { get; set; }
 
+  public int ControlChannelInsecureHTTP2Port { get; set; }
+
   public Config()
   {
     FunctionName = string.Empty;
     MaxConcurrentCount = 10;
     IncomingRequestHTTPPort = 5001;
     IncomingRequestHTTPSPort = 5002;
-    // ControlChannelInsecureHTTP2Port = 5003;
+    ControlChannelInsecureHTTP2Port = 5003;
     ControlChannelHTTP2Port = 5004;
   }
 
