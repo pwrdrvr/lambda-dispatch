@@ -244,6 +244,9 @@ public class HttpReverseRequester
       }
       else if (firstLine.StartsWith("GOAWAY"))
       {
+        //
+        // TODO: Remove this after 2024-01-09 (use new way below with reserved path)
+        //
         _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
         // Clean up
         // Indicate that we don't need the response body anymore
@@ -262,6 +265,18 @@ public class HttpReverseRequester
       receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
       receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
       receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
+
+      if (partsOfFirstLine[1] == "/_lambda_dispatch/goaway")
+      {
+        _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+        // Clean up
+        // Indicate that we don't need the response body anymore
+        try { response.Content.Dispose(); } catch { }
+        // Close the request body
+        try { requestStreamForResponse.Close(); } catch { }
+        try { duplexContent?.Complete(); } catch { }
+        return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
+      }
 
       // Start processing the rest of the headers from the character after '\n'
       int startOfNextLine = endOfStatusLine + 1;
