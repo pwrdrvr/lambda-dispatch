@@ -41,7 +41,7 @@ RUN rm out/libicu* || true
 FROM public.ecr.aws/lambda/provided:al2023
 
 # Copy the bootstrap executable
-COPY --from=build-env /app/out/bootstrap ./bootstrap
+COPY --from=build-env /app/out/bootstrap /lambda-dispatch
 
 # Set the entrypoint
-ENTRYPOINT ["./bootstrap"]
+ENTRYPOINT ["/lambda-dispatch"]
