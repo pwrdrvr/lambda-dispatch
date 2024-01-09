@@ -244,6 +244,9 @@ public class HttpReverseRequester
       }
       else if (firstLine.StartsWith("GOAWAY"))
       {
+        //
+        // TODO: Remove this after 2024-01-09 (use new way below with reserved path)
+        //
         _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
         // Clean up
         // Indicate that we don't need the response body anymore
@@ -262,6 +265,18 @@ public class HttpReverseRequester
       receivedRequest.Method = new HttpMethod(partsOfFirstLine[0]);
       receivedRequest.RequestUri = new Uri(partsOfFirstLine[1], UriKind.Relative);
       receivedRequest.Version = new Version(partsOfFirstLine[2].Split('/')[1]);
+
+      if (partsOfFirstLine[1] == "/_lambda_dispatch/goaway")
+      {
+        _logger.LogDebug("CLOSING - Got a GOAWAY instead of a request line on LambdaId: {id}, ChannelId: {channelId}", _id, channelId);
+        // Clean up
+        // Indicate that we don't need the response body anymore
+        try { response.Content.Dispose(); } catch { }
+        // Close the request body
+        try { requestStreamForResponse.Close(); } catch { }
+        try { duplexContent?.Complete(); } catch { }
+        return ((int)HttpStatusCode.Conflict, null!, null!, null!, null!);
+      }
 
       // Start processing the rest of the headers from the character after '\n'
       int startOfNextLine = endOfStatusLine + 1;
@@ -483,7 +498,7 @@ public class HttpReverseRequester
         Version = new Version(2, 0),
         VersionPolicy = HttpVersionPolicy.RequestVersionExact,
       };
-      request.Headers.Host = "lambdadispatch.local:5004";
+      request.Headers.Host = $"lambdadispatch.local:{_uri.Port}";
       request.Headers.Add("X-Lambda-Id", _id);
 
       using var response = await _client.SendAsync(request).ConfigureAwait(false);
@@ -506,32 +521,40 @@ public class HttpReverseRequester
 
   public async Task<bool> Ping()
   {
-    _logger.LogDebug("Starting ping of instance: {id}", _id);
-    var uri = new UriBuilder(_uri)
+    try
     {
-      Path = $"{_uri.AbsolutePath}/ping/{_id}",
-    }.Uri;
-    var request = new HttpRequestMessage(HttpMethod.Get, uri)
-    {
-      Version = new Version(2, 0),
-      VersionPolicy = HttpVersionPolicy.RequestVersionExact,
-    };
-    request.Headers.Host = "lambdadispatch.local:5004";
-    request.Headers.Add("X-Lambda-Id", _id);
+      _logger.LogDebug("Starting ping of instance: {id}", _id);
+      var uri = new UriBuilder(_uri)
+      {
+        Path = $"{_uri.AbsolutePath}/ping/{_id}",
+      }.Uri;
+      var request = new HttpRequestMessage(HttpMethod.Get, uri)
+      {
+        Version = new Version(2, 0),
+        VersionPolicy = HttpVersionPolicy.RequestVersionExact,
+      };
+      request.Headers.Host = $"lambdadispatch.local:{_uri.Port}";
+      request.Headers.Add("X-Lambda-Id", _id);
 
-    using var response = await _client.SendAsync(request).ConfigureAwait(false);
+      using var response = await _client.SendAsync(request).ConfigureAwait(false);
 
-    if (response.StatusCode != HttpStatusCode.OK)
-    {
-      _logger.LogError("Error pinging instance: {id}, {statusCode}", _id, response.StatusCode);
-      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
-      return false;
+      if (response.StatusCode != HttpStatusCode.OK)
+      {
+        _logger.LogError("Error pinging instance: {id}, {statusCode}", _id, response.StatusCode);
+        try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+        return false;
+      }
+      else
+      {
+        _logger.LogDebug("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
+        try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+        return true;
+      }
     }
-    else
+    catch (Exception ex)
     {
-      _logger.LogDebug("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
-      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
-      return true;
+      _logger.LogError("Error pinging instance: {id}, {message}", _id, ex.Message);
+      return false;
     }
   }
 }

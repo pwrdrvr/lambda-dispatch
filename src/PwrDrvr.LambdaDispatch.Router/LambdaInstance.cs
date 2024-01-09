@@ -470,6 +470,18 @@ public class LambdaInstance : ILambdaInstance
     // their in flight request is finished
   }
 
+#if TEST_RUNNERS
+  public void FakeStart(string instanceId)
+  {
+    State = LambdaInstanceState.Starting;
+    signaledStarting = 1;
+    State = LambdaInstanceState.Open;
+    WasOpened = true;
+    Id = instanceId;
+    // OnOpen?.Invoke(this);
+  }
+#endif
+
   /// <summary>
   /// Invoke the Lambda, which should cause it to connect back to us
   /// We do not count the connection as available until it connects back to us

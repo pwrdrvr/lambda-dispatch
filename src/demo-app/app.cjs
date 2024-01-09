@@ -5,6 +5,7 @@ import { promisify } from "util";
 import path from "path";
 import spdy from "spdy";
 import fs from "fs";
+import http2 from "http2";
 
 const sleep = promisify(setTimeout);
 
@@ -176,10 +177,37 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     cert: fs.readFileSync(certPath),
   };
 
-  const server = spdy.createServer(options, app);
+  const server = spdy.createServer({ ...options }, app);
 
   server.listen(spdyPort, () => {
-    console.log(`App listening at https://localhost:${spdyPort}`);
+    console.log(`App listening on HTTP2 at https://localhost:${spdyPort}`);
+  });
+
+  const spdyInsecurePort = 3002;
+  const serverInsecure = http2.createSecureServer(
+    { ...options },
+    (req, res) => {
+      res.writeHead(200, { "Content-Type": req.headers["content-type"] });
+      res.write("\r\n");
+      req.on("data", (chunk) => {
+        // Print each body chunk as hex and possibly UTF-8 text
+        console.log(
+          `${new Date().toISOString()} Contained App - Received chunk: ${chunk.toString(
+            "hex"
+          )}`
+        );
+        res.write(chunk);
+      });
+      req.on("end", () => {
+        res.end();
+      });
+    }
+  );
+
+  serverInsecure.listen(spdyInsecurePort, () => {
+    console.log(
+      `App listening on HTTP2 at http://localhost:${spdyInsecurePort}`
+    );
   });
 } else {
   console.log("Certificate or key file not found. HTTP/2 server not started.");

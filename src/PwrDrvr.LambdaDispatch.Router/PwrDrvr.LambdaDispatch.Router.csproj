@@ -8,6 +8,14 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(TestRunners)' == 'true'">
+    <DefineConstants>$(DefineConstants);TEST_RUNNERS</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(UseInsecureHttp2)' == 'true'">
+    <DefineConstants>$(DefineConstants);USE_INSECURE_HTTP2</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="App.Metrics" Version="4.3.0" />
     <PackageReference Include="App.Metrics.Reporting.Console" Version="4.3.0" />

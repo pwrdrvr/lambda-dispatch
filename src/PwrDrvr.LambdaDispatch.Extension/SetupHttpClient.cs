@@ -1,6 +1,3 @@
-// #define USE_SOCKETS_HTTP_HANDLER
-// #define USE_INSECURE_CIPHER_FOR_WIRESHARK
-
 #if USE_SOCKETS_HTTP_HANDLER
 using System.Net.Security;
 #endif

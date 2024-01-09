@@ -28,7 +28,10 @@
     <IncludeSystemTextJsonSourceGenerator>true</IncludeSystemTextJsonSourceGenerator>
   </PropertyGroup>
   <PropertyGroup Condition="'$(NativeAot)' == 'true'">
-    <DefineConstants>NATIVE_AOT,SKIP_METRICS</DefineConstants>
+    <DefineConstants>$(DefineConstants);NATIVE_AOT,SKIP_METRICS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(UseInsecureHttp2)' == 'true'">
+    <DefineConstants>$(DefineConstants);USE_INSECURE_HTTP2</DefineConstants>
   </PropertyGroup>
   <!-- Use a pattern like this if testing a locally compiled version of a dotnet/runtime library -->
   <!-- <ItemGroup>

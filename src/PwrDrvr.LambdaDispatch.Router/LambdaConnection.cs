@@ -102,8 +102,7 @@ public class LambdaConnection
     // as 200 if this connection was in the queue
     // There will either be no subsequent connection or it will
     // get immediately rejected with a 409
-    // Response.StatusCode = 409;
-    await Response.WriteAsync($"GOAWAY\r\nDiscarding connection for X-Lambda-Id: {Instance.Id}, X-Channel-Id: {ChannelId}, closing\r\n");
+    await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n");
     await Response.CompleteAsync();
     try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
 

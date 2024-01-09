@@ -145,6 +145,13 @@ public class Dispatcher
       return result;
     }
 
+#if TEST_RUNNERS
+    if (lambdaId.StartsWith("test"))
+    {
+      _lambdaInstanceManager.DebugAddInstance(lambdaId);
+    }
+#endif
+
     if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId))
     {
       _logger.LogError("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
