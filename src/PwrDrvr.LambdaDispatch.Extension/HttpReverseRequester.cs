@@ -498,7 +498,7 @@ public class HttpReverseRequester
         Version = new Version(2, 0),
         VersionPolicy = HttpVersionPolicy.RequestVersionExact,
       };
-      request.Headers.Host = "lambdadispatch.local:5004";
+      request.Headers.Host = $"lambdadispatch.local:{_uri.Port}";
       request.Headers.Add("X-Lambda-Id", _id);
 
       using var response = await _client.SendAsync(request).ConfigureAwait(false);
@@ -521,32 +521,40 @@ public class HttpReverseRequester
 
   public async Task<bool> Ping()
   {
-    _logger.LogDebug("Starting ping of instance: {id}", _id);
-    var uri = new UriBuilder(_uri)
+    try
     {
-      Path = $"{_uri.AbsolutePath}/ping/{_id}",
-    }.Uri;
-    var request = new HttpRequestMessage(HttpMethod.Get, uri)
-    {
-      Version = new Version(2, 0),
-      VersionPolicy = HttpVersionPolicy.RequestVersionExact,
-    };
-    request.Headers.Host = "lambdadispatch.local:5004";
-    request.Headers.Add("X-Lambda-Id", _id);
+      _logger.LogDebug("Starting ping of instance: {id}", _id);
+      var uri = new UriBuilder(_uri)
+      {
+        Path = $"{_uri.AbsolutePath}/ping/{_id}",
+      }.Uri;
+      var request = new HttpRequestMessage(HttpMethod.Get, uri)
+      {
+        Version = new Version(2, 0),
+        VersionPolicy = HttpVersionPolicy.RequestVersionExact,
+      };
+      request.Headers.Host = $"lambdadispatch.local:{_uri.Port}";
+      request.Headers.Add("X-Lambda-Id", _id);
 
-    using var response = await _client.SendAsync(request).ConfigureAwait(false);
+      using var response = await _client.SendAsync(request).ConfigureAwait(false);
 
-    if (response.StatusCode != HttpStatusCode.OK)
-    {
-      _logger.LogError("Error pinging instance: {id}, {statusCode}", _id, response.StatusCode);
-      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
-      return false;
+      if (response.StatusCode != HttpStatusCode.OK)
+      {
+        _logger.LogError("Error pinging instance: {id}, {statusCode}", _id, response.StatusCode);
+        try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+        return false;
+      }
+      else
+      {
+        _logger.LogDebug("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
+        try { await response.Content.CopyToAsync(Stream.Null); } catch { }
+        return true;
+      }
     }
-    else
+    catch (Exception ex)
     {
-      _logger.LogDebug("Pinged instance: {id}, {statusCode}", _id, response.StatusCode);
-      try { await response.Content.CopyToAsync(Stream.Null); } catch { }
-      return true;
+      _logger.LogError("Error pinging instance: {id}, {message}", _id, ex.Message);
+      return false;
     }
   }
 }
