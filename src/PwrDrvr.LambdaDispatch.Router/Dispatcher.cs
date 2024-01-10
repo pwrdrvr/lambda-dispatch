@@ -116,8 +116,8 @@ public class Dispatcher
     // Add the request to the pending queue
     var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
     _pendingRequests.Enqueue(pendingRequest);
-    _pendingRequestSignal.Writer.TryWrite(1);
     Interlocked.Increment(ref _pendingRequestCount);
+    _pendingRequestSignal.Writer.TryWrite(1);
     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
 
     // Update number of instances that we want
@@ -179,8 +179,8 @@ public class Dispatcher
       {
         _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
         _pendingRequests.Enqueue(pendingRequest);
-        _pendingRequestSignal.Writer.TryWrite(1);
         Interlocked.Increment(ref _pendingRequestCount);
+        _pendingRequestSignal.Writer.TryWrite(1);
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.PendingDispatchCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.PendingDispatchForegroundCount);
@@ -256,8 +256,9 @@ public class Dispatcher
 
         // Loop quickly until we dispatch the item that we got a signal for
         // The item can be consumed by an incoming lambda connection, so it might not be there
+        // We will spin up to 5 seconds to dispatch one, then we will go back to the 1 second loop
         var tryCount = 0;
-        while (!await TryBackgroundDispatchOne() && tryCount++ < 10)
+        while (!await TryBackgroundDispatchOne() && tryCount++ < 500)
         {
           _logger.LogDebug("BackgroundPendingRequestDispatcher - Could not dispatch one, trying again");
 
@@ -285,7 +286,7 @@ public class Dispatcher
   {
     // If there should be pending requests, try to get a connection then grab a request
     // If we can't get a pending request, put the connection back
-    while (_pendingRequestCount > 0)
+    if (_pendingRequestCount > 0)
     {
       // Try to get a connection
       if (!_lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
@@ -314,7 +315,6 @@ public class Dispatcher
         Interlocked.Decrement(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
 
-        // Try to get a connection and process the request
         Interlocked.Increment(ref _runningRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
