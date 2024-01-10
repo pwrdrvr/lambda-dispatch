@@ -222,6 +222,58 @@ public class LeastOutstandingQueue : IDisposable
       }
     }
 
+    // Slower case: look through the full instances
+    // This happens because of a race condition with adding instances and requests
+    // but only when there are very few instances relative to the number of requests
+    foreach (var lambdaId in fullInstances.Keys)
+    {
+      // Get the instance
+      if (!fullInstances.TryRemove(lambdaId, out var instance))
+      {
+        // The instance is gone, so move on
+        continue;
+      }
+
+      if (instance.State != LambdaInstanceState.Open)
+      {
+        // The instance is not open so drop it on the floor and move on
+        continue;
+      }
+
+      if (instance.AvailableConnectionCount <= 0)
+      {
+        // The instance is full, so we'll put it back in the full instances
+        fullInstances.TryAdd(instance.Id, instance);
+        continue;
+      }
+
+      // Note: this is the only time we own this instance
+      // Once we put it back in a queue it's mutable by other threads
+      // Get a connection from the instance
+      if (!instance.TryGetConnection(out var dequeuedConnection))
+      {
+        // The instance is actually full so put it back
+        fullInstances.TryAdd(instance.Id, instance);
+        continue;
+      }
+
+      // We got a connection
+      connection = dequeuedConnection;
+
+      if (instance.AvailableConnectionCount <= 0 || instance.OutstandingRequestCount >= maxConcurrentCount)
+      {
+        // The instance is full, so we'll put it back in the full instances
+        fullInstances.TryAdd(instance.Id, instance);
+      }
+      else
+      {
+        // The instance has available connections, so put it in the correct queue
+        availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+      }
+
+      return true;
+    }
+
     // If we get here it's the degenerate case where all instances are full
     // We'll return nothing and let this get put in the request queue
     // The dispatcher will start looking through the full instances
@@ -300,18 +352,14 @@ public class LeastOutstandingQueue : IDisposable
             continue;
           }
 
-          if (instance.AvailableConnectionCount <= 0)
+          if (instance.AvailableConnectionCount <= 0 || instance.OutstandingRequestCount >= maxConcurrentCount)
           {
             // The instance is full, so we'll put it in the full instances
             fullInstances.TryAdd(instance.Id, instance);
             continue;
           }
 
-          // Note: this is the only time we own this instance
-          // Once we put it back in a queue it's mutable by other threads
-
-          // The instance is not going to be full after we dispatch to it
-          // So we can put it back in the queue
+          // The instance has available connections, so put it in the correct queue
           availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
         }
       }
@@ -320,38 +368,34 @@ public class LeastOutstandingQueue : IDisposable
       foreach (var lambdaId in fullInstances.Keys)
       {
         // Get the instance
-        if (!fullInstances.TryGetValue(lambdaId, out var instance))
+        if (!fullInstances.TryRemove(lambdaId, out var instance))
         {
-          // The instance is gone, so we'll drop it on the floor and move on
+          // The instance is gone, so move on
           continue;
         }
 
         if (instance.State != LambdaInstanceState.Open)
         {
-          // The instance is not open so remove it from the full instances
-          fullInstances.TryRemove(instance.Id, out var _);
+          // The instance is not open so drop it on the floor and move on
           continue;
         }
 
-        if (instance.AvailableConnectionCount <= 0)
+        if (instance.AvailableConnectionCount <= 0 || instance.OutstandingRequestCount >= maxConcurrentCount)
         {
           // The instance is full, so we'll put it back in the full instances
           fullInstances.TryAdd(instance.Id, instance);
-          continue;
         }
-
-        // Note: this is the only time we own this instance
-        // Once we put it back in a queue it's mutable by other threads
-
-        // The instance is not going to be full after we dispatch to it
-        // So we can put it back in the queue
-        availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+        else
+        {
+          // The instance has available connections, so put it in the correct queue
+          availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
+        }
       }
 
       // Wait for a short period before checking again
       try
       {
-        await Task.Delay(TimeSpan.FromMilliseconds(1000), cancellationTokenSource.Token).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationTokenSource.Token).ConfigureAwait(false);
       }
       catch (TaskCanceledException)
       {
