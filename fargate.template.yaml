@@ -76,13 +76,13 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
           PortMappings:
-            - ContainerPort: 5001  # Lambda ReverseRouter port
+            - ContainerPort: 5001  # Incoming Insecure (HTTP) Request Port
               HostPort: 5001
               Protocol: tcp
-            - ContainerPort: 5003 # IncomingRequest port
+            - ContainerPort: 5003 # Control Channel Insecure (HTTP2) Port
               HostPort: 5003
               Protocol: tcp
-            - ContainerPort: 5004 # IncomingRequest port
+            - ContainerPort: 5004 # Control Channel Secure (HTTP2) Port
               HostPort: 5004
               Protocol: tcp
 
