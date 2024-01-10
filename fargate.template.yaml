@@ -49,8 +49,8 @@ Resources:
         - FARGATE
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskExecutionRole.Arn
-      Cpu: '256'
-      Memory: '512'
+      Cpu: '1024'
+      Memory: '2048'
       RuntimePlatform:
         CpuArchitecture: 'ARM64'
         OperatingSystemFamily: 'LINUX'
@@ -61,6 +61,8 @@ Resources:
           Environment:
             - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
               Value: "6"
+            - Name: CONCURRENT_REQUESTS_PER_LAMBDA
+              Value: "5"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -412,6 +414,11 @@ Resources:
         - AttributeName: id
           KeyType: HASH
 
+  LambdaS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: pwrdrvr-lambdadispatch-demo
+
   LambdaLBExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -456,6 +463,14 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: arn:aws:logs:*:*:*
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${LambdaS3Bucket}/*'
 
   LambdaLBSG:
     Type: AWS::EC2::SecurityGroup
@@ -470,6 +485,8 @@ Resources:
           CidrIp: !GetAtt MyVPC.CidrBlock
         - IpProtocol: '-1'
           DestinationPrefixListId: 'pl-4ca54025' # US East 2 DynamoDB Prefix List
+        - IpProtocol: '-1'
+          DestinationPrefixListId: 'pl-7ba54012' # US East 2 S3 Prefix List
 
   LambdaLB:
     Type: AWS::Lambda::Function

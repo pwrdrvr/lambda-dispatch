@@ -4,6 +4,14 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 
+
+public struct LambdaInstanceCapacityMessage
+{
+  public int PendingRequests { get; set; }
+  public int RunningRequests { get; set; }
+}
+
+
 public class LambdaInstanceManager
 {
   private readonly ILogger<LambdaInstanceManager> _logger = LoggerInstance.CreateLogger<LambdaInstanceManager>();
@@ -102,12 +110,6 @@ public class LambdaInstanceManager
     return null;
   }
 
-  private struct LambdaInstanceCapacityMessage
-  {
-    public int PendingRequests { get; set; }
-    public int RunningRequests { get; set; }
-  }
-
   private Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(1)
   {
     FullMode = BoundedChannelFullMode.DropOldest
@@ -121,7 +123,6 @@ public class LambdaInstanceManager
 
     // Calculate the desired count
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-    // TODO: Load the 2x factor from the configuration
     var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
 
     // Special case for 0 pending or running requests

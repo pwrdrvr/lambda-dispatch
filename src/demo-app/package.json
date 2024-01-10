@@ -15,10 +15,11 @@
   "author": "PwrDrvr LLC",
   "license": "UNLICENSED",
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.476.0",
+    "@aws-sdk/client-dynamodb": "3.484.0",
+    "@aws-sdk/client-s3": "3.484.0",
     "@h4ad/serverless-adapter": "4.0.1",
-    "express": "^4.18.2",
-    "spdy": "^4.0.2"
+    "express": "4.18.2",
+    "spdy": "4.0.2"
   },
   "devDependencies": {
     "esbuild": "0.19.10"

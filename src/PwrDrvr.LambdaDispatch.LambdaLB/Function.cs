@@ -62,11 +62,12 @@ public class Function
             e.Cancel = true;
         };
 
-        _logger.LogInformation("Lambda Started");
+        _logger.LogInformation("Lambda Starting");
         if (!_staticResponse)
         {
+            _logger.LogInformation("Contained App - Starting");
             await StartChildApp().ConfigureAwait(false);
-            _logger.LogInformation("Contained App Started");
+            _logger.LogInformation("Contained App - Started");
         }
         else
         {
@@ -116,30 +117,32 @@ public class Function
         startApp.Environment.Remove("AWS_SESSION_TOKEN");
 #endif
         var process = Process.Start(startApp);
-        // await process.WaitForExitAsync();
 
         // Poll the health endpoint
         using var client = new HttpClient();
         var healthCheckUrl = "http://localhost:3000/health";
-        HttpResponseMessage response = null;
         do
         {
             try
             {
-                response = await client.GetAsync(healthCheckUrl).ConfigureAwait(false);
+                var response = await client.GetAsync(healthCheckUrl).ConfigureAwait(false);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
+                    _logger.LogInformation("Contained App - Got OK result");
                     break;
                 }
             }
             catch (HttpRequestException)
             {
                 // Ignore exceptions caused by the server not being ready
+                _logger.LogInformation("Contained App - Healthcheck failed");
             }
 
-            await Task.Delay(1000).ConfigureAwait(false); // Wait for a second before polling again
+            await Task.Delay(250).ConfigureAwait(false); // Wait for a second before polling again
         }
         while (true);
+
+        _logger.LogInformation("Contained App - App started");
     }
 
     /// <summary>
@@ -188,11 +191,11 @@ public class Function
 
             var NumberOfChannels = request.NumberOfChannels;
 
-            if (ThreadPool.ThreadCount < NumberOfChannels)
-            {
-                _logger.LogDebug("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
-                ThreadPool.SetMinThreads(NumberOfChannels * 2, NumberOfChannels * 2);
-            }
+            // if (ThreadPool.ThreadCount < NumberOfChannels)
+            // {
+            //     _logger.LogDebug("Increasing thread pool size to {NumberOfChannels}", NumberOfChannels);
+            //     ThreadPool.SetMinThreads(NumberOfChannels, NumberOfChannels);
+            // }
 
             CancellationTokenSource cts = new CancellationTokenSource();
 

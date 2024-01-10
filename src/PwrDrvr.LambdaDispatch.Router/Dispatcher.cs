@@ -40,7 +40,8 @@ public class Dispatcher
 {
   private readonly ILogger<Dispatcher> _logger;
 
-  private readonly LambdaInstanceManager _lambdaInstanceManager = new(10);
+  // TODO: Make the number of concurrent requests configurable
+  private readonly LambdaInstanceManager _lambdaInstanceManager;
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
@@ -56,6 +57,14 @@ public class Dispatcher
     _logger = logger;
     _logger.LogDebug("Dispatcher created");
 
+    var concurrentRequestsPerLambda = Environment.GetEnvironmentVariable("CONCURRENT_REQUESTS_PER_LAMBDA");
+    if (string.IsNullOrWhiteSpace(concurrentRequestsPerLambda)
+        || !int.TryParse(concurrentRequestsPerLambda, out int concurrentRequests))
+    {
+      concurrentRequests = 10; // Default value
+    }
+
+    _lambdaInstanceManager = new LambdaInstanceManager(concurrentRequests);
     // Start the background task to process pending requests
     Task.Run(BackgroundPendingRequestDispatcher);
   }

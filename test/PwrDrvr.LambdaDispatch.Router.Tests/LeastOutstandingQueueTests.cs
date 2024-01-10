@@ -114,6 +114,14 @@ namespace PwrDrvr.LambdaDispatch.Tests
 
       Assert.IsTrue(result);
       Assert.IsNotNull(dequeuedConnection);
+
+      // Getting another instance should fail
+      instance.Setup(i => i.OutstandingRequestCount).Returns(1);
+      instance.Setup(i => i.TryGetConnection(out connectionObject)).Returns(false);
+      result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
+
+      Assert.IsFalse(result);
+      Assert.IsNull(dequeuedConnection);
     }
 
     [Test]
