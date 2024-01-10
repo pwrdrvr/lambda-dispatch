@@ -29,11 +29,13 @@ FROM public.ecr.aws/lambda/nodejs:20
 
 # Copy the build output from the build environment
 # This is a self-contained single binary file
-COPY --from=extension /var/task/bootstrap .
+COPY --from=extension /lambda-dispatch /opt/extensions/lambda-dispatch
 
 # Copy the node.js app
+# WORKDIR ${LAMBDA_TASK_ROOT}
+
 COPY --from=node-build-env /app/dist/ dist/
-COPY --from=node-build-env /app/startapp.sh ./
+# COPY --from=node-build-env /app/startapp.sh ./
 
 # Set the entrypoint
-ENTRYPOINT ["./bootstrap"]
+ENTRYPOINT ["node", "dist/app.cjs"]

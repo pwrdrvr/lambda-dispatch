@@ -62,12 +62,17 @@ public class Function
             e.Cancel = true;
         };
 
-        _logger.LogInformation("Lambda Starting");
+        _logger.LogDebug("Lambda Extension Registering");
+        // The Extension API will not return so we cannot await this
+        await RegisterLambdaExtension().ConfigureAwait(false);
+        _logger.LogDebug("Lambda Extension Registered");
+
         if (!_staticResponse)
         {
-            _logger.LogInformation("Contained App - Starting");
-            await StartChildApp().ConfigureAwait(false);
-            _logger.LogInformation("Contained App - Started");
+            _logger.LogDebug("Contained App - Skipping Startup, Waiting for Healthy");
+            // Wait for the health endpoint to return OK
+            await AwaitChildAppHealthy().ConfigureAwait(false);
+            _logger.LogInformation("Contained App - Healthy");
         }
         else
         {
@@ -79,11 +84,92 @@ public class Function
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
-        await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
-            .Build()
-            .RunAsync(ctsShutdown.Token);
 
-        _logger.LogInformation("Returning from main");
+        try
+        {
+            await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
+                .Build()
+                .RunAsync(ctsShutdown.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Exception caught in LambdaBootstrapBuilder: {}", ex.Message);
+        }
+
+        _logger.LogDebug("Returning from main");
+    }
+
+    /// <summary>
+    /// https://docs.aws.amazon.com/lambda/latest/dg/runtimes-extensions-api.html#runtimes-lifecycle-extensions-shutdown
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="Exception"></exception>
+    private static async Task RegisterLambdaExtension()
+    {
+        try
+        {
+            var urlBaseStr = Environment.GetEnvironmentVariable("AWS_LAMBDA_RUNTIME_API") ?? "http://localhost:9001";
+            // prefix urlBaseStr with http:// if it does not start with http:// or https://
+            if (!urlBaseStr.StartsWith("http://") && !urlBaseStr.StartsWith("https://"))
+            {
+                urlBaseStr = "http://" + urlBaseStr;
+            }
+            var urlBase = new Uri(urlBaseStr);
+            var registerUrl = new Uri(urlBase, "/2020-01-01/extension/register");
+            var nextEventUrl = new Uri(urlBase, "/2020-01-01/extension/event/next");
+
+            var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromMinutes(15)
+            };
+            var registerRequest = new HttpRequestMessage(HttpMethod.Post, registerUrl);
+            // TODO: Should register for SHUTDOWN event
+            // Gives us 2 seconds to shut down
+            registerRequest.Content = new StringContent("{\"events\":[]}");
+            registerRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            // It is imperative that the Lambda-Extension-Name header is set to the name of the file on disk
+            // that contains the extension's code. The runtime uses this to determine which extension to invoke.
+            // Failure to make these names match will cause /invocation/next to close the connection.
+            var execName = Path.GetFileName(Process.GetCurrentProcess().MainModule?.FileName ?? "lambda-dispatch");
+            _logger.LogInformation("Registering Lambda Extension with name: {}", execName);
+            registerRequest.Headers.Add("Lambda-Extension-Name", execName);
+            var registerResponse = await client.SendAsync(registerRequest).ConfigureAwait(false);
+            if (!registerResponse.IsSuccessStatusCode)
+            {
+                throw new Exception($"Failed to register extension: {registerResponse.StatusCode}");
+            }
+            var extensionId = registerResponse.Headers.GetValues("Lambda-Extension-Identifier").FirstOrDefault();
+            // Discard the response body
+            await registerResponse.Content.CopyToAsync(Stream.Null).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(extensionId))
+            {
+                throw new Exception($"Failed to get extension id");
+            }
+            _logger.LogDebug("Lambda-Extension-Identifier returned: {}", extensionId);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var nextEventRequest = new HttpRequestMessage(HttpMethod.Get, nextEventUrl);
+                    nextEventRequest.Headers.Add("Lambda-Extension-Identifier", extensionId);
+                    var nextEventResponse = await client.SendAsync(nextEventRequest).ConfigureAwait(false);
+                    if (!nextEventResponse.IsSuccessStatusCode)
+                    {
+                        throw new Exception($"Failed to get next event: {nextEventResponse.StatusCode}");
+                    }
+                    _logger.LogDebug("Extension event returned");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Exception caught getting next event: {}", ex.Message);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Exception caught registering Lambda Extension: {}", ex.Message);
+        }
     }
 
     private static string FindStartupScript()
@@ -101,25 +187,8 @@ public class Function
         return startupScript;
     }
 
-    private static async Task StartChildApp()
+    private static async Task AwaitChildAppHealthy()
     {
-        // Start the application
-        var startupScript = FindStartupScript();
-        var startApp = new ProcessStartInfo
-        {
-            FileName = startupScript,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WorkingDirectory = Path.GetDirectoryName(startupScript)
-        };
-        // TODO: Need a way to configure this for local testing
-#if false
-        startApp.Environment.Remove("AWS_ACCESS_KEY_ID");
-        startApp.Environment.Remove("AWS_SECRET_ACCESS_KEY");
-        startApp.Environment.Remove("AWS_SESSION_TOKEN");
-#endif
-        var process = Process.Start(startApp);
-
         // Poll the health endpoint
         using var client = new HttpClient();
         var healthCheckUrl = "http://localhost:3000/health";
@@ -137,14 +206,14 @@ public class Function
             catch (HttpRequestException)
             {
                 // Ignore exceptions caused by the server not being ready
-                _logger.LogInformation("Contained App - Healthcheck failed");
+                _logger.LogDebug("Contained App - Healthcheck failed");
             }
 
             await Task.Delay(250).ConfigureAwait(false); // Wait for a second before polling again
         }
         while (true);
 
-        _logger.LogInformation("Contained App - App started");
+        _logger.LogInformation("Contained App - App Healthy");
     }
 
     /// <summary>
