@@ -37,9 +37,26 @@ public interface IConfig
   int IncomingRequestHTTPSPort { get; }
 
   /// <summary>
-  /// The HTTP2 (secure) port the router listens on for Lambda control channel requests
+  /// The HTTP2 (secure, https) port the router listens on for Lambda control channel requests
   /// </summary>
   int ControlChannelHTTP2Port { get; }
+
+  /// <summary>
+  /// The HTTP2 (insecure, http) port the router listens on for Lambda control channel requests
+  /// This port is only open if AllowInsecureControlChannel is set to true
+  /// This port is only advertised as the default if PreferredControlChannelScheme is set to http
+  /// </summary>
+  public int ControlChannelInsecureHTTP2Port { get; set; }
+
+  /// <summary>
+  /// Should the insecure http2 control channel port be opened
+  /// </summary>
+  public bool AllowInsecureControlChannel { get; set; }
+
+  /// <summary>
+  /// The preferred scheme to use for the control channel (http or https)
+  /// </summary>
+  public string PreferredControlChannelScheme { get; set; }
 }
 
 public class Config : IConfig
@@ -56,9 +73,14 @@ public class Config : IConfig
 
   public int IncomingRequestHTTPSPort { get; set; }
 
+
   public int ControlChannelHTTP2Port { get; set; }
 
   public int ControlChannelInsecureHTTP2Port { get; set; }
+
+  public bool AllowInsecureControlChannel { get; set; }
+
+  public string PreferredControlChannelScheme { get; set; }
 
   public Config()
   {
@@ -68,6 +90,8 @@ public class Config : IConfig
     IncomingRequestHTTPSPort = 5002;
     ControlChannelInsecureHTTP2Port = 5003;
     ControlChannelHTTP2Port = 5004;
+    AllowInsecureControlChannel = false;
+    PreferredControlChannelScheme = "https";
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)
@@ -100,6 +124,18 @@ public class Config : IConfig
     if (ControlChannelHTTP2Port < 1 || ControlChannelHTTP2Port > 65535)
     {
       throw new ApplicationException($"Invalid ControlChannelHTTP2Port in configuration: {ControlChannelHTTP2Port}");
+    }
+
+    // Cannot prefer http when insecure is not allowed
+    if (!AllowInsecureControlChannel && PreferredControlChannelScheme == "http")
+    {
+      throw new ApplicationException("Cannot prefer http for control channel when insecure is not allowed");
+    }
+
+    // Confirm scheme is http or https
+    if (PreferredControlChannelScheme != "http" && PreferredControlChannelScheme != "https")
+    {
+      throw new ApplicationException($"Invalid PreferredControlChannelScheme in configuration: {PreferredControlChannelScheme}");
     }
   }
 

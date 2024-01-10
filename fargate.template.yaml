@@ -65,6 +65,10 @@ Resources:
               Value: !GetAtt LambdaDemoApp.Arn
             - Name: LAMBDA_DISPATCH_MaxConcurrentCount
               Value: "10"
+            - Name: LAMBDA_DISPATCH_AllowInsecureControlChannel
+              Value: "true"
+            - Name: LAMBDA_DISPATCH_PreferredControlChannelScheme
+              Value: "http"
           LogConfiguration:
             LogDriver: awslogs
             Options:

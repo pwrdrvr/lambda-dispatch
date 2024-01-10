@@ -41,11 +41,14 @@ public class Program
                 var config = Config.CreateAndValidate(hostContext.Configuration);
                 services.AddSingleton<IConfig>(config);
 
-#if USE_INSECURE_HTTP2
-                await GetCallbackIP.Init(port: config.ControlChannelInsecureHTTP2Port, scheme: "http").ConfigureAwait(false);
-#else
-                await GetCallbackIP.Init(port: config.ControlChannelHTTP2Port, scheme: "https").ConfigureAwait(false);
-#endif
+                if (config.PreferredControlChannelScheme == "http")
+                {
+                    await GetCallbackIP.Init(port: config.ControlChannelInsecureHTTP2Port, scheme: "http").ConfigureAwait(false);
+                }
+                else
+                {
+                    await GetCallbackIP.Init(port: config.ControlChannelHTTP2Port, scheme: "https").ConfigureAwait(false);
+                }
             })
             .ConfigureLogging(logging =>
             {
@@ -74,9 +77,10 @@ public class Program
                 {
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
-#if USE_INSECURE_HTTP2
-                    serverOptions.ListenLocalhost(config.ControlChannelInsecureHTTP2Port, o => o.Protocols = HttpProtocols.Http2);
-#endif
+                    if (config.AllowInsecureControlChannel)
+                    {
+                        serverOptions.ListenAnyIP(config.ControlChannelInsecureHTTP2Port, o => o.Protocols = HttpProtocols.Http2);
+                    }
                     serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
                     serverOptions.ListenAnyIP(config.ControlChannelHTTP2Port, listenOptions =>
                     {
