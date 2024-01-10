@@ -407,6 +407,9 @@ Resources:
       HealthCheckIntervalSeconds: 5
       HealthCheckTimeoutSeconds: 2
       HealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: load_balancing.algorithm.type
+          Value: 'least_outstanding_requests'
 
   LambdaLBTable:
     Type: 'AWS::DynamoDB::Table'
