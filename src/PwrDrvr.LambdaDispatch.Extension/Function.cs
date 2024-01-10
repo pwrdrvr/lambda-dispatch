@@ -69,19 +69,10 @@ public class Function
 
         if (!_staticResponse)
         {
-            if (Environment.GetEnvironmentVariable("LAMBDA_DISPATCH_StartApp") == "true")
-            {
-                _logger.LogDebug("Contained App - Starting");
-                await StartChildApp().ConfigureAwait(false);
-                _logger.LogInformation("Contained App - Started");
-            }
-            else
-            {
-                _logger.LogDebug("Contained App - Skipping Startup, Waiting for Healthy");
-                // Wait for the health endpoint to return OK
-                await AwaitChildAppHealthy().ConfigureAwait(false);
-                _logger.LogInformation("Contained App - Healthy");
-            }
+            _logger.LogDebug("Contained App - Skipping Startup, Waiting for Healthy");
+            // Wait for the health endpoint to return OK
+            await AwaitChildAppHealthy().ConfigureAwait(false);
+            _logger.LogInformation("Contained App - Healthy");
         }
         else
         {
@@ -223,29 +214,6 @@ public class Function
         while (true);
 
         _logger.LogInformation("Contained App - App Healthy");
-    }
-
-    private static async Task StartChildApp()
-    {
-        // Start the application
-        var startupScript = FindStartupScript();
-        var startApp = new ProcessStartInfo
-        {
-            FileName = startupScript,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WorkingDirectory = Path.GetDirectoryName(startupScript)
-        };
-        // TODO: Need a way to configure this for local testing
-#if false
-        startApp.Environment.Remove("AWS_ACCESS_KEY_ID");
-        startApp.Environment.Remove("AWS_SECRET_ACCESS_KEY");
-        startApp.Environment.Remove("AWS_SESSION_TOKEN");
-#endif
-        var process = Process.Start(startApp);
-
-        // Wait for the health endpoint to return OK
-        await AwaitChildAppHealthy().ConfigureAwait(false);
     }
 
     /// <summary>
