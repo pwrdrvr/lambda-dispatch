@@ -94,7 +94,6 @@ public class Function
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
 
-#if true
         try
         {
             await LambdaBootstrapBuilder.Create(handler, new SourceGeneratorLambdaJsonSerializer<LambdaFunctionJsonSerializerContext>())
@@ -105,73 +104,8 @@ public class Function
         {
             _logger.LogError("Exception caught in LambdaBootstrapBuilder: {}", ex.Message);
         }
-#else
-        try
-        {
-            await RuntimeLoop().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Exception caught in RuntimeLoop: {}, {}", ex.Message, ex.InnerException?.Message ?? "none");
-        }
-#endif
 
         _logger.LogDebug("Returning from main");
-    }
-
-    private static async Task RuntimeLoop()
-    {
-        var urlBaseStr = Environment.GetEnvironmentVariable("AWS_LAMBDA_RUNTIME_API") ?? "http://localhost:9001";
-        // prefix urlBaseStr with http:// if it does not start with http:// or https://
-        if (!urlBaseStr.StartsWith("http://") && !urlBaseStr.StartsWith("https://"))
-        {
-            urlBaseStr = "http://" + urlBaseStr;
-        }
-        var urlBase = new Uri(urlBaseStr);
-        var nextEventUrl = new Uri(urlBase, "/2018-06-01/runtime/invocation/next");
-        var errorUrl = new Uri(urlBase, "/2018-06-01/runtime/invocation/{request-id}/error");
-
-        var client = new HttpClient
-        {
-            Timeout = TimeSpan.FromMinutes(15)
-        };
-
-        while (true)
-        {
-            var nextEventRequest = new HttpRequestMessage(HttpMethod.Get, nextEventUrl);
-            _logger.LogDebug("Getting next event from URL: {}", nextEventUrl);
-            var nextEventResponse = await client.SendAsync(nextEventRequest).ConfigureAwait(false);
-            _logger.LogDebug("Got next event: {}", nextEventResponse.StatusCode);
-            if (nextEventResponse.StatusCode == HttpStatusCode.NoContent)
-            {
-                // No events available, keeping us alive
-                continue;
-            }
-            if (!nextEventResponse.IsSuccessStatusCode)
-            {
-                throw new Exception($"Failed to get next event: {nextEventResponse.StatusCode}");
-            }
-            _logger.LogDebug("Getting next event response body");
-            var eventStr = await nextEventResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
-            _logger.LogDebug("App event returned: {}", eventStr);
-
-            var requestId = nextEventResponse.Headers.GetValues("Lambda-Runtime-Aws-Request-Id").FirstOrDefault();
-            if (string.IsNullOrEmpty(requestId))
-            {
-                throw new Exception($"Failed to get request id");
-            }
-
-            var responseUrl = new Uri(urlBase, $"/2018-06-01/runtime/invocation/{requestId}/response");
-            var responseRequest = new HttpRequestMessage(HttpMethod.Post, responseUrl);
-            responseRequest.Content = new StringContent("{ \"Id\": \"unknown\"}");
-            responseRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            var responseResponse = await client.SendAsync(responseRequest).ConfigureAwait(false);
-            if (!responseResponse.IsSuccessStatusCode)
-            {
-                throw new Exception($"Failed to get next event: {responseResponse.StatusCode}");
-            }
-            await responseResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
-        };
     }
 
     /// <summary>
