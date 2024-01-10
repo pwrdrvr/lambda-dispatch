@@ -10,8 +10,9 @@ import http2 from "http2";
 const sleep = promisify(setTimeout);
 
 export const app = express();
-const port = 3000;
-const spdyPort = 3001;
+const port = 3001;
+const spdyPort = 3002;
+const spdyInsecurePort = 3003;
 
 // Create clients
 const dbClient = new DynamoDBClient({});
@@ -183,7 +184,6 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     console.log(`App listening on HTTP2 at https://localhost:${spdyPort}`);
   });
 
-  const spdyInsecurePort = 3002;
   const serverInsecure = http2.createSecureServer(
     { ...options },
     (req, res) => {

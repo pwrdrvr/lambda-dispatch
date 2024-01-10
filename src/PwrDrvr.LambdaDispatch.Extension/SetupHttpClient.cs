@@ -45,9 +45,6 @@ public static class SetupHttpClient
 #else
   private static HttpClientHandler CreateHandler() => new HttpClientHandler()
   {
-#if USE_INSECURE_HTTP2
-    SslProtocols = SslProtocols.None,
-#endif
     ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
     {
       // If the certificate is a valid, signed certificate, return true.
@@ -68,9 +65,14 @@ public static class SetupHttpClient
   };
 #endif
 
-  public static HttpClient CreateClient()
+  public static HttpClient CreateClient(string dispatcherUrl)
   {
     var handler = CreateHandler();
+
+    if (new Uri(dispatcherUrl).Scheme == "http")
+    {
+      handler.SslProtocols = SslProtocols.None;
+    }
 
     return new HttpClient(handler, true)
     {

@@ -122,7 +122,7 @@ public class Function
 
         // Poll the health endpoint
         using var client = new HttpClient();
-        var healthCheckUrl = "http://localhost:3000/health";
+        var healthCheckUrl = "http://localhost:3001/health";
         do
         {
             try
@@ -184,7 +184,7 @@ public class Function
             // TODO: We can potentially make this static or a map on dispatcherUrl to requester
             // Each request repeats the Lambda ID and we do not need to re-establish sockets
             // if the DispatcherUrl has not actually changed
-            using var routerHttpClient = SetupHttpClient.CreateClient();
+            using var routerHttpClient = SetupHttpClient.CreateClient(request.DispatcherUrl);
             await using var reverseRequester = new HttpReverseRequester(request.Id, request.DispatcherUrl, routerHttpClient);
 
             using var appHttpClient = new HttpClient();
@@ -274,7 +274,7 @@ public class Function
                                     receivedRequest.RequestUri = new UriBuilder()
                                     {
                                         Host = "localhost",
-                                        Port = 3000,
+                                        Port = 3001,
                                         // The requestUri is ONLY a path/query string
                                         // TODO: Not sure Path will accept a query string here
                                         Path = receivedRequest.RequestUri.OriginalString,
