@@ -208,8 +208,12 @@ public class LambdaInstance : ILambdaInstance
   /// <summary>
   /// The number of connections that we should use
   /// We may have more connections than we are supposed to use, we hide these
+  /// 
+  /// OutstandingRequestCount can go slightly higher than the limit
+  /// when there are pre-emptive connections because we don't do
+  /// aggressive locking as it is too expensive.
   /// </summary>
-  public int AvailableConnectionCount => Math.Min(Math.Max(maxConcurrentCount - OutstandingRequestCount, 0), internalActualAvailableConnectionCount);
+  public int AvailableConnectionCount => Math.Min(Math.Max(maxConcurrentCount - Math.Min(OutstandingRequestCount, maxConcurrentCount), 0), internalActualAvailableConnectionCount);
   private int signaledStarting = 0;
 
   private int signalClosing = 0;
