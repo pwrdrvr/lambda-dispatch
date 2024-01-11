@@ -46,7 +46,10 @@ public class Dispatcher
   private volatile int _pendingRequestCount = 0;
   private readonly ConcurrentQueue<PendingRequest> _pendingRequests = new();
 
-  private readonly Channel<int> _pendingRequestSignal = Channel.CreateUnbounded<int>();
+  private readonly Channel<int> _pendingRequestSignal = Channel.CreateBounded<int>(new BoundedChannelOptions(1)
+  {
+    FullMode = BoundedChannelFullMode.DropOldest,
+  });
 
   // We need to keep a count of the running requests so we can set the desired count
   private volatile int _runningRequestCount = 0;
@@ -247,18 +250,19 @@ public class Dispatcher
         await _pendingRequestSignal.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
         _logger.LogDebug("BackgroundPendingRequestDispatcher - Got signal");
 
-        // Only do this loop if we have pending requests
-        if (_pendingRequestCount == 0)
-        {
-          _logger.LogDebug("BackgroundPendingRequestDispatcher - No pending requests");
-          continue;
-        }
-
-        // Loop quickly until we dispatch the item that we got a signal for
-        // The item can be consumed by an incoming lambda connection, so it might not be there
-        // We will spin up to 5 seconds to dispatch one, then we will go back to the 1 second loop
+        // Loop quickly in case we had a race condition on enqueing a pending request
+        // This happens when we have a request and a connection both arrive at the same time
+        // and there are no other available connections.  They both check for the other, find
+        // none, and get put into lists.
+        // If another connection comes in it will pickup this pending request, so we only
+        // have to cover the case of the brief race
         var tryCount = 0;
-        while (!await TryBackgroundDispatchOne() && tryCount++ < 500)
+        while (
+          // We have this check here (not just in the called function)
+          // because we want to skip these 10 loops if there are no requests waiting anymore
+          _pendingRequestCount > 0
+          && !await TryBackgroundDispatchOne()
+          && tryCount++ < 10)
         {
           _logger.LogDebug("BackgroundPendingRequestDispatcher - Could not dispatch one, trying again");
 
