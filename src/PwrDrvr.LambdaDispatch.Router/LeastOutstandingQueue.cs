@@ -134,7 +134,7 @@ public class LeastOutstandingQueue : IDisposable
           // The instance is not open, so we'll drop it on the floor and move on
           continue;
         }
-        if (dequeuedInstance.AvailableConnectionCount == 0)
+        if (dequeuedInstance.AvailableConnectionCount <= 0)
         {
           // The instance is full, so we'll put it in the full instances
           fullInstances.TryAdd(dequeuedInstance.Id, dequeuedInstance);
@@ -163,7 +163,7 @@ public class LeastOutstandingQueue : IDisposable
   /// Note: this will perform some limited rebalancing of instances if wrong counts are encountered
   /// </summary>
   /// <returns></returns>
-  public bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection)
+  public bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
   {
     connection = null;
 
@@ -184,7 +184,7 @@ public class LeastOutstandingQueue : IDisposable
           // The instance is not open, so we'll drop it on the floor and move on
           continue;
         }
-        if (instance.AvailableConnectionCount == 0)
+        if (instance.AvailableConnectionCount <= 0)
         {
           // The instance is full, so we'll put it in the full instances
           fullInstances.TryAdd(instance.Id, instance);
@@ -195,7 +195,7 @@ public class LeastOutstandingQueue : IDisposable
         // Once we put it back in a queue it's mutable by other threads
 
         // Get a connection from the instance
-        if (!instance.TryGetConnection(out var dequeuedConnection))
+        if (!instance.TryGetConnection(out var dequeuedConnection, tentative))
         {
           // The instance is full due to disconnects
           // so we'll put it in the full instances
@@ -204,7 +204,7 @@ public class LeastOutstandingQueue : IDisposable
           continue;
         }
 
-        if (instance.OutstandingRequestCount >= maxConcurrentCount)
+        if (instance.AvailableConnectionCount <= 0 || instance.OutstandingRequestCount >= maxConcurrentCount)
         {
           // This instance is full now (the outstanding request count was incremented on dequeue)
           fullInstances.TryAdd(instance.Id, instance);
@@ -250,7 +250,7 @@ public class LeastOutstandingQueue : IDisposable
       // Note: this is the only time we own this instance
       // Once we put it back in a queue it's mutable by other threads
       // Get a connection from the instance
-      if (!instance.TryGetConnection(out var dequeuedConnection))
+      if (!instance.TryGetConnection(out var dequeuedConnection, tentative))
       {
         // The instance is actually full so put it back
         fullInstances.TryAdd(instance.Id, instance);
@@ -296,7 +296,7 @@ public class LeastOutstandingQueue : IDisposable
     var proposedIndex = GetFloorQueueIndex(instance.OutstandingRequestCount);
 
     // If the instance is full, put it in the full instances
-    if (proposedIndex == maxConcurrentCount)
+    if (instance.AvailableConnectionCount <= 0 || proposedIndex >= maxConcurrentCount)
     {
       fullInstances.TryAdd(instance.Id, instance);
       return;
@@ -306,18 +306,18 @@ public class LeastOutstandingQueue : IDisposable
     availableInstances[proposedIndex].Enqueue(instance);
   }
 
-  public void ReinstateFullInstance(ILambdaInstance instance)
+  public bool ReinstateFullInstance(ILambdaInstance instance)
   {
     // Remove the instance from the full instances
     if (fullInstances.TryRemove(instance.Id, out var _))
     {
       var index = GetFloorQueueIndex(instance.OutstandingRequestCount);
 
-      if (index >= maxConcurrentCount)
+      if (instance.AvailableConnectionCount <= 0 || index >= maxConcurrentCount)
       {
         // The instance is full, so we'll put it back in the full instances
         fullInstances.TryAdd(instance.Id, instance);
-        return;
+        return false;
       }
 
       // Add the instance to a non-full queue
@@ -325,8 +325,13 @@ public class LeastOutstandingQueue : IDisposable
       catch (IndexOutOfRangeException)
       {
         _logger.LogError("Exception adding instance to queue, proposed index: {index}, array length {arrayLength}", index, availableInstances.Length);
+        return false;
       }
+
+      return true;
     }
+
+    return false;
   }
 
   private async Task RebalanceQueue()

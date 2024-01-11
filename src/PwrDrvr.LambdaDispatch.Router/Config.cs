@@ -27,6 +27,14 @@ public interface IConfig
   int MaxConcurrentCount { get; }
 
   /// <summary>
+  /// The number of channels to open back to the router from each lambda
+  /// For very fast response times this should be a multiple (e.g. 2x or 4x) of
+  /// the number of concurrent requests to send to a single Lambda.
+  /// </summary>
+  /// <default>MaxConcurrentCount * 2</default>
+  int ChannelCount { get; }
+
+  /// <summary>
   /// The HTTP (insecure) port the router listens on for requests that will be proxied to Lambda functions
   /// </summary>
   int IncomingRequestHTTPPort { get; }
@@ -69,6 +77,8 @@ public class Config : IConfig
 
   public int MaxConcurrentCount { get; set; }
 
+  public int ChannelCount { get; set; }
+
   public int IncomingRequestHTTPPort { get; set; }
 
   public int IncomingRequestHTTPSPort { get; set; }
@@ -85,7 +95,9 @@ public class Config : IConfig
   public Config()
   {
     FunctionName = string.Empty;
+    FunctionNameOnly = string.Empty;
     MaxConcurrentCount = 10;
+    ChannelCount = -1;
     IncomingRequestHTTPPort = 5001;
     IncomingRequestHTTPSPort = 5002;
     ControlChannelInsecureHTTP2Port = 5003;
@@ -136,6 +148,20 @@ public class Config : IConfig
     if (PreferredControlChannelScheme != "http" && PreferredControlChannelScheme != "https")
     {
       throw new ApplicationException($"Invalid PreferredControlChannelScheme in configuration: {PreferredControlChannelScheme}");
+    }
+
+    // Need at least as many channels as max concurrent
+    if (ChannelCount == -1)
+    {
+      ChannelCount = Math.Min(MaxConcurrentCount * 2, 100);
+    }
+    else if (ChannelCount < MaxConcurrentCount)
+    {
+      throw new ApplicationException($"ChannelCount must be greater than or equal to MaxConcurrentCount");
+    }
+    else if (ChannelCount > 100)
+    {
+      throw new ApplicationException($"ChannelCount must be less than or equal to 100");
     }
   }
 

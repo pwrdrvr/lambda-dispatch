@@ -12,9 +12,11 @@ public struct LambdaInstanceCapacityMessage
 
 public interface ILambdaInstanceManager
 {
-  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection);
+  void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher);
 
-  bool ValidateLambdaId(string lambdaId);
+  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
+
+  bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance);
 
   Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
 
@@ -37,6 +39,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly LeastOutstandingQueue _leastOutstandingQueue;
 
+  private IBackgroundDispatcher? _dispatcher;
+
   private volatile int _runningInstanceCount = 0;
 
   private volatile int _desiredInstanceCount = 0;
@@ -44,6 +48,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   private volatile int _startingInstanceCount = 0;
 
   private readonly int _maxConcurrentCount;
+
+  private readonly int _channelCount;
 
   private readonly string _functionName;
 
@@ -58,6 +64,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   public LambdaInstanceManager(IConfig config)
   {
     _maxConcurrentCount = config.MaxConcurrentCount;
+    _channelCount = config.ChannelCount;
     _leastOutstandingQueue = new(_maxConcurrentCount);
     _functionName = config.FunctionNameOnly;
     _functionNameQualifier = config.FunctionNameQualifier;
@@ -66,18 +73,23 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     Task.Run(ManageCapacity);
   }
 
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection)
+  public void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher)
+  {
+    _dispatcher = dispatcher;
+  }
+
+  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
   {
     // Return an available instance or start a new one if none are available
-    var gotConnection = _leastOutstandingQueue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+    var gotConnection = _leastOutstandingQueue.TryGetLeastOustandingConnection(out var dequeuedConnection, tentative);
     connection = dequeuedConnection;
 
     return gotConnection;
   }
 
-  public bool ValidateLambdaId(string lambdaId)
+  public bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance)
   {
-    return _instances.ContainsKey(lambdaId);
+    return _instances.TryGetValue(lambdaId, out instance);
   }
 
   public async Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId)
@@ -283,7 +295,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   public void DebugAddInstance(string instanceId)
   {
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier);
+    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier, channelCount: _channelCount, dispatcher: _dispatcher);
 
     instance.FakeStart(instanceId);
 
@@ -316,7 +328,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
 
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier);
+    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier, channelCount: _channelCount, dispatcher: _dispatcher);
 
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))
