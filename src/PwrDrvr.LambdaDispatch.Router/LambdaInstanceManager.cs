@@ -12,9 +12,9 @@ public struct LambdaInstanceCapacityMessage
 
 public interface ILambdaInstanceManager
 {
-  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection);
+  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
 
-  bool ValidateLambdaId(string lambdaId);
+  bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance);
 
   Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
 
@@ -66,18 +66,18 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     Task.Run(ManageCapacity);
   }
 
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection)
+  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
   {
     // Return an available instance or start a new one if none are available
-    var gotConnection = _leastOutstandingQueue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+    var gotConnection = _leastOutstandingQueue.TryGetLeastOustandingConnection(out var dequeuedConnection, tentative);
     connection = dequeuedConnection;
 
     return gotConnection;
   }
 
-  public bool ValidateLambdaId(string lambdaId)
+  public bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance)
   {
-    return _instances.ContainsKey(lambdaId);
+    return _instances.TryGetValue(lambdaId, out instance);
   }
 
   public async Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId)

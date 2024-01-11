@@ -63,7 +63,7 @@ public class Dispatcher
 
   public bool PingInstance(string instanceId)
   {
-    var found = _lambdaInstanceManager.ValidateLambdaId(instanceId);
+    var found = _lambdaInstanceManager.ValidateLambdaId(instanceId, out var _);
 
     _logger.LogDebug("Pinging instance {instanceId}, found: {found}", instanceId, found);
 
@@ -152,16 +152,21 @@ public class Dispatcher
     }
 #endif
 
-    if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId))
+    if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId, out var instance))
     {
       _logger.LogError("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       result.LambdaIDNotFound = true;
       return result;
     }
 
-    // We have a valid connection, let's try to dispatch if there is a pending request in the queue
+    // We have a valid connection
+    // But, the instance may be at it's outstanding request limit
+    // since we can have more connections then we are allowed to use
+    // Check if we are allowed (race condition, sure) to use this connection
+    // Let's try to dispatch if there is a pending request in the queue
     // Get the pending request
-    if (_pendingRequests.TryDequeue(out var pendingRequest))
+    if (instance.OutstandingRequestCount < instance.MaxConcurrentCount
+        && _pendingRequests.TryDequeue(out var pendingRequest))
     {
       _logger.LogDebug("Dispatching pending request to LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       Interlocked.Decrement(ref _pendingRequestCount);
@@ -289,7 +294,7 @@ public class Dispatcher
     if (_pendingRequestCount > 0)
     {
       // Try to get a connection
-      if (!_lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
+      if (!_lambdaInstanceManager.TryGetConnection(out var lambdaConnection, tentative: true))
       {
         _logger.LogDebug("TryBackgroundDispatchOne - No connections available");
 
@@ -308,6 +313,10 @@ public class Dispatcher
         {
           _logger.LogWarning("Dispatching (background) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
         }
+
+        // Register that we are going to use this connection
+        // This will add the decrement of outstanding connections when complete
+        lambdaConnection.Instance.TryGetConnectionWillUse(lambdaConnection);
 
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);

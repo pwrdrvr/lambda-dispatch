@@ -73,7 +73,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       var connectionObject = connection.Object;
-      instance.Setup(i => i.TryGetConnection(out connectionObject)).Returns(true);
+      instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       // Add the instance
       queue.AddInstance(instance.Object);
@@ -82,6 +82,16 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       Assert.IsTrue(result);
       Assert.IsNotNull(dequeuedConnection);
+
+      // Getting another instance should fail
+      instance.Setup(i => i.OutstandingRequestCount).Returns(1);
+      instance.Setup(i => i.AvailableConnectionCount).Returns(0);
+      // TryGetConnection should not be called
+      instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Throws<Exception>();
+      result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
+
+      Assert.IsFalse(result);
+      Assert.IsNull(dequeuedConnection);
     }
 
 
@@ -105,7 +115,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       instance.Setup(i => i.OutstandingRequestCount).Returns(0);
       var connectionObject = connection.Object;
-      instance.Setup(i => i.TryGetConnection(out connectionObject)).Returns(true);
+      instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       // Add the instance
       queue.AddInstance(instance.Object);
@@ -117,7 +127,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       // Getting another instance should fail
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
-      instance.Setup(i => i.TryGetConnection(out connectionObject)).Returns(false);
+      instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(false);
       result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
 
       Assert.IsFalse(result);
@@ -144,7 +154,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.AvailableConnectionCount).Returns(0);
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
       var connectionObject = connection.Object;
-      instance.Setup(i => i.TryGetConnection(out connectionObject)).Returns(true);
+      instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       // Add the instance
       queue.AddInstance(instance.Object);
@@ -159,7 +169,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // Reinstate the instance
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       instance.Setup(i => i.OutstandingRequestCount).Returns(0);
-      queue.ReinstateFullInstance(instance.Object);
+      // We should find the instance in the full list and move it to the available list
+      Assert.That(queue.ReinstateFullInstance(instance.Object), Is.True);
 
       result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
       Assert.Multiple(() =>
@@ -167,6 +178,45 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
         Assert.That(result, Is.True);
         Assert.That(dequeuedConnection, Is.Not.Null);
       });
+    }
+
+    [Test]
+    public void TryGetLeastOutstandingConnection_ShouldMarkNoAvailableAsFull()
+    {
+      var maxConcurrentCount = 10;
+      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+
+      var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
+      var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
+      request.Setup(i => i.HttpContext).Returns(requestContext.Object);
+      var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
+
+      var instance = new Mock<ILambdaInstance>();
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+
+      var id = "instance-1";
+      instance.Setup(i => i.Id).Returns(id);
+      instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
+      instance.SetupSequence(i => i.AvailableConnectionCount).Returns(1).Returns(1).Returns(0);
+      instance.Setup(i => i.OutstandingRequestCount).Returns(1);
+      var connectionObject = connection.Object;
+      instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
+
+      // Add the instance
+      queue.AddInstance(instance.Object);
+
+      var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+      Assert.Multiple(() =>
+      {
+        Assert.That(result, Is.True);
+        Assert.That(dequeuedConnection, Is.Not.Null);
+      });
+
+      // Reinstate the instance
+      instance.Setup(i => i.AvailableConnectionCount).Returns(1);
+      instance.Setup(i => i.OutstandingRequestCount).Returns(0);
+      // We should find the instance in the full list and move it to the available list
+      Assert.That(queue.ReinstateFullInstance(instance.Object), Is.True);
     }
   }
 }
