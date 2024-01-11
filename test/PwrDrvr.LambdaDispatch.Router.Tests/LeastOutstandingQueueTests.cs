@@ -44,8 +44,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var maxConcurrentCount = 10;
       using var queue = new LeastOutstandingQueue(maxConcurrentCount);
       var lambdaClient = new Mock<IAmazonLambda>();
+      var dispatcher = new Mock<IBackgroundDispatcher>();
 
-      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object);
+      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object, dispatcher.Object);
       queue.AddInstance(instance);
 
       var result = queue.TryGetLeastOustandingConnection(out var connection);

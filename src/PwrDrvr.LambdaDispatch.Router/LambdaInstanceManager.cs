@@ -12,6 +12,8 @@ public struct LambdaInstanceCapacityMessage
 
 public interface ILambdaInstanceManager
 {
+  void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher);
+
   bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
 
   bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance);
@@ -36,6 +38,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   private readonly ILogger<LambdaInstanceManager> _logger = LoggerInstance.CreateLogger<LambdaInstanceManager>();
 
   private readonly LeastOutstandingQueue _leastOutstandingQueue;
+
+  private IBackgroundDispatcher? _dispatcher;
 
   private volatile int _runningInstanceCount = 0;
 
@@ -64,6 +68,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
     // Start the capacity manager
     Task.Run(ManageCapacity);
+  }
+
+  public void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher)
+  {
+    _dispatcher = dispatcher;
   }
 
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
@@ -316,7 +325,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
 
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier);
+    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier, dispatcher: _dispatcher);
 
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))

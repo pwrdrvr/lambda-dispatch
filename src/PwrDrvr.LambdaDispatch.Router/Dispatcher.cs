@@ -36,7 +36,16 @@ public class PendingRequest
   }
 }
 
-public class Dispatcher
+/// <summary>
+/// Exposes only the background dispatch function needed by
+/// instances when a request completes
+/// </summary>
+public interface IBackgroundDispatcher
+{
+  Task<bool> TryBackgroundDispatchOne(bool countAsForeground = false);
+}
+
+public class Dispatcher : IBackgroundDispatcher
 {
   private readonly ILogger<Dispatcher> _logger;
 
@@ -56,6 +65,7 @@ public class Dispatcher
     _logger = logger;
     _logger.LogDebug("Dispatcher created");
     _lambdaInstanceManager = lambdaInstanceManager;
+    _lambdaInstanceManager.AddBackgroundDispatcherReference(this);
 
     // Start the background task to process pending requests
     Task.Run(BackgroundPendingRequestDispatcher);
@@ -284,10 +294,11 @@ public class Dispatcher
   }
 
   /// <summary>
-  /// 
+  /// Check for a pending request and an available connection
+  /// Match them up if we find them
   /// </summary>
   /// <returns>Whether a request was dispatched</returns>
-  private async Task<bool> TryBackgroundDispatchOne()
+  public async Task<bool> TryBackgroundDispatchOne(bool countAsForeground = false)
   {
     // If there should be pending requests, try to get a connection then grab a request
     // If we can't get a pending request, put the connection back
@@ -319,7 +330,14 @@ public class Dispatcher
         lambdaConnection.Instance.TryGetConnectionWillUse(lambdaConnection);
 
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
-        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+        if (countAsForeground)
+        {
+          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
+        }
+        else
+        {
+          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+        }
 
         Interlocked.Decrement(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
@@ -347,7 +365,7 @@ public class Dispatcher
       }
       else
       {
-        _logger.LogInformation("TryBackgroundDispatchOne - No pending requests, putting connection back");
+        _logger.LogDebug("TryBackgroundDispatchOne - No pending requests, putting connection back");
 
         // We didn't get a pending request, so put the connection back
         await _lambdaInstanceManager.ReenqueueUnusedConnection(lambdaConnection, lambdaConnection.Instance.Id);

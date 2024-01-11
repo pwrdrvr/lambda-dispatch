@@ -214,8 +214,23 @@ public class LambdaInstance : ILambdaInstance
 
   private int signalClosing = 0;
 
-  public LambdaInstance(int maxConcurrentCount, string functionName, string? functionQualifier = null, IAmazonLambda? lambdaClient = null)
+  private readonly IBackgroundDispatcher dispatcher;
+
+  /// <summary>
+  /// 
+  /// </summary>
+  /// <param name="maxConcurrentCount"></param>
+  /// <param name="functionName"></param>
+  /// <param name="functionQualifier"></param>
+  /// <param name="lambdaClient"></param>
+  /// <param name="dispatcher">REQUIRED: Link to an IBackgroundDispatcher</param>
+  /// <exception cref="ArgumentNullException"></exception>
+  /// <exception cref="ArgumentException"></exception>
+  /// <exception cref="ArgumentOutOfRangeException"></exception>
+  public LambdaInstance(int maxConcurrentCount, string functionName, string? functionQualifier = null, IAmazonLambda? lambdaClient = null, IBackgroundDispatcher? dispatcher = null)
   {
+    ArgumentNullException.ThrowIfNull(dispatcher);
+    this.dispatcher = dispatcher;
     if (string.IsNullOrWhiteSpace(functionName))
     {
       throw new ArgumentException("Cannot be null or whitespace", nameof(functionName));
@@ -367,7 +382,8 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // No available connections
-    _logger.LogInformation("TryGetConnection - No available connections for LambdaId: {LambdaId}, AvailableConnectionsCount: {AvailableConnectionCount}, QueueApproximateCount: {QueueApproximateCount}", Id, AvailableConnectionCount, QueueApproximateCount);
+    // This can happen from shutdowns, dispatches when another request finishes, etc
+    _logger.LogDebug("TryGetConnection - No available connections for LambdaId: {LambdaId}, AvailableConnectionsCount: {AvailableConnectionCount}, QueueApproximateCount: {QueueApproximateCount}", Id, AvailableConnectionCount, QueueApproximateCount);
 
     return false;
   }
@@ -375,10 +391,26 @@ public class LambdaInstance : ILambdaInstance
   public void TryGetConnectionWillUse(LambdaConnection connection)
   {
     connection.Response.OnCompleted(Task () =>
-          {
-            Interlocked.Decrement(ref outstandingRequestCount);
-            return Task.CompletedTask;
-          });
+    {
+      Interlocked.Decrement(ref outstandingRequestCount);
+
+      //
+      // We have decremented the outstanding request count, which means,
+      // if our instance has pre-emptive connections, that our instance
+      // can now handle one more request
+      //
+      // If we do not dispatch here then the background dispatcher will
+      // pick this up, but only 1 every 10 ms.  That's very slow.
+      //
+      // So see if there is a pending request that we can dispatch
+      // and a connection we can do it on
+      //
+
+      // NOTE: We do not away this else we'd get locked up requests and deep call stacks
+      dispatcher.TryBackgroundDispatchOne(countAsForeground: true).ContinueWith((result) => { }).ConfigureAwait(false);
+
+      return Task.CompletedTask;
+    });
   }
 
   /// <summary>

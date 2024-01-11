@@ -16,8 +16,11 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     [Test]
     public void Constructor_ShouldRejectTooSmallMaxConcurrentCount()
     {
-      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0, "somefunc"));
-      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1, "somefunc"));
+      var lambdaClient = new Mock<IAmazonLambda>();
+      var dispatcher = new Mock<IBackgroundDispatcher>();
+
+      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0, "somefunc", "$LATEST", lambdaClient.Object, dispatcher.Object));
+      Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1, "somefunc", "$LATEST", lambdaClient.Object, dispatcher.Object));
     }
 
     [Test]
@@ -25,7 +28,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
-      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object);
+      var dispatcher = new Mock<IBackgroundDispatcher>();
+      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -89,7 +93,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
-      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object);
+      var dispatcher = new Mock<IBackgroundDispatcher>();
+      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -147,7 +152,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
-      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object);
+      var dispatcher = new Mock<IBackgroundDispatcher>();
+      var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -175,7 +181,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
-      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object);
+      var dispatcher = new Mock<IBackgroundDispatcher>();
+      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object, dispatcher.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
