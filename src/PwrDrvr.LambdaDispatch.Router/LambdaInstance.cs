@@ -168,6 +168,8 @@ public class LambdaInstance : ILambdaInstance
 
   private readonly int maxConcurrentCount;
 
+  private readonly int channelCount;
+
   private readonly IAmazonLambda LambdaClient;
 
   public string Id { get; private set; } = Guid.NewGuid().ToString();
@@ -231,10 +233,11 @@ public class LambdaInstance : ILambdaInstance
   /// <exception cref="ArgumentNullException"></exception>
   /// <exception cref="ArgumentException"></exception>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  public LambdaInstance(int maxConcurrentCount, string functionName, string? functionQualifier = null, IAmazonLambda? lambdaClient = null, IBackgroundDispatcher? dispatcher = null)
+  public LambdaInstance(int maxConcurrentCount, string functionName, string? functionQualifier = null, IAmazonLambda? lambdaClient = null, IBackgroundDispatcher? dispatcher = null, int channelCount = -1)
   {
     ArgumentNullException.ThrowIfNull(dispatcher);
     this.dispatcher = dispatcher;
+    this.channelCount = channelCount;
     if (string.IsNullOrWhiteSpace(functionName))
     {
       throw new ArgumentException("Cannot be null or whitespace", nameof(functionName));
@@ -584,7 +587,7 @@ public class LambdaInstance : ILambdaInstance
     {
       Id = Id,
       DispatcherUrl = await GetCallbackIP.Get(),
-      NumberOfChannels = maxConcurrentCount * 2,
+      NumberOfChannels = channelCount == -1 ? 2 * maxConcurrentCount : channelCount,
       SentTime = DateTime.Now
     };
 
