@@ -70,6 +70,8 @@ public class LambdaConnection
     // Handle an abnormal connection termination
     Request.HttpContext.RequestAborted.Register(() =>
     {
+      _logger.LogWarning("ProxyRequestToLambda - Incoming request aborted");
+
       Instance.ConnectionClosed(State == LambdaConnectionState.Busy);
 
       // Set the state to closed
@@ -195,7 +197,7 @@ public class LambdaConnection
   /// Run the request on the Lambda
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public async Task RunRequest(HttpRequest request, HttpResponse response)
+  public async Task RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
   {
     try
     {
@@ -211,7 +213,7 @@ public class LambdaConnection
       //
       // Send the incoming request to the Lambda
       //
-      await this.ProxyRequestToLambda(request).ConfigureAwait(false);
+      await this.ProxyRequestToLambda(incomingRequest).ConfigureAwait(false);
 
       //
       //
@@ -291,7 +293,7 @@ public class LambdaConnection
 
         string statusLine = Encoding.UTF8.GetString(headerBuffer, 0, endOfStatusLine);
 
-        response.StatusCode = int.Parse(statusLine.Split(' ')[1]);
+        incomingResponse.StatusCode = int.Parse(statusLine.Split(' ')[1]);
 
         // Start processing the rest of the headers from the character after '\n'
         int startOfNextLine = endOfStatusLine + 1;
@@ -340,7 +342,7 @@ public class LambdaConnection
           }
 
           // Set the header on the Kestrel response
-          response.Headers[key] = value;
+          incomingResponse.Headers[key] = value;
 
           // Move the start to the character after '\n'
           startOfNextLine = endOfLine + 1;
@@ -351,7 +353,7 @@ public class LambdaConnection
         {
           // There are bytes left in the buffer
           // Copy them to the response
-          await response.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine)).ConfigureAwait(false);
+          await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine)).ConfigureAwait(false);
         }
       }
       finally
@@ -371,8 +373,8 @@ public class LambdaConnection
         var responseStream = Request.Body;
         while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length).ConfigureAwait(false)) > 0)
         {
-          await response.Body.WriteAsync(bytes, 0, bytesRead).ConfigureAwait(false);
-          await response.Body.FlushAsync().ConfigureAwait(false);
+          await incomingResponse.Body.WriteAsync(bytes, 0, bytesRead).ConfigureAwait(false);
+          await incomingResponse.Body.FlushAsync().ConfigureAwait(false);
         }
       }
       finally
@@ -408,7 +410,7 @@ public class LambdaConnection
       // Set the state to closed
       State = LambdaConnectionState.Closed;
 
-      try { await response.CompleteAsync().ConfigureAwait(false); } catch { }
+      try { await incomingResponse.CompleteAsync().ConfigureAwait(false); } catch { }
 
       // Mark that the Response has been sent on the LambdaInstance
       this.TCS.SetResult();
