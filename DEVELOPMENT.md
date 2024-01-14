@@ -32,6 +32,10 @@ dotnet build
 
 ```sh
 dotnet run --project PwrDrvr.LambdaDispatch.Router
+
+LAMBDA_DISPATCH_ChannelCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_MaxConcurrentCount=1 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=5 LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router
+
+DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap
 ```
 
 ## Running Unit Tests
@@ -93,9 +97,10 @@ docker build --file DockerfileExtension -t lambda-dispatch-extension .
 ## Publish the Docker Image - Lambda Demo App
 
 ```sh
-docker build --file DockerfileLambdaDemoApp -t lambda-dispatch-demo-app . \
-&& docker tag lambda-dispatch-demo-app:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest
+docker build --file DockerfileExtension -t lambda-dispatch-extension . &&\
+docker build --file DockerfileLambdaDemoApp -t lambda-dispatch-demo-app . &&\
+docker tag lambda-dispatch-demo-app:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest && \
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest
 ```
 
 ## Publish the Docker Image - DirectLambda
