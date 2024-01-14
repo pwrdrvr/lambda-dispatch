@@ -76,8 +76,9 @@ app.get("/chunked-response", async (req, res) => {
   res.end("FINAL PAYLOAD RESPONSE\n");
 });
 
+// This will read the entire request body into memory before sending the response
 app.post(
-  "/echo",
+  "/echo-slow",
   express.raw({ type: "*/*", limit: "40mb" }),
   async (req, res) => {
     const contentType = req.get("Content-Type");
@@ -91,6 +92,21 @@ app.post(
     }
   }
 );
+
+// This will stream the request body to the response
+app.post("/echo", async (req, res) => {
+  const contentType = req.get("Content-Type");
+  const contentLength = req.get("Content-Length");
+  if (contentType) {
+    res.set("Content-Type", contentType);
+  }
+  if (contentLength) {
+    res.set("Content-Length", contentLength);
+  }
+  // Pipe the req body to the response with back pressure
+  // This will stream incoming bytes as they arrive
+  req.pipe(res);
+});
 
 app.get("/read-s3", async (req, res) => {
   // Create a GetObjectCommand
@@ -197,6 +213,12 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
           )}`
         );
         res.write(chunk);
+      });
+      req.on("aborted", (err) => {
+        console.log(
+          `${new Date().toISOString()} Contained App - Request aborted`,
+          err
+        );
       });
       req.on("end", () => {
         res.end();
