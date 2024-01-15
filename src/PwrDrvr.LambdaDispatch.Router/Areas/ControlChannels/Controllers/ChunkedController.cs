@@ -157,8 +157,17 @@ public class ChunkedController : ControllerBase
       }
       catch (Exception ex)
       {
-        logger.LogError(ex, "Router.ChunkedController.Post - Exception, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-        throw;
+        if (Request.HttpContext.RequestAborted.IsCancellationRequested)
+        {
+          // If we already aborted the request there is no need to rethrow
+          logger.LogDebug("Router.ChunkedController.Post - Request aborted, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+        }
+        else
+        {
+          // If we didn't abort the request then this is a case we're not handling
+          logger.LogError(ex, "Router.ChunkedController.Post - Exception, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+          throw;
+        }
       }
     }
   }
