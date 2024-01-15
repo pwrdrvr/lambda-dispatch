@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Microsoft.AspNetCore.Connections;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -57,6 +58,8 @@ public class LambdaConnection
   /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
+  private CancellationTokenSource CTS = new CancellationTokenSource();
+
   public LambdaConnection(HttpRequest request, HttpResponse response, ILambdaInstance instance, string channelId)
   {
     Request = request;
@@ -104,15 +107,15 @@ public class LambdaConnection
     // as 200 if this connection was in the queue
     // There will either be no subsequent connection or it will
     // get immediately rejected with a 409
-    await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n");
+    await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
     await Response.CompleteAsync();
     try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
 
-    this.TCS.SetResult();
+    TCS.SetResult();
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public async Task ProxyRequestToLambda(HttpRequest incomingRequest)
+  private async Task ProxyRequestToLambda(HttpRequest incomingRequest)
   {
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("Sending incoming request headers to Lambda");
@@ -145,7 +148,7 @@ public class LambdaConnection
       offset += 2;
 
       // Send the headers to the Lambda
-      await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
+      await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
 
       // Only copy the request body if the request has a body
       if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding") && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
@@ -159,9 +162,9 @@ public class LambdaConnection
           // Read from the source stream and write to the destination stream in a loop
           int bytesRead;
           var responseStream = incomingRequest.Body;
-          while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length)) > 0)
+          while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token)) > 0)
           {
-            await Response.Body.WriteAsync(bytes, 0, bytesRead);
+            await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
           }
         }
         finally
@@ -203,84 +206,106 @@ public class LambdaConnection
       // Set the state to busy
       State = LambdaConnectionState.Busy;
 
-      //
-      // Send the incoming request to the Lambda
-      // TODO: This should be done in parallel with reading the response
-      // and both tasks should be awaited
-      //
-      await ProxyRequestToLambda(incomingRequest).ConfigureAwait(false);
+      var proxyRequestTask = ProxyRequestToLambda(incomingRequest);
+      var proxyResponseTask = RelayResponseFromLambda(incomingResponse);
 
-      //
-      //
-      // Read response from Lambda and relay back to caller
-      //
-      //
-
-      await RelayResponseFromLambda(incomingResponse).ConfigureAwait(false);
-    }
-    // This happens when the client aborts the request and we are still reading
-    catch (BadHttpRequestException)
-    {
-      if (this.Request.Headers.TryGetValue("Date", out var dateValues)
-          && dateValues.Count == 1
-          && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+      // Wait for both to finish
+      // This allows us to continue sending request body while receiving
+      // and relaying the response body (duplex)
+      var completedTask = await Task.WhenAny(proxyRequestTask, proxyResponseTask).ConfigureAwait(false);
+      if (completedTask.Exception != null)
       {
-        var duration = DateTime.UtcNow - requestDate;
+        throw completedTask.Exception;
+      }
 
-        _logger.LogError("LambdaConnection.RunRequest - BadHttpRequestException - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
-            requestDate.ToLocalTime().ToString("o"),
-            duration.TotalSeconds,
-            this.Instance.Id,
-            this.ChannelId);
+      if (completedTask == proxyRequestTask)
+      {
+        // ProxyRequestToLambda finished first
+        // Wait for RelayResponseFromLambda to finish
+        await proxyResponseTask.ConfigureAwait(false);
       }
       else
       {
-        _logger.LogError("LambdaConnection.RunRequest - BadHttpRequestException - Receipt time not known");
+        // RelayResponseFromLambda finished first
+        // Wait for ProxyRequestToLambda to finish
+        await proxyRequestTask.ConfigureAwait(false);
       }
-
-      // We have to abort the connection for HTTP/1.1 or the stream
-      // for HTTP2 because we don't know if we sent or finished the whole
-      // request or not.
-      try { this.Request.HttpContext.Abort(); } catch { }
-
-      // We re-raise the exception so Kestrel will cleanup the incoming request
-      // if anything is left of it
-      throw;
     }
-    catch (Exception ex)
+    catch (AggregateException ae)
     {
-      if (this.Request.Headers.TryGetValue("Date", out var dateValues)
-          && dateValues.Count == 1
-          && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+      foreach (var ex in ae.InnerExceptions)
       {
-        var duration = DateTime.UtcNow - requestDate;
+        var logExceptionStack = false;
 
-        _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
-            requestDate.ToLocalTime().ToString("o"),
-            duration.TotalSeconds,
-            this.Instance.Id,
-            this.ChannelId);
+        // This happens when the client aborts the request and we are still reading
+        if (ex is BadHttpRequestException || ex is ConnectionResetException)
+        {
+          logExceptionStack = false;
+        }
+        else
+        {
+          logExceptionStack = true;
+        }
+
+        if (Request.Headers.TryGetValue("Date", out var dateValues)
+                  && dateValues.Count == 1
+                  && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+        {
+          var duration = DateTime.UtcNow - requestDate;
+
+          if (logExceptionStack)
+          {
+            _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+                requestDate.ToLocalTime().ToString("o"),
+                duration.TotalSeconds,
+                Instance.Id,
+                ChannelId);
+          }
+          else
+          {
+            _logger.LogError("LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+                requestDate.ToLocalTime().ToString("o"),
+                duration.TotalSeconds,
+                Instance.Id,
+                ChannelId);
+          }
+        }
+        else
+        {
+          if (logExceptionStack)
+          {
+            _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Receipt time not known, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+                Instance.Id,
+                ChannelId);
+          }
+          else
+          {
+            _logger.LogError("LambdaConnection.RunRequest - Exception - Receipt time not known, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+                Instance.Id,
+                ChannelId);
+          }
+        }
+
+        // We have to abort the connection for HTTP/1.1 or the stream
+        // for HTTP2 because we don't know if we sent or finished the whole
+        // request or not.
+        try { Request.HttpContext.Abort(); } catch { }
+        try { incomingRequest.HttpContext.Abort(); } catch { }
+
+        // Just in case anything is still stuck
+        CTS.Cancel();
       }
-      else
-      {
-        _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Receipt time not known");
-      }
-
-      // We have to abort the connection for HTTP/1.1 or the stream
-      // for HTTP2 because we don't know if we sent or finished the whole
-      // request or not.
-      try { this.Request.HttpContext.Abort(); } catch { }
-
-      // We re-raise the exception so Kestrel will cleanup the incoming request
-      // if anything is left of it
-      throw;
     }
     finally
     {
       // Set the state to closed
       State = LambdaConnectionState.Closed;
 
-      try { await incomingResponse.CompleteAsync().ConfigureAwait(false); } catch { }
+      try
+      {
+        await incomingResponse.CompleteAsync().ConfigureAwait(false);
+      }
+      catch { }
 
       // Mark that the Response has been sent on the LambdaInstance
       TCS.SetResult();
@@ -309,7 +334,7 @@ public class LambdaConnection
           break;
         }
 
-        var bytesRead = await Request.Body.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead).ConfigureAwait(false);
+        var bytesRead = await Request.Body.ReadAsync(headerBuffer.AsMemory(totalBytesRead, headerBuffer.Length - totalBytesRead), CTS.Token).ConfigureAwait(false);
         if (bytesRead == 0)
         {
           // Done reading
@@ -421,7 +446,7 @@ public class LambdaConnection
       {
         // There are bytes left in the buffer
         // Copy them to the response
-        await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine)).ConfigureAwait(false);
+        await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine), CTS.Token).ConfigureAwait(false);
       }
     }
     finally
@@ -435,9 +460,9 @@ public class LambdaConnection
       // Read from the source stream and write to the destination stream in a loop
       int bytesRead;
       var responseStream = Request.Body;
-      while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length).ConfigureAwait(false)) > 0)
+      while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token).ConfigureAwait(false)) > 0)
       {
-        await incomingResponse.Body.WriteAsync(bytes, 0, bytesRead).ConfigureAwait(false);
+        await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token).ConfigureAwait(false);
       }
     }
     finally
