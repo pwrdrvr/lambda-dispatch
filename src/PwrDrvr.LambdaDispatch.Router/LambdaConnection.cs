@@ -153,11 +153,6 @@ public class LambdaConnection
         _logger.LogDebug("Sending incoming request body to Lambda");
 
         // Send the body to the Lambda
-        // TODO: This is going to buffer the entire request before sending some bytes
-        // to the contained app
-#if false
-        await incomingRequest.BodyReader.CopyToAsync(Response.BodyWriter).ConfigureAwait(false);
-#else
         var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
         try
         {
@@ -167,14 +162,12 @@ public class LambdaConnection
           while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length)) > 0)
           {
             await Response.Body.WriteAsync(bytes, 0, bytesRead);
-            await Response.Body.FlushAsync();
           }
         }
         finally
         {
           ArrayPool<byte>.Shared.Return(bytes);
         }
-#endif
         await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
 
         _logger.LogDebug("Finished sending incoming request body to Lambda");
@@ -212,6 +205,8 @@ public class LambdaConnection
 
       //
       // Send the incoming request to the Lambda
+      // TODO: This should be done in parallel with reading the response
+      // and both tasks should be awaited
       //
       await this.ProxyRequestToLambda(incomingRequest).ConfigureAwait(false);
 
@@ -361,10 +356,6 @@ public class LambdaConnection
         ArrayPool<byte>.Shared.Return(headerBuffer);
       }
 
-      // Copy the rest of the response body
-#if false
-      await Request.BodyReader.CopyToAsync(response.BodyWriter).ConfigureAwait(false);
-#else
       var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
       try
       {
@@ -374,16 +365,43 @@ public class LambdaConnection
         while ((bytesRead = await responseStream.ReadAsync(bytes, 0, bytes.Length).ConfigureAwait(false)) > 0)
         {
           await incomingResponse.Body.WriteAsync(bytes, 0, bytesRead).ConfigureAwait(false);
-          await incomingResponse.Body.FlushAsync().ConfigureAwait(false);
         }
       }
       finally
       {
         ArrayPool<byte>.Shared.Return(bytes);
       }
-#endif
 
       _logger.LogDebug("Copied response body from Lambda");
+    }
+    // This happens when the client aborts the request and we are still reading
+    catch (BadHttpRequestException)
+    {
+      if (this.Request.Headers.TryGetValue("Date", out var dateValues)
+          && dateValues.Count == 1
+          && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+      {
+        var duration = DateTime.UtcNow - requestDate;
+
+        _logger.LogError("LambdaConnection.RunRequest - BadHttpRequestException - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+            requestDate.ToLocalTime().ToString("o"),
+            duration.TotalSeconds,
+            this.Instance.Id,
+            this.ChannelId);
+      }
+      else
+      {
+        _logger.LogError("LambdaConnection.RunRequest - BadHttpRequestException - Receipt time not known");
+      }
+
+      // We have to abort the connection for HTTP/1.1 or the stream
+      // for HTTP2 because we don't know if we sent or finished the whole
+      // request or not.
+      try { this.Request.HttpContext.Abort(); } catch { }
+
+      // We re-raise the exception so Kestrel will cleanup the incoming request
+      // if anything is left of it
+      throw;
     }
     catch (Exception ex)
     {
@@ -403,7 +421,15 @@ public class LambdaConnection
       {
         _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Receipt time not known");
       }
-      try { await this.Request.Body.CopyToAsync(Stream.Null); } catch { }
+
+      // We have to abort the connection for HTTP/1.1 or the stream
+      // for HTTP2 because we don't know if we sent or finished the whole
+      // request or not.
+      try { this.Request.HttpContext.Abort(); } catch { }
+
+      // We re-raise the exception so Kestrel will cleanup the incoming request
+      // if anything is left of it
+      throw;
     }
     finally
     {
@@ -413,7 +439,7 @@ public class LambdaConnection
       try { await incomingResponse.CompleteAsync().ConfigureAwait(false); } catch { }
 
       // Mark that the Response has been sent on the LambdaInstance
-      this.TCS.SetResult();
+      TCS.SetResult();
     }
   }
 }

@@ -387,7 +387,6 @@ public class HttpReverseRequester
     {
       int offset = 0;
       // TODO: Which HTTP version should be using here?  It seems this should be 1.1 always
-      // {requestForResponse.Version}
       var statusLine = $"HTTP/1.1 {(int)response.StatusCode} {response.ReasonPhrase}\r\n";
       var statusLineBytes = Encoding.UTF8.GetBytes(statusLine);
       statusLineBytes.CopyTo(headerBuffer, offset);
