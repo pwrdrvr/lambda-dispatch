@@ -1,0 +1,30 @@
+# FROM rust as build-stage
+# ARG ARCH=x86_64
+ARG TARGET_PLATFORM=linux/arm64
+FROM --platform=$TARGET_PLATFORM public.ecr.aws/awsguru/rust-builder as build-stage
+ARG ARCH=aarch64
+WORKDIR /app
+
+# Copy over manifest files
+COPY ./extension/Cargo.toml ./Cargo.toml
+COPY ./.cargo ./.cargo
+
+# RUN rustup target add aarch64-unknown-linux-musl
+
+# This dummy build is to get the dependencies cached
+RUN mkdir src && \
+  echo "fn main() {println!(\"if you see this, the build broke\")}" > src/main.rs &&\
+  source $HOME/.cargo/env &&\
+  export PATH=$PATH:/${ARCH}-linux-musl-cross/bin/ &&\
+  CC=${ARCH}-unknown-linux-musl-gcc cargo build --release --target=${ARCH}-unknown-linux-musl
+
+ADD ./extension/ .
+RUN touch src/main.rs &&\
+  source $HOME/.cargo/env &&\
+  export PATH=$PATH:/${ARCH}-linux-musl-cross/bin/ &&\
+  CC=${ARCH}-unknown-linux-musl-gcc cargo build --release --target=${ARCH}-unknown-linux-musl
+
+FROM scratch AS package-stage
+# ARG ARCH=x86_64
+ARG ARCH=aarch64
+COPY --from=build-stage /app/target/${ARCH}-unknown-linux-musl/release/extension /lambda-dispatch

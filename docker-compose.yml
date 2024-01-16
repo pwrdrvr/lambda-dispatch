@@ -29,6 +29,15 @@ services:
     restart: no
     entrypoint: ["/bin/sh", "-c", "echo 'exiting'"]
 
+  extensionrust:
+    platform: linux/arm64
+    build:
+      context: .
+      dockerfile: DockerfileExtensionRust
+    image: lambda-dispatch-extension-rust
+    restart: no
+    entrypoint: ["./lambda-dispatch"]
+
   lambdademoapp:
     depends_on:
       - router
@@ -50,6 +59,31 @@ services:
       - AWS_PROFILE
     volumes:
       - ~/.aws:/root/.aws
+
+  lambdademoapprust:
+    platform: linux/arm64
+    depends_on:
+      - extensionrust
+    build:
+      context: .
+      dockerfile: DockerfileLambdaDemoAppRust
+    networks:
+      - mynetwork
+    environment:
+      # - LAMBDA_DISPATCH_RUNTIME=default_multi_thread
+      - AWS_LAMBDA_FUNCTION_NAME=extension
+      - AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512
+      - AWS_LAMBDA_FUNCTION_VERSION=\$LATEST
+      - AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051
+      - AWS_REGION=us-east-2
+      - AWS_ACCESS_KEY_ID=test-access-key-id
+      - AWS_SECRET_ACCESS_KEY=test-secret-access-key
+      - AWS_SESSION_TOKEN=test-session-token
+      # Pass through AWS_PROFILE if we have one (for the demo-app)
+      - AWS_PROFILE
+    volumes:
+      - ~/.aws:/root/.aws
+    entrypoint: ["./startup.sh"]
 
 networks:
   mynetwork:
