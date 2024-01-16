@@ -255,6 +255,7 @@ jobs:
   build-extension:
     env:
       REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      TARGET_PLATFORM: linux/amd64
 
     permissions:
       contents: read
