@@ -13,7 +13,7 @@ COPY ./.cargo ./.cargo
 
 # This dummy build is to get the dependencies cached
 RUN mkdir src && \
-  echo "fn main() {println!(\"if you see this, the build broke\")}" > src/main.rs &&\
+  echo 'fn main() {println!("if you see this, the build broke")}' > src/main.rs &&\
   source $HOME/.cargo/env &&\
   export PATH=$PATH:/${ARCH}-linux-musl-cross/bin/ &&\
   CC=${ARCH}-unknown-linux-musl-gcc cargo build --release --target=${ARCH}-unknown-linux-musl
