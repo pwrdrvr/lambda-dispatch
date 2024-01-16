@@ -85,6 +85,34 @@
       "name": ".NET Core Attach",
       "type": "coreclr",
       "request": "attach"
-    }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'extension'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=extension",
+          "--package=extension"
+        ],
+        "filter": {
+          "name": "extension",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "AWS_LAMBDA_FUNCTION_NAME": "extension",
+        "AWS_LAMBDA_FUNCTION_MEMORY_SIZE": "512",
+        "AWS_LAMBDA_FUNCTION_VERSION": "$LATEST",
+        "AWS_LAMBDA_RUNTIME_API": "http://localhost:5051",
+        "AWS_REGION": "us-east-2",
+        "AWS_ACCESS_KEY_ID": "test-access-key-id",
+        "AWS_SECRET_ACCESS_KEY": "test-secret-access-key",
+        "AWS_SESSION_TOKEN": "test-session-token"
+      }
+    },
   ]
 }

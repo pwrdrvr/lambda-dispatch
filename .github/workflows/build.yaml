@@ -255,6 +255,7 @@ jobs:
   build-extension:
     env:
       REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      ARCH: x86_64
 
     permissions:
       contents: read
@@ -294,7 +295,9 @@ jobs:
         with:
           context: .
           file: ./DockerfileExtension
-          build-args: BUILD_ARCH=linux-x64
+          build-args: |
+            ARCH=x86_64
+            TARGET_PLATFORM=linux/amd64
           platforms: linux/amd64
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 

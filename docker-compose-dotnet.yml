@@ -26,29 +26,26 @@ services:
       - LAMBDA_DISPATCH_MaxConcurrentCount=10
       - LAMBDA_DISPATCH_FunctionName=dogs
 
-  extension:
-    platform: linux/arm64
+  extensiondotnet:
     build:
       context: .
-      dockerfile: DockerfileExtension
-    image: lambda-dispatch-extension
+      dockerfile: DockerfileExtensionDotNet
+    image: lambda-dispatch-extension-dotnet
     restart: no
-    entrypoint: ["./lambda-dispatch"]
+    entrypoint: ["/bin/sh", "-c", "echo 'exiting'"]
 
-  lambdademoapp:
-    platform: linux/arm64
+  lambdademoappdotnet:
     depends_on:
-      - extension
+      - router
     build:
       context: .
-      dockerfile: DockerfileLambdaDemoApp
+      dockerfile: DockerfileLambdaDemoAppDotNet
     networks:
       - mynetwork
     environment:
-      # - LAMBDA_DISPATCH_RUNTIME=default_multi_thread
-      - AWS_LAMBDA_FUNCTION_NAME=extension
-      - AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512
-      - AWS_LAMBDA_FUNCTION_VERSION=\$LATEST
+      # Limit spins to save 75% CPU
+      # https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757
+      - DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=6
       - AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051
       - AWS_REGION=us-east-2
       - AWS_ACCESS_KEY_ID=test-access-key-id
