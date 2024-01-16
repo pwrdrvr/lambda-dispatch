@@ -304,6 +304,8 @@ public class Dispatcher : IBackgroundDispatcher
   /// <returns>Whether a request was dispatched</returns>
   public async Task<bool> TryBackgroundDispatchOne(bool countAsForeground = false)
   {
+    var startedRequest = false;
+
     try
     {
       // If there should be pending requests, try to get a connection then grab a request
@@ -323,6 +325,7 @@ public class Dispatcher : IBackgroundDispatcher
         // Try to get a pending request
         if (_pendingRequests.TryDequeue(out var pendingRequest))
         {
+          startedRequest = true;
           pendingRequest.RecordDispatchTime();
           _logger.LogDebug("Dispatching pending request");
 
@@ -385,7 +388,7 @@ public class Dispatcher : IBackgroundDispatcher
     catch (Exception ex)
     {
       _logger.LogError(ex, "TryBackgroundDispatchOne - Exception");
-      throw;
+      return startedRequest;
     }
   }
 }
