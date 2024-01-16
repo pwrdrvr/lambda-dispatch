@@ -413,8 +413,24 @@ public class LambdaInstance : ILambdaInstance
       // and a connection we can do it on
       //
 
-      // NOTE: We do not away this else we'd get locked up requests and deep call stacks
-      dispatcher.TryBackgroundDispatchOne(countAsForeground: true).ContinueWith((result) => { }).ConfigureAwait(false);
+      // NOTE: We do not await this else we'd get locked up requests and deep call stacks
+      const int maxAttempts = 3;
+      Task.Run(async () =>
+      {
+        // We try this a few times, similarly to a spin lock
+        // Otherwise, single-channel situations will cause 2x-3x more
+        // background dispatches which are slow
+        for (int i = 0; i < maxAttempts; i++)
+        {
+          var result = await dispatcher.TryBackgroundDispatchOne(countAsForeground: true).ConfigureAwait(false);
+
+          // If the dispatch was successful, break out of the loop
+          if (result)
+          {
+            break;
+          }
+        }
+      });
 
       return Task.CompletedTask;
     });
