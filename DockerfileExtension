@@ -6,7 +6,8 @@ ARG ARCH=aarch64
 WORKDIR /app
 
 RUN uname -a
-RUN file $(type -p cargo)
+RUN source $HOME/.cargo/env && cargo --version
+RUN source $HOME/.cargo/env && file $(type -p cargo)
 
 # Copy over manifest files
 COPY ./extension/Cargo.toml ./Cargo.toml
