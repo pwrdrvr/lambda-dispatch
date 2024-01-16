@@ -304,80 +304,88 @@ public class Dispatcher : IBackgroundDispatcher
   /// <returns>Whether a request was dispatched</returns>
   public async Task<bool> TryBackgroundDispatchOne(bool countAsForeground = false)
   {
-    // If there should be pending requests, try to get a connection then grab a request
-    // If we can't get a pending request, put the connection back
-    if (_pendingRequestCount > 0)
+    try
     {
-      // Try to get a connection
-      if (!_lambdaInstanceManager.TryGetConnection(out var lambdaConnection, tentative: true))
+      // If there should be pending requests, try to get a connection then grab a request
+      // If we can't get a pending request, put the connection back
+      if (_pendingRequestCount > 0)
       {
-        _logger.LogDebug("TryBackgroundDispatchOne - No connections available");
-
-        // Start more instances if needed
-        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount).ConfigureAwait(false);
-        return false;
-      }
-
-      // Try to get a pending request
-      if (_pendingRequests.TryDequeue(out var pendingRequest))
-      {
-        pendingRequest.RecordDispatchTime();
-        _logger.LogDebug("Dispatching pending request");
-
-        if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
+        // Try to get a connection
+        if (!_lambdaInstanceManager.TryGetConnection(out var lambdaConnection, tentative: true))
         {
-          _logger.LogWarning("Dispatching (background) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
+          _logger.LogDebug("TryBackgroundDispatchOne - No connections available");
+
+          // Start more instances if needed
+          await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount).ConfigureAwait(false);
+          return false;
         }
 
-        // Register that we are going to use this connection
-        // This will add the decrement of outstanding connections when complete
-        lambdaConnection.Instance.TryGetConnectionWillUse(lambdaConnection);
-
-        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
-        if (countAsForeground)
+        // Try to get a pending request
+        if (_pendingRequests.TryDequeue(out var pendingRequest))
         {
-          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
+          pendingRequest.RecordDispatchTime();
+          _logger.LogDebug("Dispatching pending request");
+
+          if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
+          {
+            _logger.LogWarning("Dispatching (background) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
+          }
+
+          // Register that we are going to use this connection
+          // This will add the decrement of outstanding connections when complete
+          lambdaConnection.Instance.TryGetConnectionWillUse(lambdaConnection);
+
+          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
+          if (countAsForeground)
+          {
+            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
+          }
+          else
+          {
+            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+          }
+
+          Interlocked.Decrement(ref _pendingRequestCount);
+          MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
+
+          Interlocked.Increment(ref _runningRequestCount);
+          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
+
+          try
+          {
+            await lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ConfigureAwait(false);
+          }
+          finally
+          {
+            Interlocked.Decrement(ref _runningRequestCount);
+            MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
+
+            // Signal the pending request that it's been completed
+            pendingRequest.ResponseFinishedTCS.SetResult();
+
+            // Update number of instances that we want
+            await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          }
+
+          return true;
         }
         else
         {
-          MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+          _logger.LogDebug("TryBackgroundDispatchOne - No pending requests, putting connection back");
+
+          // We didn't get a pending request, so put the connection back
+          await _lambdaInstanceManager.ReenqueueUnusedConnection(lambdaConnection, lambdaConnection.Instance.Id);
+
+          return false;
         }
-
-        Interlocked.Decrement(ref _pendingRequestCount);
-        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-
-        Interlocked.Increment(ref _runningRequestCount);
-        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
-
-        try
-        {
-          await lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ConfigureAwait(false);
-        }
-        finally
-        {
-          Interlocked.Decrement(ref _runningRequestCount);
-          MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
-
-          // Signal the pending request that it's been completed
-          pendingRequest.ResponseFinishedTCS.SetResult();
-
-          // Update number of instances that we want
-          await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
-        }
-
-        return true;
       }
-      else
-      {
-        _logger.LogDebug("TryBackgroundDispatchOne - No pending requests, putting connection back");
 
-        // We didn't get a pending request, so put the connection back
-        await _lambdaInstanceManager.ReenqueueUnusedConnection(lambdaConnection, lambdaConnection.Instance.Id);
-
-        return false;
-      }
+      return false;
     }
-
-    return false;
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "TryBackgroundDispatchOne - Exception");
+      throw;
+    }
   }
 }
