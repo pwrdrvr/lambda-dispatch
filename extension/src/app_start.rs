@@ -18,30 +18,30 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>) {
 
     // Create http connection
     let tcp_stream = match TcpStream::connect(app_addr.clone()).await {
-      Err(_err) => {
-        // println!("Failed to connect to contained app: {:?}", err);
+      Err(err) => {
+        log::debug!("Failed to connect to contained app: {:?}", err);
         continue;
       }
       Ok(tcp_stream) => {
-        // println!("Connected to contained app");
+        log::debug!("Connected to contained app");
         tcp_stream
       }
     };
     tcp_stream.set_nodelay(true).unwrap();
     let io = TokioIo::new(tcp_stream);
     let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
-      Err(_err) => {
-        // println!("Failed to handshake with contained app: {:?}", err);
+      Err(err) => {
+        log::debug!("Failed to handshake with contained app: {:?}", err);
         continue;
       }
       Ok((sender, conn)) => {
-        // println!("Handshake with contained app success");
+        log::debug!("Handshake with contained app success");
         (sender, conn)
       }
     };
     tokio::task::spawn(async move {
       if let Err(err) = conn.await {
-        println!("Healthcheck connection failed: {:?}", err);
+        log::error!("Healthcheck connection failed: {:?}", err);
       }
     });
     let req = Request::builder()
@@ -60,27 +60,27 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>) {
     }
 
     let res = match sender.send_request(req).await {
-      Err(_err) => {
-        // println!("Failed to send request to contained app: {:?}", err);
+      Err(err) => {
+        log::debug!("Failed to send request to contained app: {:?}", err);
         continue;
       }
       Ok(res) => {
-        // println!("Send request to contained app success");
+        log::debug!("Send request to contained app success");
         res
       }
     };
     let (parts, _) = res.into_parts();
     if parts.status == hyper::StatusCode::OK {
-      println!("Health check success");
+      log::info!("Health check success");
       break;
     } else {
-      println!("Health check failed: {:?}\nHeaders:", parts.status);
+      log::warn!("Health check failed: {:?}\nHeaders:", parts.status);
       // Print all the headers received and the body
       for header in parts.headers.iter() {
-        println!("  {}: {}", header.0, header.1.to_str().unwrap());
+        log::info!("  {}: {}", header.0, header.1.to_str().unwrap());
       }
     }
   }
 
-  println!("Health check complete");
+  log::info!("Health check complete");
 }

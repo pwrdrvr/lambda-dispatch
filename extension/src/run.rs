@@ -267,7 +267,7 @@ pub async fn run(
                           let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
                           // If chunk_len is zero the channel has closed
                           if chunk_len == 0 {
-                            println!("LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent, chunk_len);
+                            log::debug!("LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent, chunk_len);
                             break;
                           }
                           match app_req_tx.send(Ok(chunk.unwrap())).await {

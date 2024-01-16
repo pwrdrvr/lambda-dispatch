@@ -178,7 +178,7 @@ pub async fn send_ping_requests(
     tokio::time::sleep(Duration::from_secs(5)).await;
   }
 
-  println!(
+  log::info!(
     "LambdaId: {}, Requests: {}, GoAway: {} - Ping Loop - Exiting",
     lambda_id,
     count.load(Ordering::Relaxed),

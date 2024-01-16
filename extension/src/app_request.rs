@@ -70,7 +70,7 @@ pub async fn read_until_req_headers(
         return Ok((app_req_bld, false, left_over_buf));
       }
       Ok(httparse::Status::Partial) => {
-        println!("Partial header received, waiting for more data");
+        log::debug!("Partial header received, waiting for more data");
       }
       Err(e) => {
         Err(anyhow::anyhow!("Failed to parse headers: {:?}", e))?;
