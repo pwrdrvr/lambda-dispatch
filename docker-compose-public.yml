@@ -19,6 +19,11 @@ services:
       - AWS_SECRET_ACCESS_KEY=test-secret-access-key
       - AWS_SESSION_TOKEN=test-session-token
       - ROUTER_CALLBACK_HOST=router
+      - LAMBDA_DISPATCH_ChannelCount=10
+      - LAMBDA_DISPATCH_AllowInsecureControlChannel=true
+      - LAMBDA_DISPATCH_PreferredControlChannelScheme=http
+      - LAMBDA_DISPATCH_MaxConcurrentCount=10
+      - LAMBDA_DISPATCH_FunctionName=dogs
 
   lambdademoapp:
     depends_on:
@@ -28,9 +33,9 @@ services:
     networks:
       - mynetwork
     environment:
-      # Limit spins to save 75% CPU
-      # https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757
-      - DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=6
+      - AWS_LAMBDA_FUNCTION_VERSION=\$LATEST
+      - AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512
+      - AWS_LAMBDA_FUNCTION_NAME=dogs
       - AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051
       - AWS_REGION=us-east-2
       - AWS_ACCESS_KEY_ID=test-access-key-id
@@ -40,6 +45,7 @@ services:
       - AWS_PROFILE
     volumes:
       - ~/.aws:/root/.aws
+    entrypoint: ["./startup.sh"]
 
 networks:
   mynetwork:
