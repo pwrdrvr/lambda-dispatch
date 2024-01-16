@@ -20,10 +20,7 @@ use tokio::net::TcpStream;
 use crate::app_request;
 use crate::cert::AcceptAnyServerCert;
 use crate::ping;
-// use crate::support::TokioIo;
 use crate::time;
-
-// use crate::support::TokioExecutor;
 
 use tokio_rustls::client::TlsStream;
 
@@ -218,9 +215,6 @@ pub async fn run(
                       mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
                   let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
 
-                  // let app_req =
-                  //     app_req_builder.body(http_body_util::Empty::<Bytes>::new())?;
-
                   while futures::future::poll_fn(|ctx| app_sender.poll_ready(ctx))
                   .await
                   .is_err()
@@ -248,6 +242,9 @@ pub async fn run(
                               .unwrap();
                       }
 
+                      //
+                      // Handle incoming POST request by relaying the body
+                      //
                       // Source: res_stream
                       // Sink: app_req_tx
                       while let Some(chunk) = futures::future::poll_fn(|cx| {
@@ -284,17 +281,11 @@ pub async fn run(
                       // println!("ChannelId: {} - Closed app_req_tx", channel_id_clone.clone());
                   });
 
+                  //
                   // Send the request
+                  //
                   let app_res = app_sender.send_request(app_req).await?;
                   let (app_parts, mut app_res_stream) = app_res.into_parts();
-
-                  //
-                  // TODO: Handle incoming POST request by relaying the body
-                  //
-
-                  // Close the post body stream
-                  // app_tx.close().await?;
-                  // drop(app_tx);
 
                   //
                   // Relay the response
@@ -312,12 +303,12 @@ pub async fn run(
                   header_buffer.extend(status_line_bytes);
 
                   // Add two static headers for X-Lambda-Id and X-Channel-Id
-                    let lambda_id_header = format!("X-Lambda-Id: {}\r\n", lambda_id);
-                    let lambda_id_header_bytes = lambda_id_header.as_bytes();
-                    header_buffer.extend(lambda_id_header_bytes);
-                    let channel_id_header = format!("X-Channel-Id: {}\r\n", channel_id);
-                    let channel_id_header_bytes = channel_id_header.as_bytes();
-                    header_buffer.extend(channel_id_header_bytes);
+                  let lambda_id_header = format!("X-Lambda-Id: {}\r\n", lambda_id);
+                  let lambda_id_header_bytes = lambda_id_header.as_bytes();
+                  header_buffer.extend(lambda_id_header_bytes);
+                  let channel_id_header = format!("X-Channel-Id: {}\r\n", channel_id);
+                  let channel_id_header_bytes = channel_id_header.as_bytes();
+                  header_buffer.extend(channel_id_header_bytes);
 
                   // Send the headers to the caller
                   for header in app_parts.headers.iter() {
