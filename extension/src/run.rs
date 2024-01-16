@@ -86,9 +86,14 @@ pub async fn run(
     .await
     .unwrap();
 
+  let lambda_id_clone = lambda_id.clone();
   tokio::task::spawn(async move {
     if let Err(err) = conn.await {
-      println!("Connection failed: {:?}", err);
+      log::error!(
+        "LambdaId: {} - Router HTTP2 connection failed: {:?}",
+        lambda_id_clone.clone(),
+        err
+      );
     }
   });
 
@@ -119,7 +124,7 @@ pub async fn run(
 
           let lambda_id = lambda_id.clone();
           let channel_id = format!(
-              "channel-{}",
+              "{}",
               uuid::Builder::from_random_bytes(rng.gen())
                   .into_uuid()
                   .to_string()
@@ -138,23 +143,24 @@ pub async fn run(
               let app_port = app_url.port_u16().unwrap_or(80);
               let app_addr = format!("{}:{}", app_host, app_port);
 
-              // TODO: Only create this when we get a request
               // Setup the contained app connection
               // This is HTTP/1.1 so we need 1 connection for each worker
               let app_tcp_stream = TcpStream::connect(app_addr).await?;
               let app_io = TokioIo::new(app_tcp_stream);
               let (mut app_sender, app_conn) =
                   hyper::client::conn::http1::handshake(app_io).await?;
+              let lambda_id_clone = lambda_id.clone();
+              let channel_id_clone = channel_id.clone();
               tokio::task::spawn(async move {
                   if let Err(err) = app_conn.await {
-                      println!("Connection failed: {:?}", err);
+                      log::error!("LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}", lambda_id_clone.clone(), channel_id_clone.clone(), err);
                   }
               });
 
               // This is where HTTP2 loops to make all the requests for a given client and worker
               loop {
                   if goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
-                      println!("ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", channel_id.clone(), channel_number);
+                      log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
                       break;
                   }
 
@@ -175,24 +181,24 @@ pub async fn run(
                   // Make the request
                   //
 
-                  // println!("sending request");
+                  log::debug!("LambdaId: {}, ChannelId: {} - sending request", lambda_id.clone(), channel_id.clone());
                   while futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
                   .await
                   .is_err()
                   {
                       // This gets hit when the connection faults
-                      panic!("Connection ready check threw error - connection has disconnected, should reconnect");
+                      panic!("LambdaId: {}, ChannelId: {} - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone(), channel_id.clone());
                   }
 
                   let res = sender.send_request(req).await?;
-                  // println!("got response: {:?}", res);
+                  log::debug!("LambdaId: {}, ChannelId: {} - got response: {:?}", lambda_id.clone(), channel_id.clone(), res);
                   let (parts, mut res_stream) = res.into_parts();
-                  // println!("split response");
+                  log::debug!("LambdaId: {}, ChannelId: {} - split response", lambda_id.clone(), channel_id.clone(),);
 
                   // If the router returned a 409 when we opened the channel
                   // then we close the channel
                   if parts.status == 409 {
-                      println!("ChannelId: {}, ChannelNum: {} - 409 received, exiting loop", channel_id.clone(), channel_number);
+                      log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - 409 received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
                       goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
                       break;
                   }
@@ -202,7 +208,7 @@ pub async fn run(
                       = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone(), app_url.clone()).await?;
 
                   if is_goaway {
-                      println!("ChannelId: {} - GoAway received from read_until_req_headers, exiting", channel_id.clone());
+                      log::info!("LambdaId: {}, ChannelId: {} - GoAway received from read_until_req_headers, exiting", lambda_id.clone(), channel_id.clone());
                       goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
                       tx.close().await.unwrap_or(());
                       break;
@@ -220,7 +226,7 @@ pub async fn run(
                   .is_err()
                   {
                       // This gets hit when the connection faults
-                      panic!("Connection ready check threw error - connection has disconnected, should reconnect");
+                      panic!("LambdaId: {}, ChannelId: {} - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone(), channel_id.clone());
                   }
 
                   // Relay the request body to the contained app
@@ -229,13 +235,14 @@ pub async fn run(
                   // and we need to set this up before we actually send the request
                   // to the contained app
                   let channel_id_clone = channel_id.clone();
+                  let lambda_id_clone = lambda_id.clone();
                   let relay_task = tokio::task::spawn(async move {
                       let mut bytes_sent = 0;
 
                       // Send any overflow body bytes to the contained app
                       if left_over_buf.len() > 0 {
                           bytes_sent += left_over_buf.len();
-                          // println!("ChannelId: {} - Sending left over bytes to contained app: {:?}", channel_id_clone.clone(), left_over_buf.len());
+                          log::debug!("LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}", lambda_id_clone.clone(), channel_id_clone.clone(), left_over_buf.len());
                           app_req_tx
                               .send(Ok(Frame::data(left_over_buf.into())))
                               .await
@@ -253,20 +260,20 @@ pub async fn run(
                       .await
                       {
                           if chunk.is_err() {
-                              println!("ChannelId: {} - Error reading from res_stream: {:?}", channel_id_clone.clone(), chunk.err());
+                              log::error!("LambadId: {}, ChannelId: {} - Error reading from res_stream: {:?}", lambda_id_clone.clone(), channel_id_clone.clone(), chunk.err());
                               break;
                           }
 
                           let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
                           // If chunk_len is zero the channel has closed
                           if chunk_len == 0 {
-                            // println!("ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed", channel_id_clone.clone(), bytes_sent, chunk_len);
+                            println!("LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent, chunk_len);
                             break;
                           }
                           match app_req_tx.send(Ok(chunk.unwrap())).await {
                               Ok(_) => {}
                               Err(err) => {
-                                  println!("ChannelId: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}", channel_id_clone.clone(), bytes_sent, chunk_len, err);
+                                  log::error!("LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent, chunk_len, err);
                                   break;
                               }
                           }
@@ -275,10 +282,8 @@ pub async fn run(
                       // Close the post body stream
 
                       // This may error if the router close the connection
-                      // println!("ChannelId: {} - Closing app_req_tx", channel_id_clone.clone());
                       let _ = app_req_tx.flush().await;
                       let _ = app_req_tx.close().await;
-                      // println!("ChannelId: {} - Closed app_req_tx", channel_id_clone.clone());
                   });
 
                   //
@@ -303,7 +308,7 @@ pub async fn run(
                   header_buffer.extend(status_line_bytes);
 
                   // Add two static headers for X-Lambda-Id and X-Channel-Id
-                  let lambda_id_header = format!("X-Lambda-Id: {}\r\n", lambda_id);
+                  let lambda_id_header = format!("X-Lambda-Id: {}\r\n", lambda_id.clone());
                   let lambda_id_header_bytes = lambda_id_header.as_bytes();
                   header_buffer.extend(lambda_id_header_bytes);
                   let channel_id_header = format!("X-Channel-Id: {}\r\n", channel_id);
@@ -353,7 +358,7 @@ pub async fn run(
                   .await
                   {
                       if chunk.is_err() {
-                          println!("ChannelId: {} - Error reading from app_res_stream: {:?}", channel_id_clone.clone(), chunk.err());
+                          log::info!("LambdaId: {}, ChannelId: {} - Error reading from app_res_stream: {:?}", lambda_id.clone(), channel_id_clone.clone(), chunk.err());
                           break;
                       }
 
@@ -383,6 +388,7 @@ pub async fn run(
                                 // All tasks completed successfully
                             }
                             Err(_) => {
+                                panic!("LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", lambda_id.clone(), channel_id_clone.clone());
                             }
                         }
                     }
@@ -400,9 +406,10 @@ pub async fn run(
       result = futures::future::try_join_all(futures) => {
           match result {
               Ok(_) => {
-                  // All tasks completed successfully
+                // All tasks completed successfully
               }
               Err(_) => {
+                panic!("LambdaId: {} - run - Error in futures::future::try_join_all", lambda_id.clone());
               }
           }
       }

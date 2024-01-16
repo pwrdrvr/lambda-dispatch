@@ -40,13 +40,15 @@ pub async fn send_ping_requests(
       || time::current_time_millis() + close_before_deadline_ms > deadline
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
-        println!(
-          "Last active: {} ms ago, requesting close",
+        log::info!(
+          "LambdaId: {}, Last Active: {} ms ago - Requesting close",
+          lambda_id.clone(),
           last_active_ago_ms
         );
       } else if time::current_time_millis() + close_before_deadline_ms > deadline {
-        println!(
-          "Deadline: {} ms away, requesting close",
+        log::info!(
+          "LambdaId: {}, Deadline: {} ms Away - Requesting close",
+          lambda_id.clone(),
           deadline - time::current_time_millis()
         );
       }
@@ -74,7 +76,7 @@ pub async fn send_ping_requests(
       {
         // This gets hit when the connection for HTTP/1.1 faults
         panic!(
-          "Connection ready check threw error - connection has disconnected, should reconnect"
+          "Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect"
         );
       }
 
@@ -91,7 +93,11 @@ pub async fn send_ping_requests(
           }
         }
         Err(err) => {
-          println!("Close request failed: {:?}", err);
+          log::error!(
+            "LambdaId: {} - PingLoop - Close request failed: {:?}",
+            lambda_id.clone(),
+            err
+          );
         }
       }
 
@@ -119,7 +125,7 @@ pub async fn send_ping_requests(
       .is_err()
     {
       // This gets hit when the connection faults
-      panic!("Connection ready check threw error - connection has disconnected, should reconnect");
+      panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone());
     }
 
     let res = sender.send_request(ping_req).await;
@@ -135,33 +141,45 @@ pub async fn send_ping_requests(
         }
 
         if parts.status == 409 {
-          println!("409 received on ping, exiting");
+          log::info!(
+            "LambdaId: {} - Ping Loop - 409 received on ping, exiting",
+            lambda_id.clone()
+          );
           goaway_received.store(true, Ordering::Relaxed);
           break;
         }
 
         if parts.status != StatusCode::OK {
-          println!("non-200 received on ping, exiting: {:?}", parts.status);
+          log::info!(
+            "LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
+            lambda_id.clone(),
+            parts.status
+          );
           goaway_received.store(true, Ordering::Relaxed);
           break;
         }
       }
       Err(err) => {
-        println!("Ping request failed: {:?}", err);
+        log::error!(
+          "LambdaId: {} - Ping Loop - Ping request failed: {:?}",
+          lambda_id.clone(),
+          err
+        );
         goaway_received.store(true, Ordering::Relaxed);
       }
     }
 
-    println!(
-      "X-Lambda-ID: {}, Requests: {}, GoAway: {}",
+    log::info!(
+      "LambdaId: {}, Requests: {}, GoAway: {} - Ping Loop - Looping",
       lambda_id,
       count.load(Ordering::Relaxed),
       goaway_received.load(Ordering::Relaxed)
     );
     tokio::time::sleep(Duration::from_secs(5)).await;
   }
+
   println!(
-    "X-Lambda-ID: {}, Requests: {}, GoAway: {}",
+    "LambdaId: {}, Requests: {}, GoAway: {} - Ping Loop - Exiting",
     lambda_id,
     count.load(Ordering::Relaxed),
     goaway_received.load(Ordering::Relaxed)

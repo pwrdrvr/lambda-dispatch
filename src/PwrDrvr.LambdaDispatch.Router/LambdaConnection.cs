@@ -73,7 +73,7 @@ public class LambdaConnection
     // Handle an abnormal connection termination
     Request.HttpContext.RequestAborted.Register(() =>
     {
-      _logger.LogWarning("ProxyRequestToLambda - Incoming request aborted");
+      _logger.LogWarning("LambdaId: {}, ChannelId: {} - ProxyRequestToLambda - Incoming request aborted", Instance.Id, ChannelId);
 
       Instance.ConnectionClosed(State == LambdaConnectionState.Busy);
 
@@ -118,7 +118,7 @@ public class LambdaConnection
   private async Task ProxyRequestToLambda(HttpRequest incomingRequest)
   {
     // Send the incoming Request on the lambda's Response
-    _logger.LogDebug("Sending incoming request headers to Lambda");
+    _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request headers to Lambda", Instance.Id, ChannelId);
 
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
@@ -151,9 +151,10 @@ public class LambdaConnection
       await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
 
       // Only copy the request body if the request has a body
-      if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding") && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
+      if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding")
+          && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
       {
-        _logger.LogDebug("Sending incoming request body to Lambda");
+        _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request body to Lambda", Instance.Id, ChannelId);
 
         // Send the body to the Lambda
         var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
@@ -235,7 +236,7 @@ public class LambdaConnection
     {
       foreach (var ex in ae.InnerExceptions)
       {
-        var logExceptionStack = false;
+        bool logExceptionStack;
 
         // This happens when the client aborts the request and we are still reading
         if (ex is BadHttpRequestException || ex is ConnectionResetException)
@@ -255,32 +256,34 @@ public class LambdaConnection
 
           if (logExceptionStack)
           {
-            _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
-                requestDate.ToLocalTime().ToString("o"),
-                duration.TotalSeconds,
+            _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago",
                 Instance.Id,
-                ChannelId);
+                ChannelId,
+                requestDate.ToLocalTime().ToString("o"),
+                duration.TotalSeconds
+                );
           }
           else
           {
-            _logger.LogError("LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
-                requestDate.ToLocalTime().ToString("o"),
-                duration.TotalSeconds,
+            _logger.LogError("LambdaId: {}, ChannelId: {} - LambdaConnection.RunRequest - Exception - Request was received at {RequestDate}, {DurationInSeconds} seconds ago",
                 Instance.Id,
-                ChannelId);
+                ChannelId,
+                requestDate.ToLocalTime().ToString("o"),
+                duration.TotalSeconds
+                );
           }
         }
         else
         {
           if (logExceptionStack)
           {
-            _logger.LogError(ex, "LambdaConnection.RunRequest - Exception - Receipt time not known, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+            _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - LambdaConnection.RunRequest - Exception - Receipt time not known",
                 Instance.Id,
                 ChannelId);
           }
           else
           {
-            _logger.LogError("LambdaConnection.RunRequest - Exception - Receipt time not known, LambdaID: {LambdaId}, ChannelId: {ChannelId}",
+            _logger.LogError("LambdaId: {}, ChannelId: {} - LambdaConnection.RunRequest - Exception - Receipt time not known",
                 Instance.Id,
                 ChannelId);
           }
@@ -314,7 +317,7 @@ public class LambdaConnection
 
   private async Task RelayResponseFromLambda(HttpResponse incomingResponse)
   {
-    _logger.LogDebug("Copying response body from Lambda");
+    _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
 
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
@@ -324,8 +327,8 @@ public class LambdaConnection
       // Read until we fill the bufer OR we get an EOF
       int totalBytesRead = 0;
       int idxToExamine = 0;
-      int idxPriorLineFeed = -1;
-      int idxHeadersLast = -1;
+      int idxPriorLineFeed = int.MinValue;
+      int idxHeadersLast = int.MinValue;
       while (true)
       {
         if (totalBytesRead >= headerBuffer.Length)
@@ -349,7 +352,9 @@ public class LambdaConnection
         for (int i = idxToExamine; i < totalBytesRead; i++)
         {
           // If this is a `\n` and the -1 or -2 character is `\n` then we we are done
-          if (headerBuffer[i] == (byte)'\n' && (idxPriorLineFeed == i - 1 || (idxPriorLineFeed == i - 2 && headerBuffer[i - 1] == (byte)'\r')))
+          if (headerBuffer[i] == (byte)'\n'
+              && ((idxPriorLineFeed == i - 1)
+                  || (idxPriorLineFeed == i - 2 && headerBuffer[i - 1] == (byte)'\r')))
           {
             // We found the `\r\n\r\n` sequence
             // We are done reading
@@ -377,7 +382,11 @@ public class LambdaConnection
       //
 
       // Read the status line
-      int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n');
+      // This buffer is huge and we may only have a small portion of it
+      // Do not read past the end of where we have written to
+      // The above loop will break out when ReadAsync returns 0,
+      // which can happen if a connection closes before the headers are finished
+      int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n', 0, totalBytesRead);
       if (endOfStatusLine == -1)
       {
         // Handle error: '\n' not found in the buffer
@@ -386,7 +395,15 @@ public class LambdaConnection
 
       string statusLine = Encoding.UTF8.GetString(headerBuffer, 0, endOfStatusLine);
 
-      incomingResponse.StatusCode = int.Parse(statusLine.Split(' ')[1]);
+      try
+      {
+        incomingResponse.StatusCode = int.Parse(statusLine.Split(' ')[1]);
+      }
+      catch (FormatException)
+      {
+        // This can happen if we get misaligned
+        throw new Exception($"Invalid status code in response status line: {statusLine}");
+      }
 
       // Start processing the rest of the headers from the character after '\n'
       int startOfNextLine = endOfStatusLine + 1;
@@ -395,7 +412,7 @@ public class LambdaConnection
       while (startOfNextLine < totalBytesRead)
       {
         // Find the index of the next '\n' in headerBuffer
-        int endOfLine = Array.IndexOf(headerBuffer, (byte)'\n', startOfNextLine);
+        int endOfLine = Array.IndexOf(headerBuffer, (byte)'\n', startOfNextLine, totalBytesRead - startOfNextLine);
         if (endOfLine == -1)
         {
           // No more '\n' found
@@ -470,6 +487,6 @@ public class LambdaConnection
       ArrayPool<byte>.Shared.Return(bytes);
     }
 
-    _logger.LogDebug("Copied response body from Lambda");
+    _logger.LogDebug("LambdaId: {} - Copied response body from Lambda", Instance.Id);
   }
 }
