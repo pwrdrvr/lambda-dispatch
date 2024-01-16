@@ -368,7 +368,7 @@ public class LambdaConnection
           }
         }
 
-        if (idxHeadersLast != -1)
+        if (idxHeadersLast != int.MinValue)
         {
           // We found the `\r\n\r\n` sequence
           // We are done reading
