@@ -11,7 +11,7 @@ WORKDIR /app
 COPY src/demo-app/package.json src/demo-app/package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy everything from the current directory to the working directory in the image
 COPY src/demo-app/ ./
@@ -32,10 +32,9 @@ FROM public.ecr.aws/lambda/nodejs:20
 COPY --from=extension /lambda-dispatch /opt/extensions/lambda-dispatch
 
 # Copy the node.js app
-# WORKDIR ${LAMBDA_TASK_ROOT}
-
 COPY --from=node-build-env /app/dist/ dist/
-# COPY --from=node-build-env /app/startapp.sh ./
+# This is only used for testing with docker-compose
+COPY extension/startup.sh ./
 
 # Set the entrypoint
 ENTRYPOINT ["node", "dist/app.cjs"]
