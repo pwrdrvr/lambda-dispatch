@@ -35,7 +35,7 @@ pub async fn run(
   lambda_id: String,
   channel_count: i32,
   router_url: Uri,
-  deadline: u64,
+  deadline_ms: u64,
 ) -> anyhow::Result<()> {
   let cancel_token = tokio_util::sync::CancellationToken::new();
   let count = Arc::new(AtomicUsize::new(0));
@@ -111,7 +111,7 @@ pub async fn run(
     scheme_clone,
     host_clone,
     port,
-    deadline,
+    deadline_ms,
     cancel_token.clone(),
   ));
 
@@ -202,9 +202,12 @@ pub async fn run(
                   // If the router returned a 409 when we opened the channel
                   // then we close the channel
                   if parts.status == 409 {
+                    if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
                       log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - 409 received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
                       goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
-                      break;
+                    }
+                    tx.close().await.unwrap_or(());
+                    break;
                   }
 
                   // Read until we get all the request headers so we can construct our app request
@@ -212,8 +215,10 @@ pub async fn run(
                       = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone(), app_url.clone()).await?;
 
                   if is_goaway {
-                      log::info!("LambdaId: {}, ChannelId: {} - GoAway received from read_until_req_headers, exiting", lambda_id.clone(), channel_id.clone());
-                      goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
+                      if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
+                        log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
+                        goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
+                      }
                       tx.close().await.unwrap_or(());
                       break;
                   }

@@ -9,6 +9,8 @@ use lambda_runtime::LambdaEvent;
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 
+use crate::time::current_time_millis;
+
 mod app_request;
 mod app_start;
 mod cert;
@@ -145,9 +147,11 @@ async fn my_extension(
   match event.next {
     lambda_extension::NextEvent::Shutdown(_e) => {
       // do something with the shutdown event
+      log::info!("Extension - Shutdown event received");
     }
     lambda_extension::NextEvent::Invoke(_e) => {
       // do something with the invoke event
+      // log::info!("Invoke event received");
     }
   }
   Ok(())
@@ -166,14 +170,29 @@ pub(crate) async fn my_handler(
     id: lambda_id.to_string(),
   };
 
-  log::info!("LambdaId: {} - Invoked", lambda_id);
+  log::info!(
+    "LambdaId: {}, Timeout: {}s - Invoked",
+    lambda_id,
+    (event.context.deadline - current_time_millis()) / 1000
+  );
+  let mut deadline_ms = event.context.deadline;
+  if (deadline_ms - current_time_millis()) > 15 * 60 * 1000 {
+    log::warn!("Deadline is greater than 15 minutes, trimming to 1 minute");
+    deadline_ms = current_time_millis() + 60 * 1000;
+  }
+  // check if env var is set to force deadline for testing
+  if let Ok(force_deadline_secs) = std::env::var("LAMBDA_DISPATCH_FORCE_DEADLINE") {
+    log::warn!("Forcing deadline to {} seconds", force_deadline_secs);
+    let force_deadline_secs: u64 = force_deadline_secs.parse().unwrap();
+    deadline_ms = current_time_millis() + force_deadline_secs * 1000;
+  }
 
   // run until we get a GoAway
   run::run(
     lambda_id.clone(),
     channel_count,
     dispatcher_url.parse().unwrap(),
-    event.context.deadline,
+    deadline_ms,
   )
   .await?;
 

@@ -29,7 +29,7 @@ pub async fn send_ping_requests(
   scheme: String,
   host: String,
   port: u16,
-  deadline: u64,
+  deadline_ms: u64,
   cancel_sleep: tokio_util::sync::CancellationToken,
 ) {
   while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
@@ -38,7 +38,7 @@ pub async fn send_ping_requests(
     let last_active_ago_ms = time::current_time_millis() - last_active.load(Ordering::Relaxed);
     // TODO: Compute time we should stop at based on the initial function timeout duration
     if last_active_ago_ms > 1 * last_active_grace_period_ms
-      || time::current_time_millis() + close_before_deadline_ms > deadline
+      || time::current_time_millis() + close_before_deadline_ms > deadline_ms
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
         log::info!(
@@ -46,11 +46,11 @@ pub async fn send_ping_requests(
           lambda_id.clone(),
           last_active_ago_ms
         );
-      } else if time::current_time_millis() + close_before_deadline_ms > deadline {
+      } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
           "LambdaId: {}, Deadline: {} ms Away - Requesting close",
           lambda_id.clone(),
-          deadline - time::current_time_millis()
+          deadline_ms - time::current_time_millis()
         );
       }
       goaway_received.store(true, Ordering::Relaxed);
