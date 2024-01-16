@@ -30,6 +30,7 @@ pub async fn send_ping_requests(
   host: String,
   port: u16,
   deadline: u64,
+  cancel_sleep: tokio_util::sync::CancellationToken,
 ) {
   while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
     let last_active_grace_period_ms = 5000;
@@ -175,7 +176,15 @@ pub async fn send_ping_requests(
       count.load(Ordering::Relaxed),
       goaway_received.load(Ordering::Relaxed)
     );
-    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    tokio::select! {
+        _ = cancel_sleep.cancelled() => {
+          // The token was cancelled
+          log::info!("LambdaId: {} - Ping Loop - Cancelled", lambda_id.clone());
+        }
+        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+        }
+    };
   }
 
   log::info!(

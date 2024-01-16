@@ -37,6 +37,7 @@ pub async fn run(
   router_url: Uri,
   deadline: u64,
 ) -> anyhow::Result<()> {
+  let cancel_token = tokio_util::sync::CancellationToken::new();
   let count = Arc::new(AtomicUsize::new(0));
   let mut rng = rand::rngs::StdRng::from_entropy();
   let goaway_received = Arc::new(AtomicBool::new(false));
@@ -100,7 +101,7 @@ pub async fn run(
   // Send the ping requests in background
   let scheme_clone = scheme.clone();
   let host_clone = host.clone();
-  tokio::task::spawn(ping::send_ping_requests(
+  let ping_task = tokio::task::spawn(ping::send_ping_requests(
     Arc::clone(&last_active),
     Arc::clone(&goaway_received),
     authority.to_string(),
@@ -111,6 +112,7 @@ pub async fn run(
     host_clone,
     port,
     deadline,
+    cancel_token.clone(),
   ));
 
   // Startup the request channels
@@ -159,10 +161,12 @@ pub async fn run(
 
               // This is where HTTP2 loops to make all the requests for a given client and worker
               loop {
-                  if goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
-                      log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
-                      break;
-                  }
+                    // Exiting here on a goaway is a race condition
+                    // There may actually be a request being sent already on this channel
+                //   if goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
+                //       log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
+                //       break;
+                //   }
 
                   // Create the router request
                   let (mut tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
@@ -178,7 +182,7 @@ pub async fn run(
                       .body(boxed_body)?;
 
                   //
-                  // Make the request
+                  // Make the request to the router
                   //
 
                   log::debug!("LambdaId: {}, ChannelId: {} - sending request", lambda_id.clone(), channel_id.clone());
@@ -217,6 +221,9 @@ pub async fn run(
                   // We got a request to run
                   last_active.store(time::current_time_millis(), Ordering::Relaxed);
 
+                  //
+                  // Make the request to the contained app
+                  //
                   let (mut app_req_tx, app_req_recv) =
                       mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
                   let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
@@ -281,7 +288,7 @@ pub async fn run(
                       }
                       // Close the post body stream
 
-                      // This may error if the router close the connection
+                      // This may error if the router closed the connection
                       let _ = app_req_tx.flush().await;
                       let _ = app_req_tx.close().await;
                   });
@@ -414,6 +421,10 @@ pub async fn run(
           }
       }
   }
+
+  // Wait for the ping loop to exit
+  cancel_token.cancel();
+  ping_task.await?;
 
   Ok(())
 }
