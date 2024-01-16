@@ -5,10 +5,6 @@ FROM --platform=$TARGET_PLATFORM public.ecr.aws/awsguru/rust-builder as build-st
 ARG ARCH=aarch64
 WORKDIR /app
 
-RUN uname -a
-RUN source $HOME/.cargo/env && cargo --version
-RUN source $HOME/.cargo/env && file $(type -p cargo)
-
 # Copy over manifest files
 COPY ./extension/Cargo.toml ./Cargo.toml
 COPY ./.cargo ./.cargo
