@@ -198,6 +198,12 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Items,
   };
 
+  public static readonly GaugeOptions LambdaInstanceStoppingCount = new()
+  {
+    Name = "LambdaInstanceStoppingCount",
+    MeasurementUnit = Unit.Items,
+  };
+
   public static readonly GaugeOptions LambdaInstanceRunningCount = new()
   {
     Name = "LambdaInstanceRunningCount",

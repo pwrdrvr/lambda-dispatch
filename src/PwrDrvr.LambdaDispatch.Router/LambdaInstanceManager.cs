@@ -47,6 +47,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private volatile int _startingInstanceCount = 0;
 
+  /// <summary>
+  /// Count of instances that have called Close() but are still running
+  /// </summary>
+  private volatile int _stoppingInstanceCount = 0;
+
   private readonly int _maxConcurrentCount;
 
   private readonly int _channelCount;
@@ -212,7 +217,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         Interlocked.Exchange(ref _desiredInstanceCount, desiredInstanceCount);
 
         // Start instances if needed
-        while (_runningInstanceCount + _startingInstanceCount < desiredInstanceCount)
+        while (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount
+              < desiredInstanceCount)
         {
           _logger.LogDebug("ManageCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
           // Start a new instance
@@ -334,6 +340,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))
     {
+      // Note: this can't really happen since the instance assigned a GUID and we only add it here
       throw new Exception("Failed to add instance to collection - key already exists");
     }
 
@@ -354,48 +361,82 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       _leastOutstandingQueue.AddInstance(instance);
     };
 
-    instance.OnInvocationComplete += async (instance) =>
+    //
+    // Called from the LambdaInstance.Close method when close is
+    // initiated rather than just observing an Invoke has returned
+    //
+    instance.OnCloseInitiated += async (instance) =>
     {
-      // Only decrement the count if this instance was ever opened
-      if (instance.WasOpened)
+      // We always increment the stopping count when initiating a close
+      Interlocked.Increment(ref _stoppingInstanceCount);
+      MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
+
+      // Replace this instance if it's still desired
+      if (!instance.DoNotReplace)
       {
-        Interlocked.Decrement(ref _runningInstanceCount);
-        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
-      }
-      else
-      {
-        _logger.LogInformation("LambdaInstance {instanceId} was never opened, replacing", instance.Id);
-        Interlocked.Decrement(ref _startingInstanceCount);
-        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
-      }
-
-      _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount} (after decrement)", instance.Id, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
-
-      // Remove this instance from the collection
-      _instances.TryRemove(instance.Id, out var instanceFromList);
-
-      // The instance will already be marked as closing
-      if (instanceFromList != null)
-      {
-        // We don't want to wait for this, let it happen in the background
-        instanceFromList.Close();
-      }
-
-      if (instance.DoNotReplace)
-      {
-        _logger.LogInformation("LambdaInstance {instanceId} marked as DoNotReplace, not replacing", instance.Id);
-        return;
-      }
-
-      // We need to keep track of how many Lambdas are running
-      // We will replace this one if it's still desired
-
-      if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
-      {
-        // We need to start a new instance
-        await StartNewInstance().ConfigureAwait(false);
+        if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount
+              < _desiredInstanceCount)
+        {
+          // We need to start a new instance
+          await StartNewInstance().ConfigureAwait(false);
+        }
       }
     };
+
+    instance.OnInvocationComplete += async (instance) =>
+      {
+        if (instance.WasOpened)
+        {
+          // The instance opened, so decrement the running count not the starting count
+          Interlocked.Decrement(ref _runningInstanceCount);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+        }
+        else
+        {
+          _logger.LogInformation("LambdaInstance {instanceId} was never opened, replacing", instance.Id);
+          // The instance never opened (e.g. throttled and failed) so decrement the starting count
+          Interlocked.Decrement(ref _startingInstanceCount);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+        }
+
+        // If the instance just returned but was not marked as closing,
+        // then we should not decrement the stopping count.
+        // But if Closing was initiated then we should decrement the count.
+        if (!instance.TransitionToClosing())
+        {
+          Interlocked.Decrement(ref _stoppingInstanceCount);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
+          _logger.LogInformation("LambdaInstance {instanceId} was closed already, _stoppingInstanceCount {_stoppingInstanceCount} (after decrement)", instance.Id, _stoppingInstanceCount);
+        }
+
+        _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount} (after decrement), _stoppingInstanceCount {_stoppingInstanceCount}",
+          instance.Id, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount, _stoppingInstanceCount);
+
+        // Remove this instance from the collection
+        _instances.TryRemove(instance.Id, out var instanceFromList);
+
+        // The instance will already be marked as closing
+        if (instanceFromList != null)
+        {
+          // We don't want to wait for this, let it happen in the background
+          instanceFromList.Close();
+        }
+
+        if (instance.DoNotReplace)
+        {
+          _logger.LogInformation("LambdaInstance {instanceId} marked as DoNotReplace, not replacing", instance.Id);
+          return;
+        }
+
+        // We need to keep track of how many Lambdas are running
+        // We will replace this one if it's still desired
+        if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount
+            < _desiredInstanceCount)
+        {
+          // We need to start a new instance
+          await StartNewInstance().ConfigureAwait(false);
+        }
+      };
 
     // This is only async because of the ENI IP lookup
     await instance.Start().ConfigureAwait(false);
