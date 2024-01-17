@@ -74,7 +74,7 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>) {
       log::info!("Health check success");
       break;
     } else {
-      log::warn!("Health check failed: {:?}\nHeaders:", parts.status);
+      log::debug!("Health check failed: {:?}\nHeaders:", parts.status);
       // Print all the headers received and the body
       for header in parts.headers.iter() {
         log::info!("  {}: {}", header.0, header.1.to_str().unwrap());
