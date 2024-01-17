@@ -175,7 +175,11 @@ pub async fn run(
                       .method("POST")
                       .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
                       .header(hyper::header::HOST, authority.as_str())
-                      .header(hyper::header::CONTENT_TYPE, "application/json")
+                      // The content-type that we're sending to the router is opaque
+                      // as it contains another HTTP request/response, so may start as text
+                      // with request/headers and then be binary after that - it should not be parsed
+                      // by anything other than us
+                      .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
                       .header("X-Lambda-Id", lambda_id.to_string())
                       .header("X-Channel-Id", channel_id.to_string())
                       .body(boxed_body)?;
@@ -212,7 +216,7 @@ pub async fn run(
 
                   // Read until we get all the request headers so we can construct our app request
                   let (app_req_builder, is_goaway, left_over_buf)
-                      = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone(), app_url.clone()).await?;
+                      = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone()).await?;
 
                   if is_goaway {
                       if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {

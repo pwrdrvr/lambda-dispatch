@@ -54,6 +54,10 @@ app.get("/ping", async (req, res) => {
   res.send("pong");
 });
 
+app.get("/headers", async (req, res) => {
+  res.json(req.headers);
+});
+
 app.get("/delay", async (req, res) => {
   const delay = req.query.delay || 20;
   await sleep(delay);
