@@ -37,10 +37,11 @@ public class ChunkedController : ControllerBase
   }
 
   [HttpGet]
-  [Route("close/{instanceId}")]
-  public IActionResult CloseInstance(string instanceId)
+  [Route("close/{lambdaId}")]
+  public IActionResult CloseInstance(string lambdaId)
   {
-    dispatcher.CloseInstance(instanceId);
+    logger.LogInformation("Router.ChunkedController.CloseInstance - Closing LambdaId: {lambdaId}", lambdaId);
+    dispatcher.CloseInstance(lambdaId);
 
     return Ok();
   }

@@ -14,6 +14,7 @@ use crate::time::current_time_millis;
 mod app_request;
 mod app_start;
 mod cert;
+mod counter_drop;
 mod messages;
 mod ping;
 mod run;

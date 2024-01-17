@@ -488,7 +488,7 @@ public class LambdaInstance : ILambdaInstance
   }
 
   /// <summary>
-  /// Closes in the background so the Lambda can exist as soon as it sees it's last connection close
+  /// Closes in the background so the Lambda can exit as soon as it sees it's last connection close
   /// </summary>
   public void Close(bool doNotReplace = false)
   {

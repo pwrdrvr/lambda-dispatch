@@ -31,6 +31,7 @@ pub async fn send_ping_requests(
   port: u16,
   deadline_ms: u64,
   cancel_sleep: tokio_util::sync::CancellationToken,
+  requests_in_flight: Arc<AtomicUsize>,
 ) {
   while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
     let last_active_grace_period_ms = 5000;
@@ -42,15 +43,17 @@ pub async fn send_ping_requests(
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
         log::info!(
-          "LambdaId: {}, Last Active: {} ms ago - Requesting close",
+          "LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {} - Requesting close",
           lambda_id.clone(),
-          last_active_ago_ms
+          last_active_ago_ms,
+          requests_in_flight.load(Ordering::Relaxed)
         );
       } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
-          "LambdaId: {}, Deadline: {} ms Away - Requesting close",
+          "LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {} - Requesting close",
           lambda_id.clone(),
-          deadline_ms - time::current_time_millis()
+          deadline_ms - time::current_time_millis(),
+          requests_in_flight.load(Ordering::Relaxed)
         );
       }
       goaway_received.store(true, Ordering::Relaxed);
@@ -77,7 +80,7 @@ pub async fn send_ping_requests(
       {
         // This gets hit when the connection for HTTP/1.1 faults
         panic!(
-          "Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect"
+          "Ping Loop - Router connection ready check threw error - connection has disconnected, should reconnect"
         );
       }
 
@@ -171,16 +174,20 @@ pub async fn send_ping_requests(
     }
 
     log::info!(
-      "LambdaId: {}, Requests: {}, GoAway: {} - Ping Loop - Looping",
+      "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Looping",
       lambda_id,
       count.load(Ordering::Relaxed),
-      goaway_received.load(Ordering::Relaxed)
+      goaway_received.load(Ordering::Relaxed),
+      requests_in_flight.load(Ordering::Relaxed)
     );
 
     tokio::select! {
         _ = cancel_sleep.cancelled() => {
           // The token was cancelled
-          log::info!("LambdaId: {} - Ping Loop - Cancelled", lambda_id.clone());
+          log::info!("LambdaId: {}, Reqs in Flight: {} - Ping Loop - Cancelled",
+            lambda_id.clone(),
+            requests_in_flight.load(Ordering::Relaxed)
+          );
         }
         _ = tokio::time::sleep(Duration::from_secs(5)) => {
         }
@@ -188,9 +195,10 @@ pub async fn send_ping_requests(
   }
 
   log::info!(
-    "LambdaId: {}, Requests: {}, GoAway: {} - Ping Loop - Exiting",
+    "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Exiting",
     lambda_id,
     count.load(Ordering::Relaxed),
-    goaway_received.load(Ordering::Relaxed)
+    goaway_received.load(Ordering::Relaxed),
+    requests_in_flight.load(Ordering::Relaxed)
   );
 }

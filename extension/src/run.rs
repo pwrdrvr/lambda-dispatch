@@ -19,6 +19,7 @@ use tokio::net::TcpStream;
 
 use crate::app_request;
 use crate::cert::AcceptAnyServerCert;
+use crate::counter_drop::DecrementOnDrop;
 use crate::ping;
 use crate::time;
 
@@ -37,6 +38,7 @@ pub async fn run(
   router_url: Uri,
   deadline_ms: u64,
 ) -> anyhow::Result<()> {
+  let requests_in_flight = Arc::new(AtomicUsize::new(0));
   let cancel_token = tokio_util::sync::CancellationToken::new();
   let count = Arc::new(AtomicUsize::new(0));
   let mut rng = rand::rngs::StdRng::from_entropy();
@@ -71,8 +73,6 @@ pub async fn run(
   let domain_host = router_url.host().ok_or_else(|| "Host not found").unwrap();
   let domain = rustls_pki_types::ServerName::try_from(domain_host)?;
 
-  // let tls_stream = connector.connect(domain.to_owned(), tcp_stream).await?;
-  // let io = TokioIo::new(tls_stream);
   let stream: Box<dyn Stream + Unpin>;
   if use_https {
     let tls_stream = connector.connect(domain.to_owned(), tcp_stream).await?;
@@ -113,6 +113,7 @@ pub async fn run(
     port,
     deadline_ms,
     cancel_token.clone(),
+    Arc::clone(&requests_in_flight),
   ));
 
   // Startup the request channels
@@ -138,6 +139,8 @@ pub async fn run(
           .parse()
           .unwrap();
 
+          let requests_in_flight = Arc::clone(&requests_in_flight);
+
           tokio::spawn(async move {
               // TODO: Load app_url from config
               let app_url: Uri = "http://127.0.0.1:3001".parse().unwrap();
@@ -161,12 +164,8 @@ pub async fn run(
 
               // This is where HTTP2 loops to make all the requests for a given client and worker
               loop {
-                    // Exiting here on a goaway is a race condition
-                    // There may actually be a request being sent already on this channel
-                //   if goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
-                //       log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
-                //       break;
-                //   }
+                  let requests_in_flight = Arc::clone(&requests_in_flight);
+                  let mut _decrement_on_drop = None;
 
                   // Create the router request
                   let (mut tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
@@ -190,8 +189,8 @@ pub async fn run(
                   .await
                   .is_err()
                   {
-                      // This gets hit when the connection faults
-                      panic!("LambdaId: {}, ChannelId: {} - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone(), channel_id.clone());
+                      // This gets hit when the router connection faults
+                      panic!("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone(), channel_id.clone());
                   }
 
                   let res = sender.send_request(req).await?;
@@ -203,7 +202,8 @@ pub async fn run(
                   // then we close the channel
                   if parts.status == 409 {
                     if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
-                      log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - 409 received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
+                      log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
+                        lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Relaxed));
                       goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                     tx.close().await.unwrap_or(());
@@ -216,7 +216,8 @@ pub async fn run(
 
                   if is_goaway {
                       if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
-                        log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {} - GoAway received, exiting loop", lambda_id.clone(), channel_id.clone(), channel_number);
+                        log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
+                          lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Relaxed));
                         goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
                       }
                       tx.close().await.unwrap_or(());
@@ -224,6 +225,8 @@ pub async fn run(
                   }
 
                   // We got a request to run
+                  requests_in_flight.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                  _decrement_on_drop = Some(DecrementOnDrop(&requests_in_flight));
                   last_active.store(time::current_time_millis(), Ordering::Relaxed);
 
                   //
@@ -237,8 +240,9 @@ pub async fn run(
                   .await
                   .is_err()
                   {
-                      // This gets hit when the connection faults
-                      panic!("LambdaId: {}, ChannelId: {} - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone(), channel_id.clone());
+                      // This gets hit when the app connection faults
+                      panic!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
+                        lambda_id.clone(), channel_id.clone(), requests_in_flight.load(std::sync::atomic::Ordering::Relaxed));
                   }
 
                   // Relay the request body to the contained app
@@ -248,6 +252,7 @@ pub async fn run(
                   // to the contained app
                   let channel_id_clone = channel_id.clone();
                   let lambda_id_clone = lambda_id.clone();
+                  let requests_in_flight_clone = Arc::clone(&requests_in_flight);
                   let relay_task = tokio::task::spawn(async move {
                       let mut bytes_sent = 0;
 
@@ -266,13 +271,20 @@ pub async fn run(
                       //
                       // Source: res_stream
                       // Sink: app_req_tx
+                      let mut router_error_reading = false;
                       while let Some(chunk) = futures::future::poll_fn(|cx| {
                           Incoming::poll_frame(Pin::new(&mut res_stream), cx)
                       })
                       .await
                       {
                           if chunk.is_err() {
-                              log::error!("LambadId: {}, ChannelId: {} - Error reading from res_stream: {:?}", lambda_id_clone.clone(), channel_id_clone.clone(), chunk.err());
+                              log::error!("LambadId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
+                                lambda_id_clone.clone(),
+                                channel_id_clone.clone(),
+                                requests_in_flight_clone.load(std::sync::atomic::Ordering::Relaxed),
+                                bytes_sent,
+                                chunk.err());
+                              router_error_reading = true;
                               break;
                           }
 
@@ -285,13 +297,24 @@ pub async fn run(
                           match app_req_tx.send(Ok(chunk.unwrap())).await {
                               Ok(_) => {}
                               Err(err) => {
-                                  log::error!("LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent, chunk_len, err);
+                                  log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
+                                  lambda_id_clone.clone(),
+                                  channel_id_clone.clone(),
+                                  requests_in_flight_clone.load(std::sync::atomic::Ordering::Relaxed),
+                                  bytes_sent,
+                                  chunk_len,
+                                  err);
                                   break;
                               }
                           }
                           bytes_sent += chunk_len;
                       }
+
                       // Close the post body stream
+                      if router_error_reading {
+                        log::info!("LambdaId: {}, ChannelId: {}, BytesSent: {} - Error reading from res_stream, dropping app_req_tx", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent);
+                        return;
+                      }
 
                       // This may error if the router closed the connection
                       let _ = app_req_tx.flush().await;
@@ -364,13 +387,21 @@ pub async fn run(
 
                   // Rip the bytes back to the caller
                   let channel_id_clone = channel_id.clone();
+                  let mut app_error_reading = false;
+                  let mut bytes_read = 0;
                   while let Some(chunk) = futures::future::poll_fn(|cx| {
                       Incoming::poll_frame(Pin::new(&mut app_res_stream), cx)
                   })
                   .await
                   {
                       if chunk.is_err() {
-                          log::info!("LambdaId: {}, ChannelId: {} - Error reading from app_res_stream: {:?}", lambda_id.clone(), channel_id_clone.clone(), chunk.err());
+                          log::info!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+                            lambda_id.clone(),
+                            channel_id_clone.clone(),
+                            requests_in_flight.load(std::sync::atomic::Ordering::Relaxed),
+                            bytes_read,
+                            chunk.err());
+                          app_error_reading = true;
                           break;
                       }
 
@@ -380,7 +411,12 @@ pub async fn run(
                         break;
                       }
 
+                      bytes_read += chunk_len;
+
                       tx.send(Ok(chunk.unwrap())).await?;
+                  }
+                  if app_error_reading {
+                    log::debug!("LambdaId: {}, ChannelId: {} - Error reading from app_res_stream, dropping tx", lambda_id.clone(), channel_id_clone.clone());
                   }
 
                   let close_router_tx_task = tokio::task::spawn(async move {

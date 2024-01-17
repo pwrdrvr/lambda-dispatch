@@ -255,6 +255,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             stoppingInstances.Add(leastBusyInstance.Id, leastBusyInstance);
 
             // Close the instance
+            _logger.LogInformation("ManageCapacity - Closing least busy instance, LambdaId: {lambdaId}", leastBusyInstance.Id);
             CloseInstance(leastBusyInstance);
           }
           else
@@ -406,8 +407,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// <param name="instance"></param>
   public void CloseInstance(ILambdaInstance instance)
   {
-    _logger.LogInformation("Closing instance {instanceId}", instance.Id);
-
     // The instance is going to get cleaned up by the OnInvocationComplete handler
     // Counts will be decremented, the instance will be replaced, etc.
     // We just need to get the Lambda to return from the invoke
@@ -421,11 +420,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// <returns></returns>
   public void CloseInstance(string instanceId)
   {
-    _logger.LogInformation("Closing instance {instanceId}", instanceId);
-
     if (_instances.TryGetValue(instanceId, out var instance))
     {
-      this.CloseInstance(instance);
+      CloseInstance(instance);
     }
     else
     {

@@ -85,8 +85,6 @@ public class Dispatcher : IBackgroundDispatcher
 
   public void CloseInstance(string instanceId)
   {
-    _logger.LogDebug("Closing instance {instanceId}", instanceId);
-
     _lambdaInstanceManager.CloseInstance(instanceId);
   }
 
