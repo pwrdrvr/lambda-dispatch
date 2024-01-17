@@ -577,6 +577,62 @@ public class LambdaInstance : ILambdaInstance
 #endif
 
   /// <summary>
+  /// Invoke a Lambda but have it return immediately after cold start
+  /// This is used to ensure that we have a ready replacement Lambda exec env
+  /// when one of our instances is shutting down (which can take several seconds to
+  /// 1 minute for all in-flight requests to finish)
+  /// 
+  /// This is a "buddy" to the `Start` call that uses the same parameters
+  /// </summary>
+  /// <returns></returns>
+  public async Task StartInitOnly()
+  {
+
+    var initOnlyLambdaId = $"{Id}-initonly";
+
+    // Setup the Lambda payload
+    var payload = new WaiterRequest
+    {
+      Id = initOnlyLambdaId,
+      DispatcherUrl = await GetCallbackIP.Get(),
+      NumberOfChannels = 0,
+      SentTime = DateTime.Now,
+      InitOnly = true
+    };
+
+    // Invoke the Lambda
+    var request = new InvokeRequest
+    {
+      FunctionName = functionName,
+      InvocationType = InvocationType.RequestResponse,
+      Payload = JsonSerializer.Serialize(payload),
+    };
+    if (functionQualifier != null && functionQualifier != "$LATEST")
+    {
+      request.Qualifier = functionQualifier;
+    }
+
+    // Should not wait here as we will not get a response until the Lambda is done
+    var invokeTask = LambdaClient.InvokeAsync(request);
+
+    // Handle completion of the task
+    _ = invokeTask.ContinueWith(t =>
+    {
+      if (t.IsFaulted)
+      {
+        // Handle any exceptions that occurred during the invocation
+        Exception ex = t.Exception;
+        _logger.LogError("LambdaInvoke for InitOnly LambdaId: {Id}, gave error: {Message}", initOnlyLambdaId, ex.Message);
+      }
+      else if (t.IsCompleted)
+      {
+        // The Lambda invocation has completed
+        _logger.LogInformation("LambdaInvoke for InitOnly completed for LambdaId: {Id}", initOnlyLambdaId);
+      }
+    });
+  }
+
+  /// <summary>
   /// Invoke the Lambda, which should cause it to connect back to us
   /// We do not count the connection as available until it connects back to us
   /// Each instance can have many connections at a time to us
@@ -604,7 +660,8 @@ public class LambdaInstance : ILambdaInstance
       Id = Id,
       DispatcherUrl = await GetCallbackIP.Get(),
       NumberOfChannels = channelCount == -1 ? 2 * maxConcurrentCount : channelCount,
-      SentTime = DateTime.Now
+      SentTime = DateTime.Now,
+      InitOnly = false
     };
 
     // Invoke the Lambda
@@ -623,32 +680,41 @@ public class LambdaInstance : ILambdaInstance
     var invokeTask = LambdaClient.InvokeAsync(request);
 
     // Handle completion of the task
-#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-    invokeTask.ContinueWith(t =>
+    _ = invokeTask.ContinueWith(t =>
+     {
+       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInvokeCount);
+
+       // NOTE: The Lambda will return via the callback to indicate that it's shutting down
+       // but it will linger until we close the responses to it's requests
+       // This prevents race conditions on shutdown
+
+       OnInvocationComplete?.Invoke(this);
+
+       if (t.IsFaulted)
+       {
+         // Handle any exceptions that occurred during the invocation
+         Exception ex = t.Exception;
+         _tcs.SetException(ex);
+         _logger.LogError("LambdaInvoke for LambdaId: {Id}, gave error: {Message}", this.Id, ex.Message);
+       }
+       else if (t.IsCompleted)
+       {
+         // The Lambda invocation has completed
+         _tcs.SetResult(true);
+         _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
+       }
+     });
+
+    _ = Task.Run(async () =>
     {
-      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInvokeCount);
+      // Wait a short time before starting the buddy invoke
+      // This does not guarantee that the buddy request will arrive after
+      // the real request, but it's likely
+      await Task.Delay(TimeSpan.FromMilliseconds(100));
 
-      // NOTE: The Lambda will return via the callback to indicate that it's shutting down
-      // but it will linger until we close the responses to it's requests
-      // This prevents race conditions on shutdown
-
-      OnInvocationComplete?.Invoke(this);
-
-      if (t.IsFaulted)
-      {
-        // Handle any exceptions that occurred during the invocation
-        Exception ex = t.Exception;
-        _tcs.SetException(ex);
-        _logger.LogError("LambdaInvoke for LambdaId: {Id}, gave error: {Message}", this.Id, ex.Message);
-      }
-      else if (t.IsCompleted)
-      {
-        // The Lambda invocation has completed
-        _tcs.SetResult(true);
-        _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
-      }
+      // Start an init-only buddy
+      await StartInitOnly();
     });
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
   }
 
   public async ValueTask ReenqueueUnusedConnection(LambdaConnection connection)

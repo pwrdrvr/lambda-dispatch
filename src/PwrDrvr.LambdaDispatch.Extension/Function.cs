@@ -250,6 +250,12 @@ public class Function
 
             using var lambdaIdScope = _logger.BeginScope("LambdaId: {LambdaId}", request.Id);
 
+            if (request.InitOnly)
+            {
+                _logger.LogInformation("InitOnly is true, returning");
+                return new WaiterResponse { Id = request.Id };
+            }
+
             // TODO: We can potentially make this static or a map on dispatcherUrl to requester
             // Each request repeats the Lambda ID and we do not need to re-establish sockets
             // if the DispatcherUrl has not actually changed

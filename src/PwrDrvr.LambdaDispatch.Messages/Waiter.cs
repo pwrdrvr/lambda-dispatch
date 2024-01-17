@@ -22,6 +22,12 @@ public class WaiterRequest
   /// Set the time that the message was sent
   /// </summary>
   public DateTime SentTime { get; set; }
+
+  /// <summary>
+  /// Only initialize the Lambda instance, don't open any channels, then return
+  /// If already initialized, returns immediately
+  /// </summary>
+  public bool InitOnly { get; set; }
 }
 
 public class WaiterResponse
