@@ -30,11 +30,23 @@ dotnet build
 
 ## Running Locally
 
+### DotNet Router
+
 ```sh
 dotnet run --project PwrDrvr.LambdaDispatch.Router
 
 LAMBDA_DISPATCH_ChannelCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_MaxConcurrentCount=1 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=5 LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router
+```
 
+### Rust Lambda Extension
+
+```sh
+AWS_LAMBDA_FUNCTION_VERSION=\$LATEST AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512 AWS_LAMBDA_FUNCTION_NAME=dogs AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token cargo run --release --bin extension
+```
+
+### DotNet Lambda Extension
+
+```sh
 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap
 ```
 
@@ -83,18 +95,20 @@ aws cloudformation update-stack --stack-name lambda-dispatch-ecr-public --templa
 ```sh
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
 
-docker build --file DockerfileRouter -t lambda-dispatch-router . \
-&& docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
+docker build --file DockerfileRouter -t lambda-dispatch-router . &&\
+docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest &&\
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
 ```
 
-## Build the Docker Image - Extension
+## Publish the Docker Image - Lambda Demo App from Public Image
 
 ```sh
-docker build --file DockerfileExtension -t lambda-dispatch-extension .
+docker pull public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app:main && \
+docker tag public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app:main 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest && \
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest
 ```
 
-## Publish the Docker Image - Lambda Demo App
+## Publish the Docker Image - Lambda Demo App from Local Code
 
 ```sh
 docker build --file DockerfileExtension -t lambda-dispatch-extension . &&\
@@ -247,7 +261,7 @@ sudo apt-get install lldb
 
 AWS_LAMBDA_SERVICE_URL=http://host.docker.internal:5051 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
 
-AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap 2>&1 | tee lambdalb.log
+AWS_LAMBDA_RUNTIME_API=host.docker.internal:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap 2>&1 | tee extension.log
 
 # Running the Native version under dev container
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/workspaces/lambda-dispatch/src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/linux-arm64/

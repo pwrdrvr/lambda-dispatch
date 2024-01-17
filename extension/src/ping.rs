@@ -29,7 +29,9 @@ pub async fn send_ping_requests(
   scheme: String,
   host: String,
   port: u16,
-  deadline: u64,
+  deadline_ms: u64,
+  cancel_sleep: tokio_util::sync::CancellationToken,
+  requests_in_flight: Arc<AtomicUsize>,
 ) {
   while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
     let last_active_grace_period_ms = 5000;
@@ -37,17 +39,21 @@ pub async fn send_ping_requests(
     let last_active_ago_ms = time::current_time_millis() - last_active.load(Ordering::Relaxed);
     // TODO: Compute time we should stop at based on the initial function timeout duration
     if last_active_ago_ms > 1 * last_active_grace_period_ms
-      || time::current_time_millis() + close_before_deadline_ms > deadline
+      || time::current_time_millis() + close_before_deadline_ms > deadline_ms
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
-        println!(
-          "Last active: {} ms ago, requesting close",
-          last_active_ago_ms
+        log::info!(
+          "LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {} - Requesting close",
+          lambda_id.clone(),
+          last_active_ago_ms,
+          requests_in_flight.load(Ordering::Relaxed)
         );
-      } else if time::current_time_millis() + close_before_deadline_ms > deadline {
-        println!(
-          "Deadline: {} ms away, requesting close",
-          deadline - time::current_time_millis()
+      } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
+        log::info!(
+          "LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {} - Requesting close",
+          lambda_id.clone(),
+          deadline_ms - time::current_time_millis(),
+          requests_in_flight.load(Ordering::Relaxed)
         );
       }
       goaway_received.store(true, Ordering::Relaxed);
@@ -74,7 +80,7 @@ pub async fn send_ping_requests(
       {
         // This gets hit when the connection for HTTP/1.1 faults
         panic!(
-          "Connection ready check threw error - connection has disconnected, should reconnect"
+          "Ping Loop - Router connection ready check threw error - connection has disconnected, should reconnect"
         );
       }
 
@@ -91,7 +97,11 @@ pub async fn send_ping_requests(
           }
         }
         Err(err) => {
-          println!("Close request failed: {:?}", err);
+          log::error!(
+            "LambdaId: {} - PingLoop - Close request failed: {:?}",
+            lambda_id.clone(),
+            err
+          );
         }
       }
 
@@ -119,7 +129,7 @@ pub async fn send_ping_requests(
       .is_err()
     {
       // This gets hit when the connection faults
-      panic!("Connection ready check threw error - connection has disconnected, should reconnect");
+      panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone());
     }
 
     let res = sender.send_request(ping_req).await;
@@ -135,35 +145,60 @@ pub async fn send_ping_requests(
         }
 
         if parts.status == 409 {
-          println!("409 received on ping, exiting");
+          log::info!(
+            "LambdaId: {} - Ping Loop - 409 received on ping, exiting",
+            lambda_id.clone()
+          );
           goaway_received.store(true, Ordering::Relaxed);
           break;
         }
 
         if parts.status != StatusCode::OK {
-          println!("non-200 received on ping, exiting: {:?}", parts.status);
+          log::info!(
+            "LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
+            lambda_id.clone(),
+            parts.status
+          );
           goaway_received.store(true, Ordering::Relaxed);
           break;
         }
       }
       Err(err) => {
-        println!("Ping request failed: {:?}", err);
+        log::error!(
+          "LambdaId: {} - Ping Loop - Ping request failed: {:?}",
+          lambda_id.clone(),
+          err
+        );
         goaway_received.store(true, Ordering::Relaxed);
       }
     }
 
-    println!(
-      "X-Lambda-ID: {}, Requests: {}, GoAway: {}",
+    log::info!(
+      "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Looping",
       lambda_id,
       count.load(Ordering::Relaxed),
-      goaway_received.load(Ordering::Relaxed)
+      goaway_received.load(Ordering::Relaxed),
+      requests_in_flight.load(Ordering::Relaxed)
     );
-    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    tokio::select! {
+        _ = cancel_sleep.cancelled() => {
+          // The token was cancelled
+          log::info!("LambdaId: {}, Reqs in Flight: {} - Ping Loop - Cancelled",
+            lambda_id.clone(),
+            requests_in_flight.load(Ordering::Relaxed)
+          );
+        }
+        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+        }
+    };
   }
-  println!(
-    "X-Lambda-ID: {}, Requests: {}, GoAway: {}",
+
+  log::info!(
+    "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Exiting",
     lambda_id,
     count.load(Ordering::Relaxed),
-    goaway_received.load(Ordering::Relaxed)
+    goaway_received.load(Ordering::Relaxed),
+    requests_in_flight.load(Ordering::Relaxed)
   );
 }

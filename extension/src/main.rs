@@ -4,12 +4,17 @@ use std::process;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use env_logger;
 use lambda_runtime::LambdaEvent;
+use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
+
+use crate::time::current_time_millis;
 
 mod app_request;
 mod app_start;
 mod cert;
+mod counter_drop;
 mod messages;
 mod ping;
 mod run;
@@ -17,6 +22,19 @@ mod threads;
 mod time;
 
 fn main() -> anyhow::Result<()> {
+  env_logger::Builder::new()
+    .format(|buf, record| {
+      writeln!(
+        buf,
+        "{} [{}] - {}",
+        chrono::Local::now().format("%Y-%m-%dT%H:%M:%S.%3f"),
+        record.level(),
+        record.args()
+      )
+    })
+    .filter(None, log::LevelFilter::Info) // Change this to Debug or Warn as needed
+    .init();
+
   // required to enable CloudWatch error logging by the runtime
   tracing_subscriber::fmt()
     .with_max_level(tracing::Level::INFO)
@@ -35,7 +53,7 @@ fn main() -> anyhow::Result<()> {
   let runtime_var = std::env::var("LAMBDA_DISPATCH_RUNTIME");
   match runtime_var {
     Ok(runtime) if runtime == "multi_thread" => {
-      println!("Using multi_thread runtime");
+      log::info!("Using multi_thread runtime");
       // TOKIO_WORKER_THREADS is a standard var - we will
       // use it if it is set, otherwise we will default to 2
       // If we did nothing then it would be used if set or default to
@@ -52,7 +70,7 @@ fn main() -> anyhow::Result<()> {
       runtime.block_on(async_main())?;
     }
     Ok(runtime) if runtime == "default_multi_thread" => {
-      println!("Using default_multi_thread runtime");
+      log::info!("Using default_multi_thread runtime");
       // Let tokio decide how many threads to use
       let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -61,7 +79,7 @@ fn main() -> anyhow::Result<()> {
       runtime.block_on(async_main())?;
     }
     _ => {
-      println!("Using current_thread runtime");
+      log::info!("Using current_thread runtime");
       let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -77,7 +95,7 @@ async fn async_main() -> anyhow::Result<()> {
   let mut term_signal = signal(SignalKind::terminate())?;
 
   let thread_count = threads::get_threads();
-  println!("PID: {}, Thread count: {}", process::id(), thread_count);
+  log::info!("PID: {}, Thread count: {}", process::id(), thread_count);
 
   // Span a task to handle the extension
   // DO NOT await this task, otherwise the lambda will not be invoked
@@ -95,10 +113,10 @@ async fn async_main() -> anyhow::Result<()> {
       .unwrap();
     match extension.run().await {
       Ok(_) => {
-        println!("Extension exited");
+        log::info!("Extension exited");
       }
       Err(err) => {
-        println!("Extension.run error: {:?}", err)
+        log::error!("Extension.run error: {:?}", err)
       }
     }
   });
@@ -112,12 +130,12 @@ async fn async_main() -> anyhow::Result<()> {
           match lambda_result {
               Ok(_) => {}
               Err(e) => {
-                  println!("Error: {}", e);
+                log::error!("Error: {}", e);
               }
           }
       }
       _ = term_signal.recv() => {
-          println!("SIGTERM received, stopping...");
+        log::warn!("SIGTERM received, stopping...");
       }
   }
 
@@ -130,9 +148,11 @@ async fn my_extension(
   match event.next {
     lambda_extension::NextEvent::Shutdown(_e) => {
       // do something with the shutdown event
+      log::info!("Extension - Shutdown event received");
     }
     lambda_extension::NextEvent::Invoke(_e) => {
       // do something with the invoke event
+      // log::info!("Invoke event received");
     }
   }
   Ok(())
@@ -151,17 +171,32 @@ pub(crate) async fn my_handler(
     id: lambda_id.to_string(),
   };
 
-  println!("LambdaId: {} - Invoked", lambda_id);
+  log::info!(
+    "LambdaId: {}, Timeout: {}s - Invoked",
+    lambda_id,
+    (event.context.deadline - current_time_millis()) / 1000
+  );
+  let mut deadline_ms = event.context.deadline;
+  if (deadline_ms - current_time_millis()) > 15 * 60 * 1000 {
+    log::warn!("Deadline is greater than 15 minutes, trimming to 1 minute");
+    deadline_ms = current_time_millis() + 60 * 1000;
+  }
+  // check if env var is set to force deadline for testing
+  if let Ok(force_deadline_secs) = std::env::var("LAMBDA_DISPATCH_FORCE_DEADLINE") {
+    log::warn!("Forcing deadline to {} seconds", force_deadline_secs);
+    let force_deadline_secs: u64 = force_deadline_secs.parse().unwrap();
+    deadline_ms = current_time_millis() + force_deadline_secs * 1000;
+  }
 
   // run until we get a GoAway
   run::run(
     lambda_id.clone(),
     channel_count,
     dispatcher_url.parse().unwrap(),
-    event.context.deadline,
+    deadline_ms,
   )
   .await?;
 
-  println!("LambdaId: {} - Returning from invoke", lambda_id.clone());
+  log::info!("LambdaId: {} - Returning from invoke", lambda_id.clone());
   Ok(resp)
 }

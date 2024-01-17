@@ -175,8 +175,8 @@ public class HttpReverseRequester
       // Read until we fill the bufer OR we get an EOF
       int totalBytesRead = 0;
       int idxToExamine = 0;
-      int idxPriorLineFeed = -1;
-      int idxHeadersLast = -1;
+      int idxPriorLineFeed = int.MinValue;
+      int idxHeadersLast = int.MinValue;
       while (true)
       {
         if (totalBytesRead >= headerBuffer.Length)
@@ -214,7 +214,7 @@ public class HttpReverseRequester
           }
         }
 
-        if (idxHeadersLast != -1)
+        if (idxHeadersLast != int.MinValue)
         {
           // We found the `\r\n\r\n` sequence
           // We are done reading
@@ -228,7 +228,7 @@ public class HttpReverseRequester
       //
 
       // Read the status line
-      int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n');
+      int endOfStatusLine = Array.IndexOf(headerBuffer, (byte)'\n', 0, totalBytesRead);
       if (endOfStatusLine == -1)
       {
         // Handle error: '\n' not found in the buffer
@@ -287,7 +287,7 @@ public class HttpReverseRequester
       while (startOfNextLine < totalBytesRead)
       {
         // Find the index of the next '\n' in headerBuffer
-        int endOfLine = Array.IndexOf(headerBuffer, (byte)'\n', startOfNextLine);
+        int endOfLine = Array.IndexOf(headerBuffer, (byte)'\n', startOfNextLine, totalBytesRead - startOfNextLine);
         if (endOfLine == -1)
         {
           // No more '\n' found
