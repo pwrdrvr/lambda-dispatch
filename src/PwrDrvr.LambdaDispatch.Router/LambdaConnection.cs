@@ -160,10 +160,9 @@ public class LambdaConnection
         var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
         try
         {
-          // Read from the source stream and write to the destination stream in a loop
+          // Read from the request body and write to the lambda's response body
           int bytesRead;
-          var responseStream = incomingRequest.Body;
-          while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token)) > 0)
+          while ((bytesRead = await incomingRequest.Body.ReadAsync(bytes, CTS.Token)) > 0)
           {
             await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
           }
@@ -216,6 +215,18 @@ public class LambdaConnection
       var completedTask = await Task.WhenAny(proxyRequestTask, proxyResponseTask).ConfigureAwait(false);
       if (completedTask.Exception != null)
       {
+        if (completedTask == proxyRequestTask)
+        {
+          _ = proxyResponseTask.ContinueWith((task) =>
+          {
+          });
+        }
+        else
+        {
+          _ = proxyRequestTask.ContinueWith((task) =>
+          {
+          });
+        }
         throw completedTask.Exception;
       }
 
@@ -288,16 +299,18 @@ public class LambdaConnection
                 ChannelId);
           }
         }
-
-        // We have to abort the connection for HTTP/1.1 or the stream
-        // for HTTP2 because we don't know if we sent or finished the whole
-        // request or not.
-        try { Request.HttpContext.Abort(); } catch { }
-        try { incomingRequest.HttpContext.Abort(); } catch { }
-
-        // Just in case anything is still stuck
-        CTS.Cancel();
       }
+
+      // We have to abort the connection for HTTP/1.1 or the stream
+      // for HTTP2 because we don't know if we sent or finished the whole
+      // request or not.
+      try { Request.HttpContext.Abort(); } catch { }
+      try { Response.HttpContext.Abort(); } catch { }
+      try { incomingRequest.HttpContext.Abort(); } catch { }
+      try { incomingResponse.HttpContext.Abort(); } catch { }
+
+      // Just in case anything is still stuck
+      CTS.Cancel();
     }
     finally
     {
@@ -334,6 +347,8 @@ public class LambdaConnection
         if (totalBytesRead >= headerBuffer.Length)
         {
           // Buffer is full
+          // TODO: This is actually an error where we should return a 413
+          // Failure to do so will result in incorrectly including headers in the body
           break;
         }
 
