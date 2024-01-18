@@ -3,3 +3,8 @@ resolver = "2"
 members = [
   "extension",
 ]
+
+# Include debug symbols
+# Useful with "Instruments" on Mac for profiling
+# [profile.release]
+# debug = true

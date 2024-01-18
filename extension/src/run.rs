@@ -175,7 +175,11 @@ pub async fn run(
                       .method("POST")
                       .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
                       .header(hyper::header::HOST, authority.as_str())
-                      .header(hyper::header::CONTENT_TYPE, "application/json")
+                      // The content-type that we're sending to the router is opaque
+                      // as it contains another HTTP request/response, so may start as text
+                      // with request/headers and then be binary after that - it should not be parsed
+                      // by anything other than us
+                      .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
                       .header("X-Lambda-Id", lambda_id.to_string())
                       .header("X-Channel-Id", channel_id.to_string())
                       .body(boxed_body)?;
@@ -212,7 +216,7 @@ pub async fn run(
 
                   // Read until we get all the request headers so we can construct our app request
                   let (app_req_builder, is_goaway, left_over_buf)
-                      = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone(), app_url.clone()).await?;
+                      = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone()).await?;
 
                   if is_goaway {
                       if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
@@ -334,11 +338,12 @@ pub async fn run(
                   let mut header_buffer = Vec::with_capacity(32 * 1024);
 
                   // Write the status line
-                  let status_line = format!(
-                      "HTTP/1.1 {} {}\r\n",
-                      app_parts.status.as_u16(),
-                      app_parts.status.canonical_reason().unwrap()
-                  );
+                  let status_code = app_parts.status.as_u16();
+                  let reason = app_parts.status.canonical_reason();
+                  let status_line = match reason {
+                      Some(r) => format!("HTTP/1.1 {} {}\r\n", status_code, r),
+                      None => format!("HTTP/1.1 {}\r\n", status_code),
+                  };
                   let status_line_bytes = status_line.as_bytes();
                   header_buffer.extend(status_line_bytes);
 
