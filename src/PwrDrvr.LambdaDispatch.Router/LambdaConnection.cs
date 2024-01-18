@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Http.Extensions;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -127,7 +128,7 @@ public class LambdaConnection
       int offset = 0;
 
       // Write the request line to the buffer
-      var requestLine = $"{incomingRequest.Method} {incomingRequest.Path} {incomingRequest.Protocol}\r\n";
+      var requestLine = $"{incomingRequest.Method} {incomingRequest.GetEncodedPathAndQuery()} {incomingRequest.Protocol}\r\n";
       var requestLineBytes = Encoding.UTF8.GetBytes(requestLine);
       requestLineBytes.CopyTo(headerBuffer, offset);
       offset += requestLineBytes.Length;
