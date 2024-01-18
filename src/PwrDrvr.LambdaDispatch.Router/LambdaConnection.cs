@@ -208,7 +208,7 @@ public class LambdaConnection
       State = LambdaConnectionState.Busy;
 
       var proxyRequestTask = ProxyRequestToLambda(incomingRequest);
-      var proxyResponseTask = RelayResponseFromLambda(incomingResponse);
+      var proxyResponseTask = RelayResponseFromLambda(incomingRequest, incomingResponse);
 
       // Wait for both to finish
       // This allows us to continue sending request body while receiving
@@ -315,7 +315,7 @@ public class LambdaConnection
     }
   }
 
-  private async Task RelayResponseFromLambda(HttpResponse incomingResponse)
+  private async Task RelayResponseFromLambda(HttpRequest incomingRequest, HttpResponse incomingResponse)
   {
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
 
@@ -380,6 +380,13 @@ public class LambdaConnection
       // NOTE: This starts reading the buffer again at the start
       // This could be combined with the end of headers check above to read only once
       //
+
+      // Check if the Extension closed the connection without a response
+      if (totalBytesRead == 0)
+      {
+        // The connection was closed without a response
+        throw new Exception("Connection closed without a response");
+      }
 
       // Read the status line
       // This buffer is huge and we may only have a small portion of it
@@ -466,10 +473,33 @@ public class LambdaConnection
         await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine), CTS.Token).ConfigureAwait(false);
       }
     }
+    catch (Exception ex)
+    {
+      // The lambda application has not sent valid response headers
+      // We do what an AWS ALB does which is to send a 502 status code
+      // and close the connection
+      _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, incomingRequest.Path);
+      // Clear the headers
+      incomingResponse.Headers.Clear();
+      // Set the status code
+      incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
+      // Close the response from the extension
+      Request.HttpContext.Abort();
+      // Close the request to the extension
+      Response.HttpContext.Abort();
+      // Close the response to the client
+      await incomingResponse.CompleteAsync();
+      return;
+    }
     finally
     {
       ArrayPool<byte>.Shared.Return(headerBuffer);
     }
+
+    //
+    // Start writing the Respone Body
+    // This implicitly flushes the headers
+    //
 
     var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
     try
