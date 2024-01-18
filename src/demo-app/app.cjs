@@ -150,6 +150,10 @@ app.get("/read-s3", async (req, res) => {
   }
 });
 
+app.get("/odd-status", async (req, res) => {
+  res.status(519).send("I'm a teapot");
+});
+
 app.get("/read", async (req, res) => {
   // Log that we got a request
   // console.log(`${new Date().toISOString()} Contained App - Received request`);

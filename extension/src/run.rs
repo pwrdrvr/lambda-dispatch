@@ -338,11 +338,12 @@ pub async fn run(
                   let mut header_buffer = Vec::with_capacity(32 * 1024);
 
                   // Write the status line
-                  let status_line = format!(
-                      "HTTP/1.1 {} {}\r\n",
-                      app_parts.status.as_u16(),
-                      app_parts.status.canonical_reason().unwrap()
-                  );
+                  let status_code = app_parts.status.as_u16();
+                  let reason = app_parts.status.canonical_reason();
+                  let status_line = match reason {
+                      Some(r) => format!("HTTP/1.1 {} {}\r\n", status_code, r),
+                      None => format!("HTTP/1.1 {}\r\n", status_code),
+                  };
                   let status_line_bytes = status_line.as_bytes();
                   header_buffer.extend(status_line_bytes);
 
