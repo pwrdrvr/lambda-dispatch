@@ -59,7 +59,7 @@ app.get("/headers", async (req, res) => {
 });
 
 app.get("/delay", async (req, res) => {
-  const delay = req.query.delay || 20;
+  const delay = parseInt(req.query.delay) || 20;
   await sleep(delay);
   res.send(`Delayed for ${delay} ms`);
 });
@@ -148,6 +148,10 @@ app.get("/read-s3", async (req, res) => {
     );
     res.status(500).send(err.toString());
   }
+});
+
+app.get("/odd-status", async (req, res) => {
+  res.status(519).send("I'm a teapot");
 });
 
 app.get("/read", async (req, res) => {
