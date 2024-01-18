@@ -99,6 +99,14 @@ async fn async_main() -> anyhow::Result<()> {
 
   // Span a task to handle the extension
   // DO NOT await this task, otherwise the lambda will not be invoked
+  // Once the extension is registered with the name matching the executable name,
+  // Lambda will proceed to start the `CMD` in the Dockerfile.
+  // The startup order is:
+  // 1. Extension Registers with Lamba Runtime API
+  // 2. Lambda starts CMD (e.g. node.js app)
+  // 3. Health chuck loop waits for app to be ready
+  // 4. Handler Registers with Lambda Runtime API
+  // The first time the handler gets invoked: the app is already cold-started
   tokio::spawn(async move {
     let func = lambda_extension::service_fn(my_extension);
     let extension = lambda_extension::Extension::new()
@@ -170,6 +178,14 @@ pub(crate) async fn my_handler(
   let resp = messages::WaiterResponse {
     id: lambda_id.to_string(),
   };
+
+  if event.payload.init_only {
+    log::info!(
+      "LambdaId: {} - Returning from init-only request",
+      lambda_id.clone()
+    );
+    return Ok(resp);
+  }
 
   log::info!(
     "LambdaId: {}, Timeout: {}s - Invoked",

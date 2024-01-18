@@ -11,6 +11,8 @@ pub struct WaiterRequest {
   pub number_of_channels: i32,
   #[serde(rename = "SentTime")]
   pub sent_time: String,
+  #[serde(rename = "InitOnly", default)]
+  pub init_only: bool,
 }
 
 #[derive(Serialize, Debug)]
