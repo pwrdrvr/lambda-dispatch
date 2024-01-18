@@ -489,6 +489,8 @@ public class LambdaConnection
       Response.HttpContext.Abort();
       // Close the response to the client
       await incomingResponse.CompleteAsync();
+      // Close the request from the client, if not closed already
+      incomingRequest.HttpContext.Abort();
       return;
     }
     finally
