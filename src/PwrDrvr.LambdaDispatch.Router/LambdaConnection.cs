@@ -154,8 +154,10 @@ public class LambdaConnection
       await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
 
       // Only copy the request body if the request has a body
-      if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding")
-          && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
+      // or it's HTTP2, in which case we don't know until we start reading
+      if (incomingRequest.Protocol == HttpProtocol.Http2
+          || incomingRequest.ContentLength > 0
+          || incomingRequest.Headers.TransferEncoding == "chunked")
       {
         _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request body to Lambda", Instance.Id, ChannelId);
 
