@@ -450,8 +450,7 @@ public class LambdaConnection
         var parts = headerLine.Split(": ", 2, StringSplitOptions.None);
 
         var key = parts[0];
-        // Join all the parts after the first one
-        var value = string.Join(", ", parts.Skip(1));
+        var value = parts[1];
         if (string.Compare(key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase) == 0)
         {
           // Don't set the Transfer-Encoding header as it breaks the response
@@ -460,7 +459,9 @@ public class LambdaConnection
         }
 
         // Set the header on the Kestrel response
-        incomingResponse.Headers[key] = value;
+        // We append otherwise we'd overwrite keys that appear multiple times
+        // such as Set-Cookie
+        incomingResponse.Headers.Append(key, value);
 
         // Move the start to the character after '\n'
         startOfNextLine = endOfLine + 1;
