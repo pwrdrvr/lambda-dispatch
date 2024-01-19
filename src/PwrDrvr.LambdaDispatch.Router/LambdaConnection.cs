@@ -128,7 +128,9 @@ public class LambdaConnection
       int offset = 0;
 
       // Write the request line to the buffer
-      var requestLine = $"{incomingRequest.Method} {incomingRequest.GetEncodedPathAndQuery()} {incomingRequest.Protocol}\r\n";
+      // Even though these requests are sent over HTTP2, we send them as "HTTP/1.1"
+      // in the encoding we use on top of the HTTP2 body
+      var requestLine = $"{incomingRequest.Method} {incomingRequest.GetEncodedPathAndQuery()} HTTP/1.1\r\n";
       var requestLineBytes = Encoding.UTF8.GetBytes(requestLine);
       requestLineBytes.CopyTo(headerBuffer, offset);
       offset += requestLineBytes.Length;
@@ -152,8 +154,10 @@ public class LambdaConnection
       await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
 
       // Only copy the request body if the request has a body
-      if (incomingRequest.ContentLength > 0 || (incomingRequest.Headers.ContainsKey("Transfer-Encoding")
-          && incomingRequest.Headers["Transfer-Encoding"] == "chunked"))
+      // or it's HTTP2, in which case we don't know until we start reading
+      if (incomingRequest.Protocol == HttpProtocol.Http2
+          || incomingRequest.ContentLength > 0
+          || incomingRequest.Headers.TransferEncoding == "chunked")
       {
         _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request body to Lambda", Instance.Id, ChannelId);
 
