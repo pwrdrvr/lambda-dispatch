@@ -70,18 +70,28 @@ public class Program
             .ConfigureWebHostDefaults(webBuilder =>
             {
                 // 5001 - incoming requests
+                // 5002 - incoming requests HTTPS
                 // 5003 - lambda interface HTTP
                 // 5004 - lambda interface HTTPS
-                // webBuilder.UseUrls("http://0.0.0.0:5001", "http://0.0.0.0:5003", "https://0.0.0.0:5004");
                 webBuilder.ConfigureKestrel((context, serverOptions) =>
                 {
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
+                    //
+                    // Incoming Requests
+                    //
+                    serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
+                    serverOptions.ListenAnyIP(config.IncomingRequestHTTPSPort, listenOptions =>
+                    {
+                        listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"));
+                    });
+                    //
+                    // Control Channels
+                    //
                     if (config.AllowInsecureControlChannel)
                     {
                         serverOptions.ListenAnyIP(config.ControlChannelInsecureHTTP2Port, o => o.Protocols = HttpProtocols.Http2);
                     }
-                    serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
                     serverOptions.ListenAnyIP(config.ControlChannelHTTP2Port, listenOptions =>
                     {
                         listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"));
