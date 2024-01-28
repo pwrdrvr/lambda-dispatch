@@ -35,7 +35,7 @@ dotnet build
 ```sh
 dotnet run --project PwrDrvr.LambdaDispatch.Router
 
-DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_ChannelCount=1 LAMBDA_DISPATCH_MaxConcurrentCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=https LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
+DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_ChannelCount=1 LAMBDA_DISPATCH_MaxConcurrentCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
 ```
 
 ### Rust Lambda Extension
