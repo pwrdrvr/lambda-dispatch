@@ -373,8 +373,7 @@ pub async fn run(
                       let header_bytes = header_line.as_bytes();
 
                       // Check if the buffer has enough room for the header bytes
-                      if header_buffer.len() + header_bytes.len() <= 32 * 1024
-                      {
+                      if header_buffer.len() + header_bytes.len() <= 32 * 1024 {
                           header_buffer.extend(header_bytes);
                       } else {
                           // If the header_buffer is full, send it and create a new header_buffer

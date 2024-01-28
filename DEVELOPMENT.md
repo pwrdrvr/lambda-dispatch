@@ -35,19 +35,20 @@ dotnet build
 ```sh
 dotnet run --project PwrDrvr.LambdaDispatch.Router
 
-LAMBDA_DISPATCH_ChannelCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_MaxConcurrentCount=1 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=5 LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router
+DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_ChannelCount=1 
+LAMBDA_DISPATCH_MaxConcurrentCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=https LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
 ```
 
 ### Rust Lambda Extension
 
 ```sh
-AWS_LAMBDA_FUNCTION_VERSION=\$LATEST AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512 AWS_LAMBDA_FUNCTION_NAME=dogs AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token cargo run --release --bin extension
+LAMBDA_DISPATCH_RUNTIME=default_multi_thread LAMBDA_DISPATCH_FORCE_DEADLINE=60 AWS_LAMBDA_FUNCTION_VERSION=\$LATEST AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512 AWS_LAMBDA_FUNCTION_NAME=dogs AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token cargo run --release --bin extension 2>&1 | tee extension.log
 ```
 
 ### DotNet Lambda Extension
 
 ```sh
-DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap
+DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap 2>&1 | tee extension.log
 ```
 
 ## Running Unit Tests
@@ -95,8 +96,8 @@ aws cloudformation update-stack --stack-name lambda-dispatch-ecr-public --templa
 ```sh
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
 
-docker build --file DockerfileRouter -t lambda-dispatch-router . &&\
-docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest &&\
+docker build --file DockerfileRouter -t lambda-dispatch-router . && \
+docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest && \
 docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
 ```
 
@@ -111,8 +112,8 @@ docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-ap
 ## Publish the Docker Image - Lambda Demo App from Local Code
 
 ```sh
-docker build --file DockerfileExtension -t lambda-dispatch-extension . &&\
-docker build --file DockerfileLambdaDemoApp -t lambda-dispatch-demo-app . &&\
+docker build --file DockerfileExtension -t lambda-dispatch-extension . && \
+docker build --file DockerfileLambdaDemoApp -t lambda-dispatch-demo-app . && \
 docker tag lambda-dispatch-demo-app:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest && \
 docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest
 ```
@@ -120,9 +121,9 @@ docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-ap
 ## Publish the Docker Image - DirectLambda
 
 ```sh
-docker build --file DockerfileDirectLambda -t lambda-dispatch-directlambda . \
-&& docker tag lambda-dispatch-directlambda:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest \
-&& docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest
+docker build --file DockerfileDirectLambda -t lambda-dispatch-directlambda . && \
+docker tag lambda-dispatch-directlambda:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest && \
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directlambda:latest
 ```
 
 ## Deploy the Fargate and Lambda Template
