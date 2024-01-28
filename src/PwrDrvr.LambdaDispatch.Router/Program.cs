@@ -6,6 +6,13 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        ThreadPool.SetMinThreads(1, 1);
+        ThreadPool.GetMaxThreads(out var workerThreads, out var completionPortThreads);
+        Console.WriteLine($"ThreadPool.GetMaxThreads returned {workerThreads} worker threads and {completionPortThreads} completion port threads");
+        var result = ThreadPool.SetMaxThreads(1, completionPortThreads);
+        Console.WriteLine($"ThreadPool.SetMaxThreads returned {result}");
+        ThreadPool.GetMaxThreads(out workerThreads, out completionPortThreads);
+        Console.WriteLine($"ThreadPool.GetMaxThreads returned {workerThreads} worker threads and {completionPortThreads} completion port threads");
         CreateHostBuilder(args).Build().Run();
     }
 
