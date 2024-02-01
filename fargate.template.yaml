@@ -138,6 +138,144 @@ Resources:
           ToPort: 5004
           CidrIp: !GetAtt MyVPC.CidrBlock
 
+  #
+  # API Gateway for lambdadispatch
+  #
+
+  LambdaDispatchRestApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: LambdaDispatchRestApi
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  LambdaDispatchRestApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - LambdaDispatchMethod
+    Properties:
+      RestApiId: !Ref LambdaDispatchRestApi
+      StageName: prod
+      StageDescription:
+        MetricsEnabled: true
+        TracingEnabled: true
+
+  LambdaDispatchDomainName:
+    Type: 'AWS::ApiGateway::DomainName'
+    Properties:
+      DomainName: lambdadispatch-gwy.ghpublic.pwrdrvr.com
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      RegionalCertificateArn: !Ref Certificate
+
+  LambdaDispatchBasePathMapping:
+    Type: 'AWS::ApiGateway::BasePathMapping'
+    Properties:
+      DomainName: !Ref LambdaDispatchDomainName
+      RestApiId: !Ref LambdaDispatchRestApi
+      Stage: prod
+
+  LambdaDispatchResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref LambdaDispatchRestApi
+      ParentId: !GetAtt LambdaDispatchRestApi.RootResourceId
+      PathPart: '{proxy+}'
+
+  LambdaDispatchMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref LambdaDispatchRestApi
+      ResourceId: !Ref LambdaDispatchResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: https://lambdadispatch.ghpublic.pwrdrvr.com/{proxy}
+        IntegrationResponses:
+          - StatusCode: 200
+        PassthroughBehavior: WHEN_NO_MATCH
+
+  #
+  # API Gateway for directlambda
+  #
+
+  DirectLambdaRestApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: DirectLambdaRestApi
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  DirectLambdaRestApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - DirectLambdaMethod
+    Properties:
+      RestApiId: !Ref DirectLambdaRestApi
+      StageName: prod
+      StageDescription:
+        MetricsEnabled: true
+        TracingEnabled: true
+
+  DirectLambdaDomainName:
+    Type: 'AWS::ApiGateway::DomainName'
+    Properties:
+      DomainName: directlambda-gwy.ghpublic.pwrdrvr.com
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      RegionalCertificateArn: !Ref Certificate
+
+  DirectLambdaBasePathMapping:
+    Type: 'AWS::ApiGateway::BasePathMapping'
+    Properties:
+      DomainName: !Ref DirectLambdaDomainName
+      RestApiId: !Ref DirectLambdaRestApi
+      Stage: prod
+
+  DirectLambdaResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref DirectLambdaRestApi
+      ParentId: !GetAtt DirectLambdaRestApi.RootResourceId
+      PathPart: '{proxy+}'
+
+  DirectLambdaMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref DirectLambdaRestApi
+      ResourceId: !Ref DirectLambdaResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: https://directlambda.ghpublic.pwrdrvr.com/{proxy}
+        IntegrationResponses:
+          - StatusCode: 200
+        PassthroughBehavior: WHEN_NO_MATCH
+
+  # CloudWatchAgentRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             AWS:
+  #               - arn:aws:sts::220761759939:assumed-role/AWSReservedSSO_AWSAdministratorAccess_a5ed3e9e7b79f498/harold@pwrdrvr.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     Path: "/"
+  #     ManagedPolicyArns: 
+  #       - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+
   MyVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -359,12 +497,34 @@ Resources:
         DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
         HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
 
+  LambdaDispatchApiRecordSet:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        HostedZoneId: Z005084420J9MD9JNBCUK
+        Name: lambdadispatch-gwy.ghpublic.pwrdrvr.com.
+        Type: A
+        AliasTarget:
+          DNSName: !GetAtt LambdaDispatchDomainName.RegionalDomainName
+          HostedZoneId: !GetAtt LambdaDispatchDomainName.RegionalHostedZoneId
+
+  DirectLambdaApiRecordSet:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        HostedZoneId: Z005084420J9MD9JNBCUK
+        Name: directlambda-gwy.ghpublic.pwrdrvr.com.
+        Type: A
+        AliasTarget:
+          DNSName: !GetAtt DirectLambdaDomainName.RegionalDomainName
+          HostedZoneId: !GetAtt DirectLambdaDomainName.RegionalHostedZoneId
+
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
       DomainName: lambdadispatch.ghpublic.pwrdrvr.com
       SubjectAlternativeNames:
         - directlambda.ghpublic.pwrdrvr.com
+        - lambdadispatch-gwy.ghpublic.pwrdrvr.com
+        - directlambda-gwy.ghpublic.pwrdrvr.com
       DomainValidationOptions:
         - DomainName: lambdadispatch.ghpublic.pwrdrvr.com
           HostedZoneId: Z005084420J9MD9JNBCUK
