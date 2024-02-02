@@ -6,6 +6,8 @@ All of the tests are run from a CloudWatch Shell within the same region as the l
 
 # Table of Contents <!-- omit in toc -->
 - [Overview](#overview)
+- [Testing with `k6`](#testing-with-k6)
+  - [CloudWatch Agent Config](#cloudwatch-agent-config)
 - [Test Cases](#test-cases)
   - [GET: Text/Plain Ping](#get-textplain-ping)
     - [Commands](#commands)
@@ -36,6 +38,37 @@ All of the tests are run from a CloudWatch Shell within the same region as the l
     - [Commands](#commands-4)
     - [Results](#results-4)
       - [Lambda Dispatcher](#lambda-dispatcher-3)
+
+# Testing with `k6`
+
+- `brew install k6`
+- `k6 run k6/backend.js`
+
+## CloudWatch Agent Config
+
+- Status: This fails to start the agent
+- Install AWS CloudWatch Agent: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/download-cloudwatch-agent-commandline.html
+- Save config file below to `/opt/aws/amazon-cloudwatch-agent/etc/statsd.json`
+- Login with AWS SSO CLI
+- Source the CW role change script: `. ./assume_cw_role.sh`
+- Start the CloudWatch Agent: `sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m onPremise -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/statsd.json`
+
+`/opt/aws/amazon-cloudwatch-agent/etc/statsd.json`
+
+```json
+{
+  "metrics": {
+      "namespace": "k6",
+      "metrics_collected": {
+          "statsd": {
+              "service_address": ":8125",
+              "metrics_collection_interval": 5,
+              "metrics_aggregation_interval": 0
+          }
+      }
+  }
+}
+```
 
 # Test Cases
 
