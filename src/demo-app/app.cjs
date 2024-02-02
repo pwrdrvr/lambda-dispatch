@@ -6,6 +6,7 @@ import path from "path";
 import spdy from "spdy";
 import fs from "fs";
 import http2 from "http2";
+import throng from "throng";
 
 const sleep = promisify(setTimeout);
 
@@ -189,56 +190,80 @@ app.get("/read", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`App listening at http://localhost:${port}`);
-});
+if (process.env.NUMBER_OF_WORKERS) {
+  throng({
+    workers: process.env.NUMBER_OF_WORKERS ?? "1",
+    grace: 60000,
+    master: async () => {
+      console.log(`> Master started - starting workers`);
+    },
+    worker: async (id) => {
+      console.log(`> Worker ${id} started`);
 
-const certPath = "../../certs/lambdadispatch.local.crt";
-const keyPath = "../../certs/lambdadispatch.local.key";
+      createServer();
 
-if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-  const options = {
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath),
-  };
-
-  const server = spdy.createServer({ ...options }, app);
-
-  server.listen(spdyPort, () => {
-    console.log(`App listening on HTTP2 at https://localhost:${spdyPort}`);
-  });
-
-  const serverInsecure = http2.createSecureServer(
-    { ...options },
-    (req, res) => {
-      res.writeHead(200, { "Content-Type": req.headers["content-type"] });
-      res.write("\r\n");
-      req.on("data", (chunk) => {
-        // Print each body chunk as hex and possibly UTF-8 text
-        console.log(
-          `${new Date().toISOString()} Contained App - Received chunk: ${chunk.toString(
-            "hex"
-          )}`
-        );
-        res.write(chunk);
-      });
-      req.on("aborted", (err) => {
-        console.log(
-          `${new Date().toISOString()} Contained App - Request aborted`,
-          err
-        );
-      });
-      req.on("end", () => {
-        res.end();
-      });
-    }
-  );
-
-  serverInsecure.listen(spdyInsecurePort, () => {
-    console.log(
-      `App listening on HTTP2 at http://localhost:${spdyInsecurePort}`
-    );
+      console.log(`> Worker ${id} - listening`);
+    },
+    signals: ["SIGTERM", "SIGINT"],
   });
 } else {
-  console.log("Certificate or key file not found. HTTP/2 server not started.");
+  createServer();
+}
+
+function createServer() {
+  app.listen(port, () => {
+    console.log(`App listening at http://localhost:${port}`);
+  });
+
+  const certPath = "../../certs/lambdadispatch.local.crt";
+  const keyPath = "../../certs/lambdadispatch.local.key";
+
+  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    const options = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    };
+
+    const server = spdy.createServer({ ...options }, app);
+
+    server.listen(spdyPort, () => {
+      console.log(`App listening on HTTP2 at https://localhost:${spdyPort}`);
+    });
+
+    const serverInsecure = http2.createSecureServer(
+      { ...options },
+      (req, res) => {
+        res.writeHead(200, { "Content-Type": req.headers["content-type"] });
+        res.write("\r\n");
+        req.on("data", (chunk) => {
+          // Print each body chunk as hex and possibly UTF-8 text
+          console.log(
+            `${new Date().toISOString()} Contained App - Received chunk: ${chunk.toString(
+              "hex"
+            )}`
+          );
+          res.write(chunk);
+        });
+        req.on("aborted", (err) => {
+          console.log(
+            `${new Date().toISOString()} Contained App - Request aborted`,
+            err
+          );
+        });
+        req.on("end", () => {
+          res.end();
+        });
+      }
+    );
+
+    serverInsecure.listen(spdyInsecurePort, () => {
+      console.log(
+        `App listening on HTTP2 at http://localhost:${spdyInsecurePort}`
+      );
+    });
+  } else {
+    console.log(
+      "Certificate or key file not found. HTTP/2 server not started."
+    );
+  }
 }
