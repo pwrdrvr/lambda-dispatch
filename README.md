@@ -93,7 +93,6 @@ The router is configured with environment variables.
 | `LAMBDA_DISPATCH_PreferredControlChannelScheme`   | The scheme to use for the control channel<br>- `http` - Use HTTP<br>- `https` - Use HTTPS                                                                                | `https`                 |
 | `LAMBDA_DISPATCH_IncomingRequestHTTPPort`         | The port to listen for incoming requests.  This is the port contacted by the ALB.                                                                                        | 5001                    |
 | `LAMBDA_DISPATCH_IncomingRequestHTTPSPort`        | The port to listen for incoming requests.  This is the port contacted by the ALB.                                                                                        | 5002                    |
-|                                                   |
 | `LAMBDA_DISPATCH_ControlChannelInsecureHTTP2Port` | The non-TLS port to listen for incoming control channel requests.  This is the port contacted by the Lambda extension.                                                   | 5003                    |
 | `LAMBDA_DISPATCH_ControlChannelHTTP2Port`         | The TLS port to listen for incoming control channel requests.  This is the port contacted by the Lambda extension.                                                       | 5004                    |
 
