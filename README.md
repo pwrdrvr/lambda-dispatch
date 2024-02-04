@@ -66,6 +66,31 @@ DotNet on Linux does suffer from a problem that is causing higher-than-necessary
 
 As of 2024-01-01, [fargate.template.yaml](fargate.template.yaml) contains an example deploy, [DockerfileLambda](DockerfileLambda) shows how to package the runtime with a Node.js lambda, and [DockerfileRouter](DockerfileRouter) packages up the router.
 
+## Configuration - Router
+
+The router is configured with environment variables.
+
+| Name                                              | Description                                                                                                                                                              | Default                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| `LAMBDA_DISPATCH_MaxWorkerThreads`                | The maximum number of worker threads to use for processing requests.  For best efficiency, set this to `1` and scale up router instances at ~50-70% CPU usage of 1 core. | default DotNet handling |
+| `LAMBDA_DISPATCH_ChannelCount`                    | The number of channels that the Lambda extension should create back to the router                                                                                        | 20                      |
+| `LAMBDA_DISPATCH_MaxConcurrentCount`              | The maximum number of concurrent requests that the Lambda extension should allow to be processed                                                                         | 10                      |
+| `LAMBDA_DISPATCH_AllowInsecureControlChannel`     | Opens a non-TLS HTTP2 port                                                                                                                                               | false                   |
+| `LAMBDA_DISPATCH_PreferredControlChannelScheme`   | The scheme to use for the control channel<br>- `http` - Use HTTP<br>- `https` - Use HTTPS                                                                                | `https`                 |
+| `LAMBDA_DISPATCH_IncomingRequestHTTPPort`         | The port to listen for incoming requests.  This is the port contacted by the ALB.                                                                                        | 5001                    |
+| `LAMBDA_DISPATCH_IncomingRequestHTTPSPort`        | The port to listen for incoming requests.  This is the port contacted by the ALB.                                                                                        | 5002                    |
+|                                                   |
+| `LAMBDA_DISPATCH_ControlChannelInsecureHTTP2Port` | The non-TLS port to listen for incoming control channel requests.  This is the port contacted by the Lambda extension.                                                   | 5003                    |
+| `LAMBDA_DISPATCH_ControlChannelHTTP2Port`         | The TLS port to listen for incoming control channel requests.  This is the port contacted by the Lambda extension.                                                       | 5004                    |
+
+## Configuration - Lambda Extension
+
+The extension is configured with environment variables.
+
+| Name                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Default          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| LAMBDA_DISPATCH_RUNTIME | The runtime to use for the Lambda dispatch<br>- `current_thread` - Configures Tokio to use only the current thread for async tasks<br>- `multi_thread` - Configures Tokio to start the multi thread runtime, with a default of 2 threads unless the thread count is specified by `TOKIO_WORKER_THREADS`<br>- `default_multi_thread` - Configures Tokio to start the multi thread runtime with the default behavior of creating as many threads as there are CPU cores | `current_thread` |
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for details on how to build and run the project locally.
