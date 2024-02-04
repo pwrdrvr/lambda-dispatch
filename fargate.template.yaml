@@ -534,7 +534,7 @@ Resources:
       Role: !GetAtt LambdaLBExecutionRole.Arn
       Code:
         ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-demo-app:latest
-      MemorySize: 256
+      MemorySize: 192
       Timeout: 60
       PackageType: "Image"
       Architectures:
@@ -544,7 +544,9 @@ Resources:
         SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
       Environment:
         Variables:
-          DOTNET_ThreadPool_UnfairSemaphoreSpinLimit: "6"
+          # No longer needed as we've moved to the Rust runtime
+          # DOTNET_ThreadPool_UnfairSemaphoreSpinLimit: "6"
+          LAMBDA_DISPATCH_RUNTIME: "current_thread"
 
   DirectLambda:
     Type: AWS::Lambda::Function
@@ -553,7 +555,7 @@ Resources:
       Role: !GetAtt LambdaLBExecutionRole.Arn
       Code:
         ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-directlambda:latest
-      MemorySize: 256
+      MemorySize: 128
       Timeout: 60
       PackageType: "Image"
       Architectures:

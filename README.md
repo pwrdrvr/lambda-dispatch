@@ -58,13 +58,52 @@ Feedback is welcome and encouraged. Please open an issue for any questions, comm
 
 ## Project Implementation
 
-The project was built with DotNet 8 and C# and generates a single binary, similar to Go/Rust, that can be used within a Lambda to connect to the AWS Lambda Runtime API to receive invocations.  The structure is similar to the [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter) in that the adapter starts the contained application via a `bootstrap.sh` shell script then connects to that application on port 3000, and checks a `/health` route (which can perform cold start logic).  The adapter then connects to the Router over HTTP2 to pickup requests.
+The project was initially built in DotNet 8 with C# for both the Router and the Lambda Extension, but the Lambda Extension was later rewritten in Rust using Hyper and the Tokio async runtime to resolve a high CPU usage issue.  However, the high CPU usage issue was not resolved directly by the Rust rewrite; instead both the router and extension needed to be restricted to use only 1 worker thread to avoid the high CPU usage; the problem of too much CPU usage was common to the DotNet Router, DotNet Extension, and the Rust Extension.
 
-DotNet on Linux does suffer from a problem that is causing higher-than-necessary CPU usage due to the way spin locks are being used by the thread pool to poll for new work. [High CPU Problem on DotNet on Linux](https://github.com/dotnet/runtime/issues/72153#issuecomment-1216363757) There is a workaround (setting the `DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` env var to 0-6), but the CPU usage is still 2-3x higher than it should be. If this is not resolved in DotNet and if the project needs to exist for a long time, then the project may need to be rewritten in Go or Rust.
+The structure of the extension is similar to the [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter) in that the extension connects to that application on port 3000, and waits for aa `/health` route (which can perform cold start logic) to return a 200 before connecting back to the Router over HTTP2 to pickup requests.
 
 ## Installation / Setup
 
-As of 2024-01-01, [fargate.template.yaml](fargate.template.yaml) contains an example deploy, [DockerfileLambda](DockerfileLambda) shows how to package the runtime with a Node.js lambda, and [DockerfileRouter](DockerfileRouter) packages up the router.
+As of 2024-02-04, [fargate.template.yaml](fargate.template.yaml) contains an example deploy, [DockerfileLambdaDemoApp](DockerfileLambdaDemoApp) shows how to package the runtime with a Node.js lambda, and [DockerfileRouter](DockerfileRouter) packages up the router.
+
+### Docker Images
+
+The docker images are published to the AWS ECR Public Gallery:
+
+- [Lambda Dispatch Router](https://gallery.ecr.aws/pwrdrvr/lambda-dispatch-router)
+  - Latest: `public.ecr.aws/pwrdrvr/lambda-dispatch-router:main`
+  - Available for both ARM64 and AMD64
+- [Lambda Dispatch Extension](https://gallery.ecr.aws/pwrdrvr/lambda-dispatch-extension)
+  - Latest: `public.ecr.aws/pwrdrvr/lambda-dispatch-extension:main`
+  - Available for both ARM64 and AMD64
+- [Lambda Dispatch Demo App](https://gallery.ecr.aws/pwrdrvr/lambda-dispatch-demo-app)
+  - Latest: `public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app:main`
+  - Available for both ARM64 and AMD64
+
+### Configuration - Router
+
+The router is configured with environment variables.
+
+| Name                                              | Description                                                                                                                                                              | Default                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| `LAMBDA_DISPATCH_MaxWorkerThreads`                | The maximum number of worker threads to use for processing requests.  For best efficiency, set this to `1` and scale up router instances at ~50-70% CPU usage of 1 core. | default DotNet handling |
+| `LAMBDA_DISPATCH_ChannelCount`                    | The number of channels that the Lambda extension should create back to the router                                                                                        | 20                      |
+| `LAMBDA_DISPATCH_MaxConcurrentCount`              | The maximum number of concurrent requests that the Lambda extension should allow to be processed                                                                         | 10                      |
+| `LAMBDA_DISPATCH_AllowInsecureControlChannel`     | Opens a non-TLS HTTP2 port                                                                                                                                               | false                   |
+| `LAMBDA_DISPATCH_PreferredControlChannelScheme`   | The scheme to use for the control channel<br>- `http` - Use HTTP<br>- `https` - Use HTTPS                                                                                | `https`                 |
+| `LAMBDA_DISPATCH_IncomingRequestHTTPPort`         | The port to listen for incoming requests.  This is the port contacted by the ALB.                                                                                        | 5001                    |
+| `LAMBDA_DISPATCH_IncomingRequestHTTPSPort`        | The port to listen for incoming requests.  This is the port contacted by the ALB.                                                                                        | 5002                    |
+|                                                   |
+| `LAMBDA_DISPATCH_ControlChannelInsecureHTTP2Port` | The non-TLS port to listen for incoming control channel requests.  This is the port contacted by the Lambda extension.                                                   | 5003                    |
+| `LAMBDA_DISPATCH_ControlChannelHTTP2Port`         | The TLS port to listen for incoming control channel requests.  This is the port contacted by the Lambda extension.                                                       | 5004                    |
+
+### Configuration - Lambda Extension
+
+The extension is configured with environment variables.
+
+| Name                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Default          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| LAMBDA_DISPATCH_RUNTIME | The runtime to use for the Lambda dispatch<br>- `current_thread` - Configures Tokio to use only the current thread for async tasks<br>- `multi_thread` - Configures Tokio to start the multi thread runtime, with a default of 2 threads unless the thread count is specified by `TOKIO_WORKER_THREADS`<br>- `default_multi_thread` - Configures Tokio to start the multi thread runtime with the default behavior of creating as many threads as there are CPU cores | `current_thread` |
 
 ## Development
 

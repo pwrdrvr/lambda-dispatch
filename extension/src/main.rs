@@ -78,6 +78,7 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
       runtime.block_on(async_main())?;
     }
+    // Default or `current_thread` runtime
     _ => {
       log::info!("Using current_thread runtime");
       let runtime = tokio::runtime::Builder::new_current_thread()

@@ -34,6 +34,7 @@ COPY --from=extension /lambda-dispatch /opt/extensions/lambda-dispatch
 # Copy the node.js app
 COPY --from=node-build-env /app/dist/ dist/
 # This is only used for testing with docker-compose
+# It is not necessary to copy this into an app deployed on Lambda
 COPY extension/startup.sh ./
 
 # Set the entrypoint
