@@ -59,8 +59,11 @@ Resources:
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
           Environment:
-            - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
-              Value: "6"
+            - Name: LAMBDA_DISPATCH_MaxWorkerThreads
+              Value: "1"
+            # Limiting the spins is no longer needed when limiting to 1 thread
+            # - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
+            #   Value: "6"
             - Name: LAMBDA_DISPATCH_FunctionName
               Value: !GetAtt LambdaDemoApp.Arn
             - Name: LAMBDA_DISPATCH_MaxConcurrentCount
