@@ -6,6 +6,14 @@ Additionally, when there are more parallel requests than expected execution envi
 
 > Reduce your AWS Lambda costs by up to 80% and avoid cold starts completely!
 
+## Problem Being Solved - Cold Starts for Web Requests
+
+Web applications can have lengthy cold start times and users waiting for those cold start times can increase the bounce and frustration rates, making it more difficult to choose AWS Lambda for hosting web applications.
+
+The YouTube video below demonstrates the problem in detail (since many think the problem does not exist!).
+
+[![AWS Lambda Cold Starts for Web Requests](https://img.youtube.com/vi/2dW1mSFCbdM/maxresdefault.jpg)](https://www.youtube.com/watch?v=2dW1mSFCbdM)
+
 ## Advantages
 
 - Avoids cold start wait durations in most cases where at least 1 exec env is running
