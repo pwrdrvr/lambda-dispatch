@@ -56,7 +56,10 @@ Resources:
         OperatingSystemFamily: 'LINUX'
       ContainerDefinitions:
         - Name: lambda-dispatch-router
-          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
+          # When using the public ECR published by the github builds, use this line:
+          Image: public.ecr.aws/pwrdrvr/lambda-dispatch-router:main
+          # When testing local builds published to the Private ECR, use this line:
+          # Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
           Environment:
             - Name: LAMBDA_DISPATCH_MaxWorkerThreads
