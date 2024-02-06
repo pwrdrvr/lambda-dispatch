@@ -178,7 +178,7 @@ app.get("/read", async (req, res) => {
     // );
 
     // Pause for 50 ms to simulate calling an upstream that takes longer
-    await sleep(50);
+    // await sleep(50);
 
     res.json(data.Item);
   } catch (err) {
