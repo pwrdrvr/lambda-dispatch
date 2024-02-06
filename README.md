@@ -12,7 +12,7 @@ Web applications can have lengthy cold start times and users waiting for those c
 
 The YouTube video below demonstrates the problem in detail (since many think the problem does not exist!).
 
-[![AWS Lambda Cold Starts for Web Requests](https://img.youtube.com/vi/2dW1mSFCbdM/maxresdefault.jpg)](https://www.youtube.com/watch?v=2dW1mSFCbdM)
+[![AWS Lambda Cold Starts for Web Requests](https://github.com/pwrdrvr/lambda-dispatch/assets/5617868/80089108-7cc0-4cb5-ab87-08c8282094bf)](https://www.youtube.com/watch?v=2dW1mSFCbdM)
 
 ## Advantages
 
