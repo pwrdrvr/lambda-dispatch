@@ -391,16 +391,29 @@ Resources:
         DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
         HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
 
+  DirectLambdaALBAliasRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z005084420J9MD9JNBCUK
+      Name: directlambdaalias.ghpublic.pwrdrvr.com.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
+
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
       DomainName: lambdadispatch.ghpublic.pwrdrvr.com
       SubjectAlternativeNames:
         - directlambda.ghpublic.pwrdrvr.com
+        - directlambdaalias.ghpublic.pwrdrvr.com
       DomainValidationOptions:
         - DomainName: lambdadispatch.ghpublic.pwrdrvr.com
           HostedZoneId: Z005084420J9MD9JNBCUK
         - DomainName: directlambda.ghpublic.pwrdrvr.com
+          HostedZoneId: Z005084420J9MD9JNBCUK
+        - DomainName: directlambdaalias.ghpublic.pwrdrvr.com
           HostedZoneId: Z005084420J9MD9JNBCUK
       ValidationMethod: DNS
 
@@ -568,6 +581,13 @@ Resources:
         SecurityGroupIds: [!Ref LambdaLBSG]
         SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
 
+  DirectLambdaALBAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref DirectLambda
+      FunctionVersion: $LATEST
+      Name: ALBAlias
+
   DirectLambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -598,8 +618,37 @@ Resources:
       ListenerArn: !Ref FargateHttpsListener
       Priority: 1
 
+  DirectLambdaALBAliasInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DirectLambdaALBAlias
+      Principal: elasticloadbalancing.amazonaws.com
+
+  DirectLambdaALBAliasTargetGroup:
+    DependsOn:
+      - DirectLambdaALBAliasInvokePermission
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: lambda
+      Targets:
+        - Id: !Ref DirectLambdaALBAlias
+
+  DirectLambdaALBAliasListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref DirectLambdaALBAliasTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - directlambdaalias.ghpublic.pwrdrvr.com
+      ListenerArn: !Ref FargateHttpsListener
+      Priority: 2
+
 Outputs:
   LoadBalancerDNS:
     Description: DNS Name of the Load Balancer
     Value: !GetAtt ECSFargateLoadBalancer.DNSName
-
