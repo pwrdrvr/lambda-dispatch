@@ -67,12 +67,14 @@ public class IncomingRequestMiddleware
     private readonly RequestDelegate _next;
     private readonly Dispatcher _dispatcher;
     private readonly int[] _allowedPorts;
+    private readonly ThreadPoolManager _tpm;
 
-    public IncomingRequestMiddleware(RequestDelegate next, Dispatcher dispatcher, int[] allowedPorts)
+    public IncomingRequestMiddleware(RequestDelegate next, Dispatcher dispatcher, ThreadPoolManager tpm, int[] allowedPorts)
     {
         _next = next;
         _dispatcher = dispatcher;
         _allowedPorts = allowedPorts;
+        _tpm = tpm;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -89,7 +91,7 @@ public class IncomingRequestMiddleware
 
             // We're going to handle this
             // We will prevent the endpoint router from ever seeing this request
-            await _dispatcher.AddRequest(context.Request, context.Response);
+            await _dispatcher.AddRequest(context.Request, context.Response, _tpm);
         }
         else
         {
