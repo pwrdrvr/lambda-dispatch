@@ -74,7 +74,10 @@ public class Program
 
     public static void Main(string[] args)
     {
-        AdjustThreadPool();
+        if (Environment.GetEnvironmentVariable("LAMBDA_DISPATCH_ThreadPoolTuner") != "true")
+        {
+            AdjustThreadPool();
+        }
         CreateHostBuilder(args).Build().Run();
     }
 
@@ -109,6 +112,9 @@ public class Program
             {
                 var config = Config.CreateAndValidate(hostContext.Configuration);
                 services.AddSingleton<IConfig>(config);
+
+                var threadPoolManager = new ThreadPoolManager();
+                services.AddSingleton<ThreadPoolManager>(threadPoolManager);
 
                 if (config.PreferredControlChannelScheme == "http")
                 {

@@ -89,7 +89,7 @@ public class Dispatcher : IBackgroundDispatcher
   }
 
   // Add a new request, dispatch immediately if able
-  public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
+  public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, ThreadPoolManager? tpm = null)
   {
     _logger.LogDebug("Adding request to the Dispatcher");
 
@@ -112,6 +112,8 @@ public class Dispatcher : IBackgroundDispatcher
       }
       finally
       {
+        tpm?.IndicateProduction();
+
         Interlocked.Decrement(ref _runningRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
 
