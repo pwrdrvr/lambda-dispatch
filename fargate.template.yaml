@@ -63,11 +63,11 @@ Resources:
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
           Environment:
+            # Setting to 1 seems to hang on Fargate, so set to no less than 2
             - Name: LAMBDA_DISPATCH_MaxWorkerThreads
-              Value: "1"
-            # Limiting the spins is no longer needed when limiting to 1 thread
-            # - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
-            #   Value: "6"
+              Value: "2"
+            - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
+              Value: "0"
             - Name: LAMBDA_DISPATCH_FunctionName
               Value: !GetAtt LambdaDemoApp.Arn
             - Name: LAMBDA_DISPATCH_MaxConcurrentCount
@@ -142,6 +142,10 @@ Resources:
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
         TargetValue: 50
+        # These default to 300 seconds for ECS Services
+        # https://docs.aws.amazon.com/autoscaling/application/userguide/target-tracking-scaling-policy-overview.html#target-tracking-cooldown
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
 
   # Security Group used by the tasks
   ECSFargateSG:
