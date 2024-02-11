@@ -189,11 +189,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   private async Task ManageCapacity()
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
+    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
     while (true)
     {
       // Setup a timer to run every 5 seconds or when we are asked to increase capacity
-      var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
       try
       {
         // Cleanup any stopping instances
@@ -242,7 +242,10 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       }
       catch (OperationCanceledException)
       {
-        // This was a timeout
+        // This was a timeout - Reset the timeout
+        cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _logger.LogInformation("ManageCapacity - Scale down check running");
+
         // Time to check if we can reduce capacity
 
         // Stop only running instances if we have too many
