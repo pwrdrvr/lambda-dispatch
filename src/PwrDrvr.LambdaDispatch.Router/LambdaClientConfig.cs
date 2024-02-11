@@ -13,7 +13,7 @@ public static class LambdaClientConfig
     var config = new AmazonLambdaConfig
     {
       Timeout = TimeSpan.FromMinutes(15),
-      MaxErrorRetry = 8
+      MaxErrorRetry = 1,
     };
 
     if (!string.IsNullOrEmpty(serviceUrl))
