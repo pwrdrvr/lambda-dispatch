@@ -228,21 +228,20 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // Remove counts older than 5 seconds
         recentCounts.RemoveAll(x => DateTime.UtcNow - x.Timestamp > TimeSpan.FromSeconds(5));
 
-        // Compute the RMS from the recent counts
-        var rmsCount = Math.Sqrt(recentCounts.Average(x => x.DesiredInstanceCount * x.DesiredInstanceCount));
+        var averageCount = recentCounts.Average(x => x.DesiredInstanceCount);
 
         // Get the max desired count
         var maxDesiredCount = recentCounts.Max(x => x.DesiredInstanceCount);
 
-        // Set the new desired count based on the RMS count
+        // Set the new desired count based on the moving average
         if (maxDesiredCount == 0)
         {
           desiredInstanceCount = 0;
         }
         else
         {
-          // If we desired any instances at all, we need to keep at least 1, even if RMS drops to below 1
-          desiredInstanceCount = Math.Max((int)Math.Ceiling(rmsCount), 1);
+          // If we desired any instances at all, we need to keep at least 1, even if average drops to below 1
+          desiredInstanceCount = Math.Max((int)Math.Ceiling(averageCount), 1);
         }
 
         // Try to set the new desired count
@@ -333,11 +332,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
   {
     // In the nominal case of the right amount of capacity, we avoid writing to the channel
-    if (ComputeDesiredInstanceCount(pendingRequests, runningRequests) == _desiredInstanceCount)
-    {
-      // Nothing to do
-      return;
-    }
+    // if (ComputeDesiredInstanceCount(pendingRequests, runningRequests) == _desiredInstanceCount)
+    // {
+    //   // Nothing to do
+    //   return;
+    // }
 
     // Send the message to the channel
     // This will return immediately because we drop any prior message and only keep the latest
