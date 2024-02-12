@@ -17,20 +17,6 @@ export const options = {
       duration: "5m",
       exec: "dispatch",
     },
-    direct: {
-      executor: "constant-arrival-rate",
-      preAllocatedVUs: 10,
-      maxVUs: 100,
-
-      timeUnit: "1s",
-
-      // We want to act like web users clicking to the site (not already on the site)
-      // They don't stop clicking on Google links just because we're slow at the moment, they don't know that
-      // So they keep arriving at the same rate even if we're hitting a cold start
-      rate: 1000,
-      duration: "5m",
-      exec: "direct",
-    },
   },
 };
 
@@ -44,10 +30,4 @@ export const options = {
 //
 export function dispatch() {
   http.get("https://lambdadispatch.ghpublic.pwrdrvr.com/read");
-}
-export function direct() {
-  // http.get("https://directlambda.ghpublic.pwrdrvr.com/read");
-  http.get(
-    "https://nwettechi2eak4nspdqlflgiq40olxwi.lambda-url.us-east-2.on.aws/read"
-  );
 }
