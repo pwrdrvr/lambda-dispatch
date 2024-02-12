@@ -35,7 +35,7 @@ dotnet build
 ```sh
 dotnet run --project PwrDrvr.LambdaDispatch.Router
 
-DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_ChannelCount=1 LAMBDA_DISPATCH_MaxConcurrentCount=1 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
+DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_MaxConcurrentCount=10 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
 ```
 
 ### Rust Lambda Extension
@@ -131,6 +131,16 @@ docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-directl
 aws cloudformation create-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
 
 aws cloudformation update-stack --stack-name lambda-dispatch-fargate --template-body file://fargate.template.yaml --capabilities CAPABILITY_IAM
+```
+
+## Enable or Disable ECS Application Auto Scaling
+
+```sh
+aws application-autoscaling describe-scalable-targets --service-namespace ecs
+
+aws application-autoscaling register-scalable-target --service-namespace ecs --resource-id service/lambda-dispatch-fargate-ECSCluster-JBQe7CKkf78S/lambda-dispatch-fargate-ECSFargateService-N3d0hinPR3Ps --scalable-dimension ecs:service:DesiredCount --suspended-state file://config.json
+
+aws application-autoscaling register-scalable-target --service-namespace ecs --resource-id service/lambda-dispatch-fargate-ECSCluster-JBQe7CKkf78S/lambda-dispatch-fargate-ECSFargateService-N3d0hinPR3Ps --scalable-dimension ecs:service:DesiredCount --min-capacity 1 --max-capacity 1
 ```
 
 ## curl the Router
