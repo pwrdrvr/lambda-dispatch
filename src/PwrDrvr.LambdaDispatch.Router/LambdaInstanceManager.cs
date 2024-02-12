@@ -54,6 +54,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly int _maxConcurrentCount;
 
+  private readonly int _instanceCountMultiplier;
+
   private readonly int _channelCount;
 
   private readonly string _functionName;
@@ -68,6 +70,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   public LambdaInstanceManager(IConfig config)
   {
+    _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
     _channelCount = config.ChannelCount;
     _leastOutstandingQueue = new(_maxConcurrentCount);
@@ -166,8 +169,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
     // Calculate the desired count
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-    // TODO: Load the 2x factor from the configuration
-    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * 2;
+    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * _instanceCountMultiplier;
 
     // Special case for 0 pending or running requests
     if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
