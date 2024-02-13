@@ -17,7 +17,7 @@ public class MetadataService : IMetadataService
   public string NetworkIP => _networkIP;
   public string? ClusterName => _clusterName;
 
-  public MetadataService()
+  public MetadataService(IHttpClientFactory? httpClientFactory = null)
   {
     var execEnvType = GetExecEnvType();
 
@@ -30,7 +30,7 @@ public class MetadataService : IMetadataService
     else if (execEnvType == ExecEnvType.ECS)
     {
       // https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-metadata-endpoint-v4.html
-      var _client = new HttpClient();
+      var _client = httpClientFactory != null ? httpClientFactory.CreateClient() : new HttpClient();
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
       var response = _client.GetStringAsync(Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4"), cts.Token).GetAwaiter().GetResult();
       var metadata = JsonDocument.Parse(response).RootElement;
