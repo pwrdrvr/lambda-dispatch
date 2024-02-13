@@ -5,9 +5,9 @@ export const options = {
   scenarios: {
     dispatch: {
       executor: "ramping-arrival-rate",
-      preAllocatedVUs: 150,
+      preAllocatedVUs: 200,
       maxVUs: 600,
-      startRate: 300,
+      startRate: 50,
       timeUnit: "1s",
       stages: [
         { target: 10, duration: "0" },
@@ -26,9 +26,9 @@ export const options = {
     },
     direct: {
       executor: "ramping-arrival-rate",
-      preAllocatedVUs: 150,
+      preAllocatedVUs: 200,
       maxVUs: 600,
-      startRate: 300,
+      startRate: 50,
       timeUnit: "1s",
       stages: [
         { target: 10, duration: "0" },
