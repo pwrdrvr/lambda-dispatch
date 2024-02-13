@@ -46,6 +46,8 @@ public class MetadataService : IMetadataService
         }
       }
 
+      response = _client.GetStringAsync($"{Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4")}/task", cts.Token).GetAwaiter().GetResult();
+      metadata = JsonDocument.Parse(response).RootElement;
       var taskArnParts = metadata.GetProperty("TaskARN").GetString().Split('/');
       _clusterName = taskArnParts.Length > 1 ? taskArnParts[1] : "";
     }

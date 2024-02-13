@@ -52,7 +52,11 @@ public class MockHttpMessageHandler : HttpMessageHandler
     // Set the content of the response message based on the request URL
     if (request.RequestUri.ToString() == Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4"))
     {
-      responseMessage.Content = new StringContent("{ \"Networks\": [ { \"NetworkMode\": \"awsvpc\", \"IPv4Addresses\": [ \"192.168.0.1\" ] } ], \"TaskARN\": \"arn:aws:ecs:us-west-2:123456789012:task/test_cluster/abcdefg\" }");
+      responseMessage.Content = new StringContent("{ \"Networks\": [ { \"NetworkMode\": \"awsvpc\", \"IPv4Addresses\": [ \"192.168.0.1\" ] } ] }");
+    }
+    if (request.RequestUri.ToString() == $"{Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4")}/task")
+    {
+      responseMessage.Content = new StringContent("{ \"TaskARN\": \"arn:aws:ecs:us-west-2:123456789012:task/test_cluster/abcdefg\" }");
     }
 
     return await Task.FromResult(responseMessage);
