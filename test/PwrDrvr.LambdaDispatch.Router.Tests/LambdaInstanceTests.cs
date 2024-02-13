@@ -36,6 +36,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
+
       // Start the Lambda
       instance.Start();
 
@@ -89,7 +91,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     }
 
     [Test]
-    public async Task AddConnection_ShouldHideSurplusConnections()
+    public void AddConnection_ShouldHideSurplusConnections()
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
@@ -100,6 +102,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
+
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
       // Start the Lambda
       instance.Start();
@@ -148,7 +152,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     }
 
     [Test]
-    public async Task AddConnection_ImmediateDispatchShouldCountAsOutstanding()
+    public void AddConnection_ImmediateDispatchShouldCountAsOutstanding()
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
@@ -159,6 +163,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
+
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
       // Start the Lambda
       instance.Start();
@@ -188,6 +194,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
+
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
       // Start the Lambda
       instance.Start();
