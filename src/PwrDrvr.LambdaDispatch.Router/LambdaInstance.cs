@@ -41,6 +41,7 @@ public struct TransitionResult
 {
   public bool TransitionedToClosing { get; set; }
   public bool WasOpened { get; set; }
+  public bool OpenWasRejected { get; set; }
 }
 
 public interface ILambdaInstance
@@ -113,7 +114,7 @@ public interface ILambdaInstance
   /// <summary>
   /// Mark this instance as closing
   /// </summary>
-  public void Close(bool doNotReplace = false, bool lambdaInitiated = false);
+  public void Close(bool doNotReplace = false, bool lambdaInitiated = false, bool openWasRejected = false);
 
   /// <summary>
   /// Destructive - Transitions to the Closing state
@@ -181,7 +182,18 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public bool LamdbdaInitiatedClose { get; private set; } = false;
 
+  /// <summary>
+  /// Was the lambda opened and registered with the InstanceManager
+  /// If true, and OpenWasRejected is true, this means the InstanceManager should decrement the running count on invoke complete
+  /// Else, if OpenWasRejected is false, then the InstanceManager should decrment the starting count on invoke complete
+  /// </summary>
   private bool WasOpened { get; set; } = false;
+
+  /// <summary>
+  /// Was the open rejected by the OnOpen handler
+  /// If true, this means the InstanceManager should not decrement starting or running counts on invoke complete
+  /// </summary>
+  private bool OpenWasRejected { get; set; } = false;
 
   // Add a task completion source
   // When the lambda is done we set the task completion source
@@ -563,7 +575,8 @@ public class LambdaInstance : ILambdaInstance
         return new TransitionResult
         {
           TransitionedToClosing = false,
-          WasOpened = WasOpened
+          WasOpened = WasOpened,
+          OpenWasRejected = OpenWasRejected
         };
       }
 
@@ -571,7 +584,8 @@ public class LambdaInstance : ILambdaInstance
       return new TransitionResult
       {
         TransitionedToClosing = true,
-        WasOpened = WasOpened
+        WasOpened = WasOpened,
+        OpenWasRejected = OpenWasRejected
       };
     }
   }
@@ -594,13 +608,23 @@ public class LambdaInstance : ILambdaInstance
   /// <summary>
   /// Closes in the background so the Lambda can exit as soon as it sees it's last connection close
   /// </summary>
-  public void Close(bool doNotReplace = false, bool lambdaInitiated = false)
+  public void Close(bool doNotReplace = false, bool lambdaInitiated = false, bool openWasRejected = false)
   {
     // Ignore if already closing
     if (!TransitionToClosing().TransitionedToClosing)
     {
       // Already closing
       return;
+    }
+
+    if (openWasRejected)
+    {
+      lock (stateLock)
+      {
+        // If the open was rejected, we should not consider the instance as having been opened
+        // The open is rejected if there are too many instances running vs the desired count
+        OpenWasRejected = true;
+      }
     }
 
     DoNotReplace = doNotReplace;

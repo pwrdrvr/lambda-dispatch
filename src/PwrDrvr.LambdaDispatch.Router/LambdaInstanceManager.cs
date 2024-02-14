@@ -457,6 +457,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       // We always increment the starting count
       _startingInstanceCount++;
       MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+      _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
     }
 
     // Start a new LambdaInstance and add it to the list
@@ -476,6 +477,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       {
         _startingInstanceCount--;
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+        _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
 
         // Starting lambdas can't be seen by the scale down
         // If we have too many running instances we tell this one to stop
@@ -483,8 +485,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // This can cause a massive traffic spike
         if (_runningInstanceCount + _startingInstanceCount > _desiredInstanceCount)
         {
+          // OnOpen got called
+          // That means WasOpened on the instance will be true
+          // We have to tell the LambdaInstance that the open was rejected
+          // so we don't double-decrement starting or running counts
           _logger.LogInformation("LambdaInstance {instanceId} opened but we have too many running instances, closing", instance.Id);
-          instance.Close(true);
+          instance.Close(doNotReplace: true, openWasRejected: true);
           return;
         }
 
@@ -510,8 +516,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       // We always increment the stopping count when initiating a close
       lock (_instanceCountLock)
       {
-        _stoppingInstanceCount--;
+        _stoppingInstanceCount++;
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
+        _metricsLogger.PutMetric("LambdaInstanceStoppingCount", _stoppingInstanceCount, Unit.Count);
 
         if (instance.LamdbdaInitiatedClose)
         {
@@ -538,16 +545,24 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       {
         lock (_instanceCountLock)
         {
+          var transitionResult = instance.TransitionToClosing();
+
           // If the instance just returned but was not marked as closing,
           // then we should not decrement the stopping count.
           // But if Closing was initiated then we should decrement the count.
-          var transitionResult = instance.TransitionToClosing();
-
-          if (transitionResult.TransitionedToClosing)
+          if (!transitionResult.TransitionedToClosing)
           {
             _stoppingInstanceCount--;
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
+            _metricsLogger.PutMetric("LambdaInstanceStoppingCount", _stoppingInstanceCount, Unit.Count);
+
             _logger.LogInformation("LambdaInstance {instanceId} was closed already, _stoppingInstanceCount {_stoppingInstanceCount} (after decrement)", instance.Id, _stoppingInstanceCount);
+          }
+
+          if (transitionResult.OpenWasRejected)
+          {
+            _logger.LogInformation("LambdaInstance {instanceId} open was rejected, not replacing, not decrementing counts", instance.Id);
+            return;
           }
 
           if (transitionResult.WasOpened)
@@ -563,6 +578,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             // The instance never opened (e.g. throttled and failed) so decrement the starting count
             _startingInstanceCount--;
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+            _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
           }
 
           _logger.LogInformation("LambdaInstance {instanceId} invocation complete, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount} (after decrement), _stoppingInstanceCount {_stoppingInstanceCount}",
@@ -608,7 +624,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // The instance is going to get cleaned up by the OnInvocationComplete handler
     // Counts will be decremented, the instance will be replaced, etc.
     // We just need to get the Lambda to return from the invoke
-    instance.Close(true, lambdaInitiated);
+    instance.Close(doNotReplace: true, lambdaInitiated: lambdaInitiated);
   }
 
   /// <summary>
