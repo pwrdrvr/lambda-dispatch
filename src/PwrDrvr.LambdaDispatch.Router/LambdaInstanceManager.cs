@@ -451,6 +451,13 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       // Starting lambdas can't be seen by the scale down
       // If we have too many running instances we tell this one to stop
       // If we don't do this, it will hang out for 5 seconds if all traffic stops
+      // This can cause a massive traffic spike
+      if (_runningInstanceCount + _startingInstanceCount > _desiredInstanceCount)
+      {
+        _logger.LogInformation("LambdaInstance {instanceId} opened but we have too many running instances, closing", instance.Id);
+        instance.Close(true);
+        return;
+      }
 
       _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
 

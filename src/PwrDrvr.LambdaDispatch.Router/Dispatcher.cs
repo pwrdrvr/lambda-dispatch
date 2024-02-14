@@ -148,7 +148,7 @@ public class Dispatcher : IBackgroundDispatcher
     _metricsLogger.PutMetric("DispatchDelay", pendingRequest.Duration.TotalMilliseconds, Unit.Milliseconds);
   }
 
-  // Add a new lambda, dispatch to it immediately if a request is waiting
+  // Add a new connection for a lambda, dispatch to it immediately if a request is waiting
   public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId)
   {
     DispatcherAddConnectionResult result = new();
