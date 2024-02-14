@@ -632,7 +632,7 @@ public class LambdaInstance : ILambdaInstance
   /// This is a "buddy" to the `Start` call that uses the same parameters
   /// </summary>
   /// <returns></returns>
-  public async Task StartInitOnly()
+  public void StartInitOnly()
   {
 
     var initOnlyLambdaId = $"{Id}-initonly";
@@ -641,7 +641,7 @@ public class LambdaInstance : ILambdaInstance
     var payload = new WaiterRequest
     {
       Id = initOnlyLambdaId,
-      DispatcherUrl = await GetCallbackIP.Get(),
+      DispatcherUrl = GetCallbackIP.Get(),
       NumberOfChannels = 0,
       SentTime = DateTime.Now,
       InitOnly = true
@@ -685,7 +685,7 @@ public class LambdaInstance : ILambdaInstance
   /// Each instance can have many connections at a time to us
   /// </summary>
   /// <returns></returns>
-  public async Task Start()
+  public void Start()
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
@@ -711,7 +711,7 @@ public class LambdaInstance : ILambdaInstance
     var payload = new WaiterRequest
     {
       Id = Id,
-      DispatcherUrl = await GetCallbackIP.Get(),
+      DispatcherUrl = GetCallbackIP.Get(),
       NumberOfChannels = channelCount == -1 ? 2 * maxConcurrentCount : channelCount,
       SentTime = DateTime.Now,
       InitOnly = false
@@ -766,7 +766,7 @@ public class LambdaInstance : ILambdaInstance
       await Task.Delay(TimeSpan.FromMilliseconds(100));
 
       // Start an init-only buddy
-      await StartInitOnly();
+      StartInitOnly();
     });
   }
 

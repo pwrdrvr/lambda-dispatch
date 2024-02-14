@@ -1,7 +1,6 @@
 using NUnit.Framework;
 using Moq;
 using Microsoft.Extensions.Configuration;
-using PwrDrvr.LambdaDispatch.Router;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
 

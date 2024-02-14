@@ -36,8 +36,10 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
+
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
@@ -89,7 +91,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     }
 
     [Test]
-    public async Task AddConnection_ShouldHideSurplusConnections()
+    public void AddConnection_ShouldHideSurplusConnections()
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
@@ -101,8 +103,10 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
+
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
@@ -148,7 +152,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     }
 
     [Test]
-    public async Task AddConnection_ImmediateDispatchShouldCountAsOutstanding()
+    public void AddConnection_ImmediateDispatchShouldCountAsOutstanding()
     {
       var maxConcurrentCount = 10;
       var lambdaClient = new Mock<IAmazonLambda>();
@@ -160,8 +164,10 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
+
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
@@ -189,8 +195,10 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
+      GetCallbackIP.Init(1000, "https", "127.0.0.1");
+
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       await instance.AddConnection(request.Object, response.Object, "channel-1", false);
 
