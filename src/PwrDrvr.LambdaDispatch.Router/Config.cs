@@ -101,6 +101,9 @@ public class Config : IConfig
 
   public int InstanceCountMultiplier { get; set; }
 
+  /// <summary>
+  /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
+  /// </summary>
   public Config()
   {
     FunctionName = string.Empty;
