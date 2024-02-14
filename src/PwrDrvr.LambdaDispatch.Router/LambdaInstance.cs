@@ -37,6 +37,12 @@ public enum LambdaInstanceState
   Closed,
 }
 
+public struct TransitionResult
+{
+  public bool TransitionedToClosing { get; set; }
+  public bool WasOpened { get; set; }
+}
+
 public interface ILambdaInstance
 {
   /// <summary>
@@ -109,14 +115,12 @@ public interface ILambdaInstance
   /// </summary>
   public void Close(bool doNotReplace = false, bool lambdaInitiated = false);
 
-  public bool WasOpened { get; }
-
   /// <summary>
   /// Destructive - Transitions to the Closing state
   /// if not already in Closing or Closed
   /// </summary>
   /// <returns>Whether the transition was successful</returns>
-  public bool TransitionToClosing();
+  public TransitionResult TransitionToClosing();
 
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
 
@@ -154,8 +158,6 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public event Action<ILambdaInstance>? OnOpen;
 
-  public bool WasOpened { get; private set; } = false;
-
   /// <summary>
   /// WARNING: This is going to enumerate the items in the queue to count them
   /// </summary>
@@ -178,6 +180,8 @@ public class LambdaInstance : ILambdaInstance
   /// If true, the Lambda Instance close was initiated by the Lambda itself
   /// </summary>
   public bool LamdbdaInitiatedClose { get; private set; } = false;
+
+  private bool WasOpened { get; set; } = false;
 
   // Add a task completion source
   // When the lambda is done we set the task completion source
@@ -317,20 +321,25 @@ public class LambdaInstance : ILambdaInstance
 
     // Signal that we are ready if this the first connection
     var firstInstance = false;
-    lock (stateLock)
+    if (State != LambdaInstanceState.Open)
     {
-      if (State == LambdaInstanceState.Starting)
+      lock (stateLock)
       {
-        State = LambdaInstanceState.Open;
-        firstInstance = true;
+        if (State == LambdaInstanceState.Starting)
+        {
+          State = LambdaInstanceState.Open;
+          firstInstance = true;
+        }
+
+        if (firstInstance)
+        {
+          // Signal that we are open
+          WasOpened = true;
+          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
+
+          OnOpen?.Invoke(this);
+        }
       }
-    }
-    if (firstInstance)
-    {
-      // Signal that we are open
-      WasOpened = true;
-      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
-      OnOpen?.Invoke(this);
     }
 
     Interlocked.Increment(ref openConnectionCount);
@@ -524,17 +533,40 @@ public class LambdaInstance : ILambdaInstance
     return releasedConnectionCount;
   }
 
-  public bool TransitionToClosing()
+  public TransitionResult TransitionToClosing()
   {
     lock (stateLock)
     {
       if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
       {
         // Already closing
-        return false;
+        return new TransitionResult
+        {
+          TransitionedToClosing = false,
+          WasOpened = WasOpened
+        };
       }
 
       State = LambdaInstanceState.Closing;
+      return new TransitionResult
+      {
+        TransitionedToClosing = true,
+        WasOpened = WasOpened
+      };
+    }
+  }
+
+  public bool InvokeCompleted()
+  {
+    lock (stateLock)
+    {
+      if (State == LambdaInstanceState.Closed)
+      {
+        // Already closed
+        return false;
+      }
+
+      State = LambdaInstanceState.Closed;
       return true;
     }
   }
@@ -545,7 +577,7 @@ public class LambdaInstance : ILambdaInstance
   public void Close(bool doNotReplace = false, bool lambdaInitiated = false)
   {
     // Ignore if already closing
-    if (!TransitionToClosing())
+    if (!TransitionToClosing().TransitionedToClosing)
     {
       // Already closing
       return;
