@@ -29,9 +29,9 @@ public interface ILambdaInstanceManager
 
   Task UpdateDesiredCapacity(int pendingRequests, int runningRequests);
 
-  void CloseInstance(ILambdaInstance instance);
+  void CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false);
 
-  void CloseInstance(string instanceId);
+  void CloseInstance(string instanceId, bool lambdaInitiated = false);
 }
 
 public class LambdaInstanceManager : ILambdaInstanceManager
@@ -254,7 +254,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           Interlocked.Exchange(ref _desiredInstanceCount, newDesiredInstanceCount);
 
           // Record the new desired count
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
           _metricsLogger.PutMetric("LambdaDesiredCount", newDesiredInstanceCount, Unit.Count);
+          _metricsLogger.PutMetric("PendingRequestCount", pendingRequests, Unit.Count);
 
           // Start instances if needed
           if (newDesiredInstanceCount > _runningInstanceCount + _startingInstanceCount)
@@ -307,8 +309,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             }
           }
 
-          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
-
           _logger.LogDebug("ManageCapacity - AFTER - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
         }
       }
@@ -319,10 +319,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         _logger.LogDebug("ManageCapacity - Scale down check running");
 
         // When no messages were read it means we need zero capacity
-        if (noMessagesRead)
+        if (noMessagesRead && _desiredInstanceCount > 0)
         {
           _logger.LogDebug("ManageCapacity - No messages read, setting desired count to 0");
           Interlocked.Exchange(ref _desiredInstanceCount, 0);
+          _metricsLogger.PutMetric("LambdaDesiredCount", 0, Unit.Count);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
         }
         noMessagesRead = true;
 
@@ -414,6 +416,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // We will replace this one if it's still desired
     Interlocked.Increment(ref _runningInstanceCount);
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+    _metricsLogger.PutMetric("LambdaInstanceRunningCount", _runningInstanceCount, Unit.Count);
 
     // Add the instance to the least outstanding queue
     _leastOutstandingQueue.AddInstance(instance);
@@ -445,12 +448,17 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       Interlocked.Decrement(ref _startingInstanceCount);
       MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
 
+      // Starting lambdas can't be seen by the scale down
+      // If we have too many running instances we tell this one to stop
+      // If we don't do this, it will hang out for 5 seconds if all traffic stops
+
       _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
 
       // We need to keep track of how many Lambdas are running
       // We will replace this one if it's still desired
       Interlocked.Increment(ref _runningInstanceCount);
       MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+      _metricsLogger.PutMetric("LambdaInstanceRunningCount", _runningInstanceCount, Unit.Count);
 
       // Add the instance to the least outstanding queue
       _leastOutstandingQueue.AddInstance(instance);
@@ -466,16 +474,21 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       Interlocked.Increment(ref _stoppingInstanceCount);
       MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
 
-      _metricsLogger.PutMetric("LambdaInitiatedClose", 1, Unit.Count);
+      if (instance.LamdbdaInitiatedClose)
+      {
+        _metricsLogger.PutMetric("LambdaInitiatedClose", 1, Unit.Count);
+      }
 
       // Replace this instance if it's still desired
       if (!instance.DoNotReplace)
       {
-        if (_runningInstanceCount + _startingInstanceCount
-              < _desiredInstanceCount)
+        if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
         {
           // We need to start a new instance
-          _metricsLogger.PutMetric("LambdaInitiatedCloseReplacing", 1, Unit.Count);
+          if (instance.LamdbdaInitiatedClose)
+          {
+            _metricsLogger.PutMetric("LambdaInitiatedCloseReplacing", 1, Unit.Count);
+          }
           StartNewInstance();
         }
       }
@@ -488,6 +501,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // The instance opened, so decrement the running count not the starting count
           Interlocked.Decrement(ref _runningInstanceCount);
           MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+          _metricsLogger.PutMetric("LambdaInstanceRunningCount", _runningInstanceCount, Unit.Count);
         }
         else
         {
@@ -528,8 +542,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
         // We need to keep track of how many Lambdas are running
         // We will replace this one if it's still desired
-        if (_runningInstanceCount + _startingInstanceCount
-            < _desiredInstanceCount)
+        if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
         {
           // We need to start a new instance
           _metricsLogger.PutMetric("LambdaInvokeCompleteReplacing", 1, Unit.Count);
@@ -545,12 +558,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// Gracefully close an instance
   /// </summary>
   /// <param name="instance"></param>
-  public void CloseInstance(ILambdaInstance instance)
+  public void CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false)
   {
     // The instance is going to get cleaned up by the OnInvocationComplete handler
     // Counts will be decremented, the instance will be replaced, etc.
     // We just need to get the Lambda to return from the invoke
-    instance.Close();
+    instance.Close(true, lambdaInitiated);
   }
 
   /// <summary>
@@ -558,11 +571,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// </summary>
   /// <param name="instanceId"></param>
   /// <returns></returns>
-  public void CloseInstance(string instanceId)
+  public void CloseInstance(string instanceId, bool lambdaInitiated)
   {
     if (_instances.TryGetValue(instanceId, out var instance))
     {
-      CloseInstance(instance);
+      CloseInstance(instance, lambdaInitiated);
     }
     else
     {

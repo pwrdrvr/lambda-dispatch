@@ -87,9 +87,9 @@ public class Dispatcher : IBackgroundDispatcher
     return found;
   }
 
-  public void CloseInstance(string instanceId)
+  public void CloseInstance(string instanceId, bool lambdaInitiated = false)
   {
-    _lambdaInstanceManager.CloseInstance(instanceId);
+    _lambdaInstanceManager.CloseInstance(instanceId, lambdaInitiated);
   }
 
   // Add a new request, dispatch immediately if able

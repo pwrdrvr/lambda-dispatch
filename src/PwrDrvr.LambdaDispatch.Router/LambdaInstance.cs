@@ -73,6 +73,11 @@ public interface ILambdaInstance
   bool DoNotReplace { get; }
 
   /// <summary>
+  /// If true, the Lambda Instance close was initiated by the Lambda itself
+  /// </summary>
+  public bool LamdbdaInitiatedClose { get; }
+
+  /// <summary>
   /// Task that completes when the Lambda Instance is done
   /// </summary>
   Task<bool> InvokeCompletionTask { get; }
@@ -102,7 +107,7 @@ public interface ILambdaInstance
   /// <summary>
   /// Mark this instance as closing
   /// </summary>
-  public void Close(bool doNotReplace = false);
+  public void Close(bool doNotReplace = false, bool lambdaInitiated = false);
 
   public bool WasOpened { get; }
 
@@ -168,6 +173,11 @@ public class LambdaInstance : ILambdaInstance
   /// We set this when we decide to stop an instance
   /// </summary>
   public bool DoNotReplace { get; private set; } = false;
+
+  /// <summary>
+  /// If true, the Lambda Instance close was initiated by the Lambda itself
+  /// </summary>
+  public bool LamdbdaInitiatedClose { get; private set; } = false;
 
   // Add a task completion source
   // When the lambda is done we set the task completion source
@@ -532,7 +542,7 @@ public class LambdaInstance : ILambdaInstance
   /// <summary>
   /// Closes in the background so the Lambda can exit as soon as it sees it's last connection close
   /// </summary>
-  public void Close(bool doNotReplace = false)
+  public void Close(bool doNotReplace = false, bool lambdaInitiated = false)
   {
     // Ignore if already closing
     if (!TransitionToClosing())
@@ -542,6 +552,7 @@ public class LambdaInstance : ILambdaInstance
     }
 
     DoNotReplace = doNotReplace;
+    LamdbdaInitiatedClose = lambdaInitiated;
 
     // We own the close, so we can replace this instance
     // Invoke close handler on the Instance Manager
