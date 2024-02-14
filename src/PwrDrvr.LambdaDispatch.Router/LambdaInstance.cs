@@ -222,12 +222,14 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   private volatile int internalActualAvailableConnectionCount = 0;
 
+  private object requestCountLock = new();
+
   /// <summary>
   /// The actual number of requests in flight
   /// This is used to determine how busy we are, regardless of whether
   /// we have a full set of idle connections or a partial set
   /// </summary>
-  private volatile int outstandingRequestCount = 0;
+  private int outstandingRequestCount = 0;
 
   private volatile int openConnectionCount = 0;
 
@@ -360,9 +362,21 @@ public class LambdaInstance : ILambdaInstance
     }
     else
     {
-      // The connection is being immediately used
-      // Need to track the outstanding request
-      Interlocked.Increment(ref outstandingRequestCount);
+      lock (requestCountLock)
+      {
+        // Only allow the immediate dispatch if we have room for it
+        // TODO: We should also maybe decide to push this back to the background dispatcher
+        if (outstandingRequestCount < maxConcurrentCount)
+        {
+          // The connection is being immediately used
+          // Need to track the outstanding request
+          outstandingRequestCount++;
+        }
+        else
+        {
+          return null;
+        }
+      }
       // Add handler to register the decrement of outstanding requests
       TryGetConnectionWillUse(connection);
     }
@@ -393,39 +407,42 @@ public class LambdaInstance : ILambdaInstance
 
     // Loop through the connections until we find one that is available
     // Hide the connections that are not supposed to be used
-    while (AvailableConnectionCount > 0
-          && connectionQueue.TryDequeue(out var dequeuedConnection))
+    lock (requestCountLock)
     {
-      // We found an available connection
-      Interlocked.Decrement(ref internalActualAvailableConnectionCount);
-
-      // The connection should only be Closed unexpectedly, not Busy
-      // This should not be a race condition as only one thread should
-      // dequeue the connection and handle it
-      if (dequeuedConnection.State == LambdaConnectionState.Busy)
+      while (AvailableConnectionCount > 0
+            && connectionQueue.TryDequeue(out var dequeuedConnection))
       {
-        _logger.LogError("TryGetConnection - Got a busy connection from queue, LambdaId: {LambdaId}, ChannelId: {ChannelId}", Id, dequeuedConnection.ChannelId);
-        continue;
+        // We found an available connection
+        Interlocked.Decrement(ref internalActualAvailableConnectionCount);
+
+        // The connection should only be Closed unexpectedly, not Busy
+        // This should not be a race condition as only one thread should
+        // dequeue the connection and handle it
+        if (dequeuedConnection.State == LambdaConnectionState.Busy)
+        {
+          _logger.LogError("TryGetConnection - Got a busy connection from queue, LambdaId: {LambdaId}, ChannelId: {ChannelId}", Id, dequeuedConnection.ChannelId);
+          continue;
+        }
+
+        // If the connection is Closed we discard it (can happen on abnormal close during idle)
+        if (dequeuedConnection.State == LambdaConnectionState.Closed)
+        {
+          // A connection that is closed should have triggered the onclose
+          // handler which would have decremented the available connection count
+          continue;
+        }
+
+        connection = dequeuedConnection;
+
+        outstandingRequestCount++;
+
+        if (!tentative)
+        {
+          TryGetConnectionWillUse(dequeuedConnection);
+        }
+
+        return true;
       }
-
-      // If the connection is Closed we discard it (can happen on abnormal close during idle)
-      if (dequeuedConnection.State == LambdaConnectionState.Closed)
-      {
-        // A connection that is closed should have triggered the onclose
-        // handler which would have decremented the available connection count
-        continue;
-      }
-
-      connection = dequeuedConnection;
-
-      Interlocked.Increment(ref outstandingRequestCount);
-
-      if (!tentative)
-      {
-        TryGetConnectionWillUse(dequeuedConnection);
-      }
-
-      return true;
     }
 
     // No available connections
@@ -445,7 +462,10 @@ public class LambdaInstance : ILambdaInstance
   {
     connection.Response.OnCompleted(Task () =>
     {
-      Interlocked.Decrement(ref outstandingRequestCount);
+      lock (requestCountLock)
+      {
+        outstandingRequestCount--;
+      }
 
       //
       // We have decremented the outstanding request count, which means,
@@ -815,7 +835,11 @@ public class LambdaInstance : ILambdaInstance
 
   public async ValueTask ReenqueueUnusedConnection(LambdaConnection connection)
   {
-    Interlocked.Decrement(ref outstandingRequestCount);
+    lock (requestCountLock)
+    {
+      // Decrement the outstanding request count
+      outstandingRequestCount--;
+    }
 
     // If the lambda is closing then we don't re-enqueue the connection
     // No lock here because we're not changing state

@@ -292,7 +292,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             {
               // TODO: Reuse this from the catch below
               // Note: Here we are only counting running instances, not starting instances because
-              // staring instances could take long time to become available
+              // starting instances could take long time to become available
               // We do not want to stop good instances and then wait for cold starts to replace them
               var scaleInCount = Math.Max(_runningInstanceCount - _desiredInstanceCount, 0);
               if (scaleInCount > 0)
