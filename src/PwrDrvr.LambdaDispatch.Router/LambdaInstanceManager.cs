@@ -233,7 +233,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var averageCount = trailingAverage.Average;
         var newDesiredInstanceCount = averageCount == 0 ? 0 : (int)Math.Ceiling(averageCount);
 
-        if (newDesiredInstanceCount == _desiredInstanceCount)
+        if (newDesiredInstanceCount == _desiredInstanceCount
+            && _startingInstanceCount + _runningInstanceCount == _desiredInstanceCount)
         {
           // Nothing to do
           continue;
