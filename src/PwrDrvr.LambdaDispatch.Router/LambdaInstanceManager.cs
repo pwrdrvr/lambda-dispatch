@@ -159,10 +159,10 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     return null;
   }
 
-
-  private Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(1)
+  private readonly Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(100)
   {
-    FullMode = BoundedChannelFullMode.DropOldest
+    FullMode = BoundedChannelFullMode.DropOldest,
+    SingleReader = true,
   });
 
   private int ComputeDesiredInstanceCount(int pendingRequests, int runningRequests)
@@ -189,7 +189,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   private async Task ManageCapacity()
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
+    List<(DateTime Timestamp, int DesiredInstanceCount)> recentCounts = [];
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    var noMessagesRead = true;
 
     while (true)
     {
@@ -212,11 +214,36 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var pendingRequests = message.PendingRequests;
         var runningRequests = message.RunningRequests;
 
+        // Mark that we read a message
+        noMessagesRead = false;
+
         _logger.LogDebug("ManageCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
 
         var desiredInstanceCount = ComputeDesiredInstanceCount(pendingRequests, runningRequests);
 
         _logger.LogDebug("ManageCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, desiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+
+        recentCounts.Add((DateTime.UtcNow, desiredInstanceCount));
+
+        // Remove counts older than 5 seconds
+        recentCounts.RemoveAll(x => DateTime.UtcNow - x.Timestamp > TimeSpan.FromSeconds(5));
+
+        // Compute the RMS from the recent counts
+        var rmsCount = Math.Sqrt(recentCounts.Average(x => x.DesiredInstanceCount * x.DesiredInstanceCount));
+
+        // Get the max desired count
+        var maxDesiredCount = recentCounts.Max(x => x.DesiredInstanceCount);
+
+        // Set the new desired count based on the RMS count
+        if (maxDesiredCount == 0)
+        {
+          desiredInstanceCount = 0;
+        }
+        else
+        {
+          // If we desired any instances at all, we need to keep at least 1, even if RMS drops to below 1
+          desiredInstanceCount = Math.Max((int)Math.Ceiling(rmsCount), 1);
+        }
 
         // Try to set the new desired count
         // Because we own setting this value we can do a simple compare and swap
@@ -245,6 +272,14 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // This was a timeout - Reset the timeout
         cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _logger.LogInformation("ManageCapacity - Scale down check running");
+
+        // When no messages were read it means we need zero capacity
+        if (noMessagesRead)
+        {
+          _logger.LogInformation("ManageCapacity - No messages read, setting desired count to 0");
+          Interlocked.Exchange(ref _desiredInstanceCount, 0);
+        }
+        noMessagesRead = true;
 
         // Time to check if we can reduce capacity
 
