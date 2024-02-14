@@ -218,25 +218,20 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // Mark that we read a message
         noMessagesRead = false;
 
-        _logger.LogDebug("ManageCapacity - BEFORE - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+        trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
 
-        var newDesiredInstanceCount = ComputeDesiredInstanceCount(pendingRequests, runningRequests);
+        // Rip through any other messages, up to a limit of 100
+        var messagesToRead = 100;
+        while (_capacityChannel.Reader.TryRead(out var nextMessage) && --messagesToRead > 0)
+        {
+          pendingRequests = nextMessage.PendingRequests;
+          runningRequests = nextMessage.RunningRequests;
 
-        _logger.LogDebug("ManageCapacity - COMPUTED - pendingRequests {pendingRequests}, runningRequests {runningRequests}, desiredCount {desiredCount}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, newDesiredInstanceCount, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+          trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
+        }
 
-        trailingAverage.Add(newDesiredInstanceCount);
         var averageCount = trailingAverage.Average;
-
-        // Set the new desired count based on the moving average
-        if (averageCount == 0)
-        {
-          newDesiredInstanceCount = 0;
-        }
-        else
-        {
-          // If we desired any instances at all, we need to keep at least 1, even if average drops to below 1
-          newDesiredInstanceCount = Math.Max((int)Math.Ceiling(averageCount), 1);
-        }
+        var newDesiredInstanceCount = averageCount == 0 ? 0 : (int)Math.Ceiling(averageCount);
 
         if (newDesiredInstanceCount == _desiredInstanceCount)
         {
