@@ -75,6 +75,8 @@ public class Program
 
     public static void Main(string[] args)
     {
+        Console.WriteLine($"GIT_HASH: {Environment.GetEnvironmentVariable("GIT_HASH") ?? "none"}");
+        Console.WriteLine($"BUILD_TIME: {Environment.GetEnvironmentVariable("BUILD_TIME") ?? "none"}");
         AdjustThreadPool();
         CreateHostBuilder(args).Build().Run();
     }

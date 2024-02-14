@@ -95,7 +95,9 @@ aws cloudformation update-stack --stack-name lambda-dispatch-ecr-public --templa
 ```sh
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 220761759939.dkr.ecr.us-east-2.amazonaws.com
 
-docker build --file DockerfileRouter -t lambda-dispatch-router . && \
+GIT_HASH=$(git rev-parse --short HEAD) && \
+BUILD_TIME=$(date) && \
+docker build --build-arg GIT_HASH=$GIT_HASH --build-arg BUILD_TIME=$BUILD_TIME --file DockerfileRouter -t lambda-dispatch-router . && \
 docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest && \
 docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
 ```
