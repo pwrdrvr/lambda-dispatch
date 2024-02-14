@@ -35,6 +35,13 @@ public interface IConfig
   int ChannelCount { get; }
 
   /// <summary>
+  /// Multiplier for the desired instance count, causing the number of
+  /// requests per instance to be a fraction of the MaxConcurrentCount
+  /// </summary>
+  /// <default>2</default>
+  int InstanceCountMultiplier { get; }
+
+  /// <summary>
   /// The HTTP (insecure) port the router listens on for requests that will be proxied to Lambda functions
   /// </summary>
   int IncomingRequestHTTPPort { get; }
@@ -92,6 +99,11 @@ public class Config : IConfig
 
   public string PreferredControlChannelScheme { get; set; }
 
+  public int InstanceCountMultiplier { get; set; }
+
+  /// <summary>
+  /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
+  /// </summary>
   public Config()
   {
     FunctionName = string.Empty;
@@ -104,6 +116,7 @@ public class Config : IConfig
     ControlChannelHTTP2Port = 5004;
     AllowInsecureControlChannel = false;
     PreferredControlChannelScheme = "https";
+    InstanceCountMultiplier = 2;
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)
@@ -111,7 +124,7 @@ public class Config : IConfig
     var config = new Config();
     configuration.Bind(config);
     config.Validate();
-    (config.FunctionNameOnly, config.FunctionNameQualifier) = config.ParseFunctionName(config.FunctionName);
+    (config.FunctionNameOnly, config.FunctionNameQualifier) = Config.ParseFunctionName(config.FunctionName);
     return config;
   }
 
@@ -163,9 +176,18 @@ public class Config : IConfig
     {
       throw new ApplicationException($"ChannelCount must be less than or equal to 100");
     }
+
+    if (InstanceCountMultiplier <= 0)
+    {
+      throw new ApplicationException($"InstanceCountMultiplier must be greater than 0");
+    }
+    else if (InstanceCountMultiplier > 10)
+    {
+      throw new ApplicationException($"InstanceCountMultiplier must be less than or equal to 10");
+    }
   }
 
-  private (string, string?) ParseFunctionName(string functionName)
+  private static (string, string?) ParseFunctionName(string functionName)
   {
     var parts = functionName.Split(':');
     if (parts.Length == 2 || parts.Length == 8)
@@ -188,19 +210,19 @@ public class Config : IConfig
     }
   }
 
-  private bool IsValidLambdaName(string functionName)
+  private static bool IsValidLambdaName(string functionName)
   {
     var regex = new Regex(@"^[a-zA-Z0-9-_]{1,64}$");
     return regex.IsMatch(functionName);
   }
 
-  private bool IsValidLambdaNameWithQualifier(string functionName)
+  private static bool IsValidLambdaNameWithQualifier(string functionName)
   {
     var regex = new Regex(@"^[a-zA-Z0-9-_]{1,64}:([a-zA-Z0-9-_]{1,128}|\$LATEST)$");
     return regex.IsMatch(functionName);
   }
 
-  private bool IsValidLambdaArn(string functionName)
+  private static bool IsValidLambdaArn(string functionName)
   {
     var regex = new Regex(@"^arn:aws:lambda:[a-z0-9-]+:[0-9]{12}:function:[a-zA-Z0-9-_]{1,64}(:[a-zA-Z0-9-_]{1,128}|:\$LATEST)?$");
     return regex.IsMatch(functionName);
