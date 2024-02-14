@@ -26,17 +26,19 @@ const s3Client = new S3Client({});
 
 let initPerformed = false;
 
+const initSleepMs = parseInt(process.env.INIT_SLEEP_MS) || 7000;
+
 export async function performInit() {
   console.log(
-    `${new Date().toISOString()} Contained App - Performing Init - Delaying 7 seconds`
+    `${new Date().toISOString()} Contained App - Performing Init - Delaying ${initSleepMs} ms`
   );
-  await sleep(7000);
+  await sleep(initSleepMs);
 
   // All the healthchecks should wait until one of them has performed the init
   initPerformed = true;
 
   console.log(
-    `${new Date().toISOString()} Contained App - Performed Init - Delayed 7 seconds`
+    `${new Date().toISOString()} Contained App - Performed Init - Delayed ${initSleepMs} ms`
   );
 }
 
@@ -178,7 +180,7 @@ app.get("/read", async (req, res) => {
     // );
 
     // Pause for 50 ms to simulate calling an upstream that takes longer
-    await sleep(50);
+    // await sleep(50);
 
     res.json(data.Item);
   } catch (err) {

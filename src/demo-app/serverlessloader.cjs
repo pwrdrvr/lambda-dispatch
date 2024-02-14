@@ -12,6 +12,9 @@ const {
   PromiseResolver,
 } = require("@h4ad/serverless-adapter/lib/resolvers/promise");
 const { AlbAdapter } = require("@h4ad/serverless-adapter/lib/adapters/aws");
+const {
+  ApiGatewayV2Adapter,
+} = require("@h4ad/serverless-adapter/adapters/aws");
 const { app, performInit } = require("./app.cjs");
 
 exports.handler = ServerlessAdapter.new(app)
@@ -20,6 +23,7 @@ exports.handler = ServerlessAdapter.new(app)
   .setResolver(new PromiseResolver())
   .setRespondWithErrors(true)
   .addAdapter(new AlbAdapter())
+  .addAdapter(new ApiGatewayV2Adapter())
   .build();
 
 exports.performInit = performInit;

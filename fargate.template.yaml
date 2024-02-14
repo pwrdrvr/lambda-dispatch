@@ -56,17 +56,18 @@ Resources:
         OperatingSystemFamily: 'LINUX'
       ContainerDefinitions:
         - Name: lambda-dispatch-router
-          # When using the public ECR published by the github builds, use this line:
-          Image: public.ecr.aws/pwrdrvr/lambda-dispatch-router:main
+          # When using the public ECR published by the github builds, use this line,
+          # but not that it requires a NAT Gateway or other connectivity to the internet
+          # Image: public.ecr.aws/pwrdrvr/lambda-dispatch-router:main
           # When testing local builds published to the Private ECR, use this line:
-          # Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
           Environment:
+            # Setting to 1 seems to hang on Fargate, so set to no less than 2
             - Name: LAMBDA_DISPATCH_MaxWorkerThreads
-              Value: "1"
-            # Limiting the spins is no longer needed when limiting to 1 thread
-            # - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
-            #   Value: "6"
+              Value: "2"
+            - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
+              Value: "0"
             - Name: LAMBDA_DISPATCH_FunctionName
               Value: !GetAtt LambdaDemoApp.Arn
             - Name: LAMBDA_DISPATCH_MaxConcurrentCount
@@ -141,6 +142,10 @@ Resources:
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
         TargetValue: 50
+        # These default to 300 seconds for ECS Services
+        # https://docs.aws.amazon.com/autoscaling/application/userguide/target-tracking-scaling-policy-overview.html#target-tracking-cooldown
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
 
   # Security Group used by the tasks
   ECSFargateSG:
@@ -390,16 +395,29 @@ Resources:
         DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
         HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
 
+  DirectLambdaALBAliasRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z005084420J9MD9JNBCUK
+      Name: directlambdaalias.ghpublic.pwrdrvr.com.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ECSFargateLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ECSFargateLoadBalancer.CanonicalHostedZoneID
+
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
       DomainName: lambdadispatch.ghpublic.pwrdrvr.com
       SubjectAlternativeNames:
         - directlambda.ghpublic.pwrdrvr.com
+        - directlambdaalias.ghpublic.pwrdrvr.com
       DomainValidationOptions:
         - DomainName: lambdadispatch.ghpublic.pwrdrvr.com
           HostedZoneId: Z005084420J9MD9JNBCUK
         - DomainName: directlambda.ghpublic.pwrdrvr.com
+          HostedZoneId: Z005084420J9MD9JNBCUK
+        - DomainName: directlambdaalias.ghpublic.pwrdrvr.com
           HostedZoneId: Z005084420J9MD9JNBCUK
       ValidationMethod: DNS
 
@@ -567,6 +585,13 @@ Resources:
         SecurityGroupIds: [!Ref LambdaLBSG]
         SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
 
+  DirectLambdaALBAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref DirectLambda
+      FunctionVersion: $LATEST
+      Name: ALBAlias
+
   DirectLambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -597,8 +622,37 @@ Resources:
       ListenerArn: !Ref FargateHttpsListener
       Priority: 1
 
+  DirectLambdaALBAliasInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DirectLambdaALBAlias
+      Principal: elasticloadbalancing.amazonaws.com
+
+  DirectLambdaALBAliasTargetGroup:
+    DependsOn:
+      - DirectLambdaALBAliasInvokePermission
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: lambda
+      Targets:
+        - Id: !Ref DirectLambdaALBAlias
+
+  DirectLambdaALBAliasListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref DirectLambdaALBAliasTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - directlambdaalias.ghpublic.pwrdrvr.com
+      ListenerArn: !Ref FargateHttpsListener
+      Priority: 2
+
 Outputs:
   LoadBalancerDNS:
     Description: DNS Name of the Load Balancer
     Value: !GetAtt ECSFargateLoadBalancer.DNSName
-

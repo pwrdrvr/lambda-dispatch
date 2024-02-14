@@ -1,0 +1,27 @@
+config:
+  target: "https://lambdadispatch.ghpublic.pwrdrvr.com"
+  phases:
+    - duration: 20
+      arrivalRate: 1
+    - duration: 20
+      arrivalRate: 10
+    - duration: 300
+      arrivalRate: 1000
+    - duration: 300
+      arrivalRate: 2000
+    - duration: 300
+      arrivalRate: 3000
+  defaults:
+    headers:
+      discardResponseBodies: "true"
+
+scenarios:
+  - name: "Dispatch Scenario"
+    flow:
+      - get:
+          url: "/read"
+
+  - name: "Direct Scenario"
+    flow:
+      - get:
+          url: "https://directlambda.ghpublic.pwrdrvr.com/read"
