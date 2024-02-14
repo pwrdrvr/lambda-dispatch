@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -51,6 +52,8 @@ public class Dispatcher : IBackgroundDispatcher
 
   private readonly ILambdaInstanceManager _lambdaInstanceManager;
 
+  private readonly IMetricsLogger _metricsLogger;
+
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
   private readonly ConcurrentQueue<PendingRequest> _pendingRequests = new();
@@ -63,9 +66,10 @@ public class Dispatcher : IBackgroundDispatcher
   // We need to keep a count of the running requests so we can set the desired count
   private volatile int _runningRequestCount = 0;
 
-  public Dispatcher(ILogger<Dispatcher> logger, ILambdaInstanceManager lambdaInstanceManager)
+  public Dispatcher(ILogger<Dispatcher> logger, IMetricsLogger metricsLogger, ILambdaInstanceManager lambdaInstanceManager)
   {
     _logger = logger;
+    _metricsLogger = metricsLogger;
     _logger.LogDebug("Dispatcher created");
     _lambdaInstanceManager = lambdaInstanceManager;
     _lambdaInstanceManager.AddBackgroundDispatcherReference(this);
@@ -102,6 +106,7 @@ public class Dispatcher : IBackgroundDispatcher
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ImmediateDispatchCount);
       MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
+      _metricsLogger.PutMetric("DispatchDelay", 0, Unit.Milliseconds);
 
       Interlocked.Increment(ref _runningRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
@@ -136,9 +141,11 @@ public class Dispatcher : IBackgroundDispatcher
 
     // Wait for the request to be dispatched or to timeout
     // await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
+    // TODO: Get this timeout from the config
     await pendingRequest.ResponseFinishedTCS.Task.WaitAsync(TimeSpan.FromMinutes(5));
 
     MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.Duration.TotalMilliseconds);
+    _metricsLogger.PutMetric("DispatchDelay", pendingRequest.Duration.TotalMilliseconds, Unit.Milliseconds);
   }
 
   // Add a new lambda, dispatch to it immediately if a request is waiting

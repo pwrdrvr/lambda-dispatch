@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Timeouts;
 using System.Globalization;
+using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 
@@ -14,12 +15,14 @@ namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 public class ChunkedController : ControllerBase
 {
   private readonly ILogger<ChunkedController> logger;
+  private readonly IMetricsLogger metricsLogger;
   private readonly Dispatcher dispatcher;
 
-  public ChunkedController(Dispatcher dispatcher, ILogger<ChunkedController> logger)
+  public ChunkedController(Dispatcher dispatcher, IMetricsLogger metricsLogger, ILogger<ChunkedController> logger)
   {
     this.dispatcher = dispatcher;
     this.logger = logger;
+    this.metricsLogger = metricsLogger;
   }
 
   [HttpGet]
@@ -56,6 +59,7 @@ public class ChunkedController : ControllerBase
 
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.LambdaRequestTimer))
     {
+      var sw = System.Diagnostics.Stopwatch.StartNew();
       try
       {
         if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues lambdaIdMulti) || lambdaIdMulti.Count != 1)
@@ -169,6 +173,10 @@ public class ChunkedController : ControllerBase
           logger.LogError(ex, "Router.ChunkedController.Post - Exception, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
           throw;
         }
+      }
+      finally
+      {
+        metricsLogger.PutMetric("LambdaRequestDuration", sw.ElapsedMilliseconds, Unit.Milliseconds);
       }
     }
   }
