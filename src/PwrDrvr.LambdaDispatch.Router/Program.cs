@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -105,18 +106,37 @@ public class Program
                 // config.AddJsonFile("appsettings.json", optional: true);
                 config.AddEnvironmentVariables(prefix: "LAMBDA_DISPATCH_");
             })
-            .ConfigureServices(async (hostContext, services) =>
+            .ConfigureServices((hostContext, services) =>
             {
                 var config = Config.CreateAndValidate(hostContext.Configuration);
+                var metadataService = new MetadataService();
+                services.AddSingleton<IMetadataService>(metadataService);
                 services.AddSingleton<IConfig>(config);
 
-                if (config.PreferredControlChannelScheme == "http")
+                var metricsDimensions = new Dictionary<string, string>
                 {
-                    await GetCallbackIP.Init(port: config.ControlChannelInsecureHTTP2Port, scheme: "http").ConfigureAwait(false);
+                    ["Service"] = "LambdaDispatch.Router"
+                };
+                if (metadataService.ClusterName != null)
+                {
+                    metricsDimensions["ClusterName"] = metadataService.ClusterName;
                 }
                 else
                 {
-                    await GetCallbackIP.Init(port: config.ControlChannelHTTP2Port, scheme: "https").ConfigureAwait(false);
+                    metricsDimensions["ClusterName"] = "Local";
+                }
+
+                var metrics = new MetricsLogger("PwrDrvr", metricsDimensions);
+                services.AddSingleton<IMetricsLogger>(metrics);
+                metrics.PutMetric("Startup", 1, Unit.Count);
+
+                if (config.PreferredControlChannelScheme == "http")
+                {
+                    GetCallbackIP.Init(port: config.ControlChannelInsecureHTTP2Port, scheme: "http", networkIp: metadataService.NetworkIP);
+                }
+                else
+                {
+                    GetCallbackIP.Init(port: config.ControlChannelHTTP2Port, scheme: "https", networkIp: metadataService.NetworkIP);
                 }
             })
             .ConfigureLogging(logging =>

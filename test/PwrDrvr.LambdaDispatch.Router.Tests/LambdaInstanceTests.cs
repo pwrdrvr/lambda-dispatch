@@ -37,7 +37,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
@@ -102,7 +102,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
@@ -161,7 +161,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(0));
@@ -190,7 +190,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       // Start the Lambda
-      await instance.Start();
+      instance.Start();
 
       await instance.AddConnection(request.Object, response.Object, "channel-1", false);
 

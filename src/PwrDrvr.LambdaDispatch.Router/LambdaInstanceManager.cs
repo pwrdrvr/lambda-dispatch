@@ -3,6 +3,7 @@ namespace PwrDrvr.LambdaDispatch.Router;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
+using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 public struct LambdaInstanceCapacityMessage
 {
@@ -62,13 +63,15 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly string? _functionNameQualifier;
 
+  private readonly IMetricsLogger _metricsLogger;
+
   /// <summary>
   /// Used to lookup instances by ID
   /// This allows associating the connecitons with their owning lambda instance
   /// </summary>
   private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
-  public LambdaInstanceManager(IConfig config)
+  public LambdaInstanceManager(IConfig config, IMetricsLogger metricsLogger)
   {
     _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
@@ -76,6 +79,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     _leastOutstandingQueue = new(_maxConcurrentCount);
     _functionName = config.FunctionNameOnly;
     _functionNameQualifier = config.FunctionNameQualifier;
+    _metricsLogger = metricsLogger;
 
     // Start the capacity manager
     Task.Run(ManageCapacity);
@@ -219,12 +223,17 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         Interlocked.Exchange(ref _desiredInstanceCount, desiredInstanceCount);
 
         // Start instances if needed
-        while (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount
-              < desiredInstanceCount)
+        _metricsLogger.PutMetric("LambdaDesiredCount", desiredInstanceCount, Unit.Count);
+        var scaleOutCount = Math.Max(desiredInstanceCount - _runningInstanceCount - _startingInstanceCount, 0);
+        if (scaleOutCount > 0)
+        {
+          _metricsLogger.PutMetric("LambdaScaleOutCount", scaleOutCount, Unit.Count);
+        }
+        while (scaleOutCount-- > 0)
         {
           _logger.LogDebug("ManageCapacity - STARTING - pendingRequests {pendingRequests}, runningRequests {runningRequests}, _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", pendingRequests, runningRequests, _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
           // Start a new instance
-          await StartNewInstance();
+          StartNewInstance();
         }
 
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
@@ -250,8 +259,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // Stopping: 0
         // We need to stop 80 - 50 = 30 instances, but 0 are already stopping so 30 - 0 = 30 more need to be stopped
         // At worst, we won't stop enough until the next loop.
-        var excessCapacity = Math.Max(_runningInstanceCount - _desiredInstanceCount - stoppingInstances.Count, 0);
-        while (excessCapacity-- > 0)
+        var scaleInCount = Math.Max(_runningInstanceCount - _desiredInstanceCount - stoppingInstances.Count, 0);
+        _metricsLogger.PutMetric("LambdaScaleInCount", scaleInCount, Unit.Count);
+        while (scaleInCount-- > 0)
         {
           // Get the least outstanding instance
           if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
@@ -331,7 +341,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// Start a new LambdaInstance and increment the desired count
   /// </summary>
   /// <returns></returns>
-  private async Task StartNewInstance()
+  private void StartNewInstance()
   {
     Interlocked.Increment(ref _startingInstanceCount);
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
@@ -367,25 +377,28 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // Called from the LambdaInstance.Close method when close is
     // initiated rather than just observing an Invoke has returned
     //
-    instance.OnCloseInitiated += async (instance) =>
+    instance.OnCloseInitiated += (instance) =>
     {
       // We always increment the stopping count when initiating a close
       Interlocked.Increment(ref _stoppingInstanceCount);
       MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
 
+      _metricsLogger.PutMetric("LambdaInitiatedClose", 1, Unit.Count);
+
       // Replace this instance if it's still desired
       if (!instance.DoNotReplace)
       {
-        if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount
+        if (_runningInstanceCount + _startingInstanceCount
               < _desiredInstanceCount)
         {
           // We need to start a new instance
-          await StartNewInstance().ConfigureAwait(false);
+          _metricsLogger.PutMetric("LambdaInitiatedCloseReplacing", 1, Unit.Count);
+          StartNewInstance();
         }
       }
     };
 
-    instance.OnInvocationComplete += async (instance) =>
+    instance.OnInvocationComplete += (instance) =>
       {
         if (instance.WasOpened)
         {
@@ -432,16 +445,17 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
         // We need to keep track of how many Lambdas are running
         // We will replace this one if it's still desired
-        if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount
+        if (_runningInstanceCount + _startingInstanceCount
             < _desiredInstanceCount)
         {
           // We need to start a new instance
-          await StartNewInstance().ConfigureAwait(false);
+          _metricsLogger.PutMetric("LambdaInvokeCompleteReplacing", 1, Unit.Count);
+          StartNewInstance();
         }
       };
 
-    // This is only async because of the ENI IP lookup
-    await instance.Start().ConfigureAwait(false);
+    // Start the instance
+    instance.Start();
   }
 
   /// <summary>
