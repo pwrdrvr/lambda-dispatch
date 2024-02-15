@@ -334,7 +334,7 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // Signal that we are ready if this the first connection
-    var firstInstance = false;
+    var firstConnectionForInstance = false;
     if (State != LambdaInstanceState.Open)
     {
       lock (stateLock)
@@ -342,24 +342,24 @@ public class LambdaInstance : ILambdaInstance
         if (State == LambdaInstanceState.Starting)
         {
           State = LambdaInstanceState.Open;
-          firstInstance = true;
-        }
-
-        if (firstInstance)
-        {
-          // Signal that we are open
-          WasOpened = true;
-          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
-
-          OnOpen?.Invoke(this);
+          firstConnectionForInstance = true;
         }
       }
+    }
+
+    if (firstConnectionForInstance)
+    {
+      // Signal that we are open
+      WasOpened = true;
+      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
+
+      OnOpen?.Invoke(this);
     }
 
     Interlocked.Increment(ref openConnectionCount);
     MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
 
-    var connection = new LambdaConnection(request, response, this, channelId);
+    var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
 
     // Only make this connection visible if we're not going to immediately use it for a queued request
     if (!immediateDispatch)

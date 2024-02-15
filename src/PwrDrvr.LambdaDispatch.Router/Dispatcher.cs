@@ -258,6 +258,12 @@ public class Dispatcher : IBackgroundDispatcher
     //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
 
+    // Tell the scaler about the number of running instances
+    if (result.Connection != null && result.Connection.FirstConnectionForInstance)
+    {
+      await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+    }
+
     return result;
   }
 

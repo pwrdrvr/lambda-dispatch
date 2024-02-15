@@ -55,18 +55,24 @@ public class LambdaConnection
   public string ChannelId { get; private set; }
 
   /// <summary>
+  /// Indicates whether this was the first connection for an instance, causing the instance to be marked `Open`
+  /// </summary>
+  public bool FirstConnectionForInstance { get; private set; }
+
+  /// <summary>
   /// Task that completes when the connection is closed
   /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
   private CancellationTokenSource CTS = new CancellationTokenSource();
 
-  public LambdaConnection(HttpRequest request, HttpResponse response, ILambdaInstance instance, string channelId)
+  public LambdaConnection(HttpRequest request, HttpResponse response, ILambdaInstance instance, string channelId, bool firstConnectionForInstance)
   {
     Request = request;
     Response = response;
     Instance = instance;
     ChannelId = channelId;
+    FirstConnectionForInstance = firstConnectionForInstance;
 
     // Set the state to open
     State = LambdaConnectionState.Open;
