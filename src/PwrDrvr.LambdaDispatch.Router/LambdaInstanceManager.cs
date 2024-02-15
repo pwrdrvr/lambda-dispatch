@@ -245,7 +245,13 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         }
 
         var averageCount = trailingAverage.Average;
-        var newDesiredInstanceCount = averageCount == 0 ? 0 : (int)Math.Ceiling(averageCount);
+        // If the entire average count is 0 then we want 0 instances
+        // OR: If there we read all the messages and there are no pending or running requests
+        //     in the last read message then we want 0 instances - this helps avoid
+        //     5 second waits to stop instances when load disappears
+        var newDesiredInstanceCount = averageCount == 0
+          || (messagesToRead != 0 && pendingRequests == 0 && runningRequests == 0)
+            ? 0 : (int)Math.Ceiling(averageCount);
 
         //
         // Locking instance counts - Do not do anything Async / IO in this block
@@ -273,6 +279,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
             _metricsLogger.PutMetric("LambdaDesiredCount", newDesiredInstanceCount, Unit.Count);
             _metricsLogger.PutMetric("PendingRequestCount", pendingRequests, Unit.Count);
+            _metricsLogger.PutMetric("RunningRequestCount", runningRequests, Unit.Count);
 
             // Start instances if needed
             if (newDesiredInstanceCount > _runningInstanceCount + _startingInstanceCount)
