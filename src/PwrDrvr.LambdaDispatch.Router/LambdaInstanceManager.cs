@@ -185,9 +185,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     var cleanPendingRequests = Math.Max(pendingRequests, 0);
     var cleanRunningRequests = Math.Max(runningRequests, 0);
 
+    // Calculate the target concurrent requests per instance
+    var targetConcurrentRequestsPerInstance = (int)Math.Ceiling((double)_maxConcurrentCount / _instanceCountMultiplier);
+
     // Calculate the desired count
     var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / _maxConcurrentCount) * _instanceCountMultiplier;
+    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / targetConcurrentRequestsPerInstance);
 
     // Special case for 0 pending or running requests
     if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
