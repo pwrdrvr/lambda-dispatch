@@ -62,6 +62,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   /// <summary>
   /// Count of instances that have called Close() but are still invoked
+  /// We subtract this off the running+starting count to determine if we can
+  /// allow an overlapping invoke while the still-running lambda is closing
   /// </summary>
   private int _stoppingInstanceCount = 0;
 
@@ -277,7 +279,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             _metricsLogger.PutMetric("RunningRequestCount", runningRequests, Unit.Count);
 
             // Start instances if needed
-            if (newDesiredInstanceCount > _runningInstanceCount + _startingInstanceCount)
+            if (newDesiredInstanceCount > _runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount)
             {
               // Clear any deferred scale down
               deferredScaleInNewDesiredInstanceCount = null;
@@ -483,7 +485,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // If we have too many running instances we tell this one to stop
         // If we don't do this, it will hang out for 5 seconds if all traffic stops
         // This can cause a massive traffic spike
-        if (_runningInstanceCount + _startingInstanceCount > _desiredInstanceCount)
+        // Stopping instances allow a replacement to start while they are between the
+        // close message and the invoke returning
+        if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount > _desiredInstanceCount)
         {
           // OnOpen got called
           // That means WasOpened on the instance will be true
@@ -516,6 +520,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       // We always increment the stopping count when initiating a close
       lock (_instanceCountLock)
       {
+        // Stopping instance count allows early replace
         _stoppingInstanceCount++;
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
         _metricsLogger.PutMetric("LambdaInstanceStoppingCount", _stoppingInstanceCount, Unit.Count);
@@ -528,7 +533,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // Replace this instance if it's still desired
         if (!instance.DoNotReplace)
         {
-          if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
+          if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount < _desiredInstanceCount)
           {
             // We need to start a new instance
             if (instance.LamdbdaInitiatedClose)
@@ -602,7 +607,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
           // We need to keep track of how many Lambdas are running
           // We will replace this one if it's still desired
-          if (_runningInstanceCount + _startingInstanceCount < _desiredInstanceCount)
+          if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount < _desiredInstanceCount)
           {
             // We need to start a new instance
             _metricsLogger.PutMetric("LambdaInvokeCompleteReplacing", 1, Unit.Count);
