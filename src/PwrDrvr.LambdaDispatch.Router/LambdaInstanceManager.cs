@@ -623,7 +623,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // The instance is going to get cleaned up by the OnInvocationComplete handler
     // Counts will be decremented, the instance will be replaced, etc.
     // We just need to get the Lambda to return from the invoke
-    instance.Close(doNotReplace: true, lambdaInitiated: lambdaInitiated);
+    // If the Lambda initiated the close we can still replace it
+    // (this can be for deadline exceeded or for lambda detecting idle)
+    instance.Close(doNotReplace: !lambdaInitiated, lambdaInitiated: lambdaInitiated);
   }
 
   /// <summary>
