@@ -33,12 +33,15 @@ pub async fn send_ping_requests(
   cancel_sleep: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
 ) {
+  let mut last_ping_time = time::current_time_millis();
+
   while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
-    let last_active_grace_period_ms = 5000;
+    let last_active_grace_period_ms = 250;
     let close_before_deadline_ms = 15000;
     let last_active_ago_ms = time::current_time_millis() - last_active.load(Ordering::Acquire);
     // TODO: Compute time we should stop at based on the initial function timeout duration
-    if last_active_ago_ms > 1 * last_active_grace_period_ms
+    if (last_active_ago_ms > 1 * last_active_grace_period_ms
+      && requests_in_flight.load(Ordering::Acquire) == 0)
       || time::current_time_millis() + close_before_deadline_ms > deadline_ms
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
@@ -109,77 +112,81 @@ pub async fn send_ping_requests(
     }
 
     // Send a ping request
-    let ping_url = format!(
-      "{}://{}:{}/api/chunked/ping/{}",
-      scheme, host, port, lambda_id
-    );
-    let (mut ping_tx, ping_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
-    let boxed_ping_body = BodyExt::boxed(StreamBody::new(ping_recv));
-    let ping_req = Request::builder()
-      .uri(&ping_url)
-      .method("GET")
-      .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-      .header(hyper::header::HOST, authority.as_str())
-      .header("X-Lambda-Id", lambda_id.to_string())
-      .body(boxed_ping_body)
-      .unwrap();
+    if (time::current_time_millis() - last_ping_time) >= 5000 {
+      last_ping_time = time::current_time_millis();
 
-    while futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
-      .await
-      .is_err()
-    {
-      // This gets hit when the connection faults
-      panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone());
-    }
+      let ping_url = format!(
+        "{}://{}:{}/api/chunked/ping/{}",
+        scheme, host, port, lambda_id
+      );
+      let (mut ping_tx, ping_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
+      let boxed_ping_body = BodyExt::boxed(StreamBody::new(ping_recv));
+      let ping_req = Request::builder()
+        .uri(&ping_url)
+        .method("GET")
+        .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
+        .header(hyper::header::HOST, authority.as_str())
+        .header("X-Lambda-Id", lambda_id.to_string())
+        .body(boxed_ping_body)
+        .unwrap();
 
-    let res = sender.send_request(ping_req).await;
-    ping_tx.close().await.unwrap();
-    match res {
-      Ok(res) => {
-        let (parts, mut res_stream) = res.into_parts();
+      while futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
+        .await
+        .is_err()
+      {
+        // This gets hit when the connection faults
+        panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone());
+      }
 
-        // Rip through and discard so the response stream is closed
-        while let Some(_chunk) =
-          futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
-        {
+      let res = sender.send_request(ping_req).await;
+      ping_tx.close().await.unwrap();
+      match res {
+        Ok(res) => {
+          let (parts, mut res_stream) = res.into_parts();
+
+          // Rip through and discard so the response stream is closed
+          while let Some(_chunk) =
+            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
+          {
+          }
+
+          if parts.status == 409 {
+            log::info!(
+              "LambdaId: {} - Ping Loop - 409 received on ping, exiting",
+              lambda_id.clone()
+            );
+            goaway_received.store(true, Ordering::Relaxed);
+            break;
+          }
+
+          if parts.status != StatusCode::OK {
+            log::info!(
+              "LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
+              lambda_id.clone(),
+              parts.status
+            );
+            goaway_received.store(true, Ordering::Relaxed);
+            break;
+          }
         }
-
-        if parts.status == 409 {
-          log::info!(
-            "LambdaId: {} - Ping Loop - 409 received on ping, exiting",
-            lambda_id.clone()
-          );
-          goaway_received.store(true, Ordering::Relaxed);
-          break;
-        }
-
-        if parts.status != StatusCode::OK {
-          log::info!(
-            "LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
+        Err(err) => {
+          log::error!(
+            "LambdaId: {} - Ping Loop - Ping request failed: {:?}",
             lambda_id.clone(),
-            parts.status
+            err
           );
           goaway_received.store(true, Ordering::Relaxed);
-          break;
         }
       }
-      Err(err) => {
-        log::error!(
-          "LambdaId: {} - Ping Loop - Ping request failed: {:?}",
-          lambda_id.clone(),
-          err
-        );
-        goaway_received.store(true, Ordering::Relaxed);
-      }
-    }
 
-    log::info!(
-      "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Looping",
-      lambda_id,
-      count.load(Ordering::Relaxed),
-      goaway_received.load(Ordering::Relaxed),
-      requests_in_flight.load(Ordering::Acquire)
-    );
+      log::info!(
+        "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Looping",
+        lambda_id,
+        count.load(Ordering::Relaxed),
+        goaway_received.load(Ordering::Relaxed),
+        requests_in_flight.load(Ordering::Acquire)
+      );
+    }
 
     tokio::select! {
         _ = cancel_sleep.cancelled() => {
@@ -189,7 +196,7 @@ pub async fn send_ping_requests(
             requests_in_flight.load(Ordering::Acquire)
           );
         }
-        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+        _ = tokio::time::sleep(Duration::from_millis(100)) => {
         }
     };
   }
