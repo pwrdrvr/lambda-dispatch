@@ -172,7 +172,7 @@ public class Dispatcher : IBackgroundDispatcher
 
     if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId, out var instance))
     {
-      _logger.LogError("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+      _logger.LogDebug("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       result.LambdaIDNotFound = true;
       return result;
     }
