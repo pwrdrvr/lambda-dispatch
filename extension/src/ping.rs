@@ -33,30 +33,42 @@ pub async fn send_ping_requests(
   cancel_sleep: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
 ) {
-  let mut last_ping_time = time::current_time_millis();
+  let start_time = time::current_time_millis();
+  let mut last_ping_time = start_time.clone();
 
   while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
     let last_active_grace_period_ms = 250;
     let close_before_deadline_ms = 15000;
     let last_active_ago_ms = time::current_time_millis() - last_active.load(Ordering::Acquire);
+
+    // Compute stats for log messages
+    let lambda_id = lambda_id.clone();
+    let count = count.load(Ordering::Acquire);
+    let requests_in_flight = requests_in_flight.load(Ordering::Acquire);
+    let elapsed = time::current_time_millis() - start_time;
+    let rps = format!("{:.1}", count as f64 / (elapsed as f64 / 1000.0));
+
     // TODO: Compute time we should stop at based on the initial function timeout duration
-    if (last_active_ago_ms > 1 * last_active_grace_period_ms
-      && requests_in_flight.load(Ordering::Acquire) == 0)
+    if (last_active_ago_ms > 1 * last_active_grace_period_ms && requests_in_flight == 0)
       || time::current_time_millis() + close_before_deadline_ms > deadline_ms
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
         log::info!(
-          "LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {} - Requesting close",
-          lambda_id.clone(),
+          "LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Last Active",
+          lambda_id,
           last_active_ago_ms,
-          requests_in_flight.load(Ordering::Acquire)
+          requests_in_flight,
+          elapsed,
+          rps
         );
       } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
-          "LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {} - Requesting close",
-          lambda_id.clone(),
+          "LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
+          lambda_id,
           deadline_ms - time::current_time_millis(),
-          requests_in_flight.load(Ordering::Acquire)
+          requests_in_flight,
+          elapsed,
+          rps
         );
       }
       goaway_received.store(true, Ordering::Relaxed);
@@ -153,7 +165,7 @@ pub async fn send_ping_requests(
           if parts.status == 409 {
             log::info!(
               "LambdaId: {} - Ping Loop - 409 received on ping, exiting",
-              lambda_id.clone()
+              lambda_id
             );
             goaway_received.store(true, Ordering::Relaxed);
             break;
@@ -162,7 +174,7 @@ pub async fn send_ping_requests(
           if parts.status != StatusCode::OK {
             log::info!(
               "LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
-              lambda_id.clone(),
+              lambda_id,
               parts.status
             );
             goaway_received.store(true, Ordering::Relaxed);
@@ -172,7 +184,7 @@ pub async fn send_ping_requests(
         Err(err) => {
           log::error!(
             "LambdaId: {} - Ping Loop - Ping request failed: {:?}",
-            lambda_id.clone(),
+            lambda_id,
             err
           );
           goaway_received.store(true, Ordering::Relaxed);
@@ -180,11 +192,13 @@ pub async fn send_ping_requests(
       }
 
       log::info!(
-        "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Looping",
+        "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Looping",
         lambda_id,
-        count.load(Ordering::Relaxed),
+        count,
         goaway_received.load(Ordering::Relaxed),
-        requests_in_flight.load(Ordering::Acquire)
+        requests_in_flight,
+        elapsed,
+        rps
       );
     }
 
@@ -193,7 +207,7 @@ pub async fn send_ping_requests(
           // The token was cancelled
           log::info!("LambdaId: {}, Reqs in Flight: {} - Ping Loop - Cancelled",
             lambda_id.clone(),
-            requests_in_flight.load(Ordering::Acquire)
+            requests_in_flight
           );
         }
         _ = tokio::time::sleep(Duration::from_millis(100)) => {
@@ -202,10 +216,12 @@ pub async fn send_ping_requests(
   }
 
   log::info!(
-    "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {} - Ping Loop - Exiting",
+    "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Duration: {} ms, RPS: {} - Ping Loop - Exiting",
     lambda_id,
     count.load(Ordering::Acquire),
     goaway_received.load(Ordering::Acquire),
-    requests_in_flight.load(Ordering::Acquire)
+    requests_in_flight.load(Ordering::Acquire),
+    time::current_time_millis() - start_time,
+    count.load(Ordering::Acquire) as f64 / ((time::current_time_millis() - start_time) as f64 / 1000.0)
   );
 }
