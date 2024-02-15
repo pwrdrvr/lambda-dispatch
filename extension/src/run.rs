@@ -207,7 +207,7 @@ pub async fn run(
                   if parts.status == 409 {
                     if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
                       log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
-                        lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Relaxed));
+                        lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
                       goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                     tx.close().await.unwrap_or(());
@@ -221,7 +221,7 @@ pub async fn run(
                   if is_goaway {
                       if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
                         log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
-                          lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Relaxed));
+                          lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
                         goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
                       }
                       tx.close().await.unwrap_or(());
@@ -229,9 +229,9 @@ pub async fn run(
                   }
 
                   // We got a request to run
-                  requests_in_flight.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                  requests_in_flight.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
                   _decrement_on_drop = Some(DecrementOnDrop(&requests_in_flight));
-                  last_active.store(time::current_time_millis(), Ordering::Relaxed);
+                  last_active.store(time::current_time_millis(), Ordering::Release);
 
                   //
                   // Make the request to the contained app
@@ -246,7 +246,7 @@ pub async fn run(
                   {
                       // This gets hit when the app connection faults
                       panic!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
-                        lambda_id.clone(), channel_id.clone(), requests_in_flight.load(std::sync::atomic::Ordering::Relaxed));
+                        lambda_id.clone(), channel_id.clone(), requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
                   }
 
                   // Relay the request body to the contained app
@@ -285,7 +285,7 @@ pub async fn run(
                               log::error!("LambadId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
                                 lambda_id_clone.clone(),
                                 channel_id_clone.clone(),
-                                requests_in_flight_clone.load(std::sync::atomic::Ordering::Relaxed),
+                                requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
                                 bytes_sent,
                                 chunk.err());
                               router_error_reading = true;
@@ -304,7 +304,7 @@ pub async fn run(
                                   log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
                                   lambda_id_clone.clone(),
                                   channel_id_clone.clone(),
-                                  requests_in_flight_clone.load(std::sync::atomic::Ordering::Relaxed),
+                                  requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
                                   bytes_sent,
                                   chunk_len,
                                   err);
@@ -402,7 +402,7 @@ pub async fn run(
                           log::info!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
                             lambda_id.clone(),
                             channel_id_clone.clone(),
-                            requests_in_flight.load(std::sync::atomic::Ordering::Relaxed),
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_read,
                             chunk.err());
                           app_error_reading = true;
