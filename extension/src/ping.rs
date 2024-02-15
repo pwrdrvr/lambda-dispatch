@@ -215,13 +215,15 @@ pub async fn send_ping_requests(
     };
   }
 
+  let count = count.load(Ordering::Acquire);
+  let elapsed = time::current_time_millis() - start_time;
   log::info!(
     "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Duration: {} ms, RPS: {} - Ping Loop - Exiting",
     lambda_id,
-    count.load(Ordering::Acquire),
+    count,
     goaway_received.load(Ordering::Acquire),
     requests_in_flight.load(Ordering::Acquire),
-    time::current_time_millis() - start_time,
-    count.load(Ordering::Acquire) as f64 / ((time::current_time_millis() - start_time) as f64 / 1000.0)
+    elapsed,
+    format!("{:.1}", count as f64 / (elapsed as f64 / 1000.0))
   );
 }
