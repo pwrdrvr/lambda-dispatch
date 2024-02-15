@@ -314,7 +314,7 @@ public class LambdaInstance : ILambdaInstance
         || State == LambdaInstanceState.Closed
         || State == LambdaInstanceState.Initial)
     {
-      _logger.LogWarning("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+      _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
 
       // Close the connection
       try
