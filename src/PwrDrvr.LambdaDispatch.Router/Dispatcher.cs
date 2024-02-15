@@ -146,9 +146,6 @@ public class Dispatcher : IBackgroundDispatcher
     // await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
     // TODO: Get this timeout from the config
     await pendingRequest.ResponseFinishedTCS.Task.WaitAsync(TimeSpan.FromMinutes(5));
-
-    MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.Duration.TotalMilliseconds);
-    _metricsLogger.PutMetric("DispatchDelay", pendingRequest.Duration.TotalMilliseconds, Unit.Milliseconds);
   }
 
   // Add a new connection for a lambda, dispatch to it immediately if a request is waiting
@@ -216,6 +213,8 @@ public class Dispatcher : IBackgroundDispatcher
 
       // Only at this point are we sure we're going to dispatch
       pendingRequest.RecordDispatchTime();
+      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.Duration.TotalMilliseconds);
+      _metricsLogger.PutMetric("DispatchDelay", (long)pendingRequest.Duration.TotalMilliseconds, Unit.Milliseconds);
       if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
       {
         _logger.LogWarning("Dispatching (foreground) pending request that has been waiting for {duration} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", pendingRequest.Duration.TotalMilliseconds, lambdaId, channelId);
@@ -257,6 +256,12 @@ public class Dispatcher : IBackgroundDispatcher
     // we do not own this request/response anymore after this call
     //
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId);
+
+    if (result.Connection != null)
+    {
+      // Wakeup the background dispatcher
+      _pendingRequestSignal.Writer.TryWrite(1);
+    }
 
     // Tell the scaler about the number of running instances
     if (result.Connection != null && result.Connection.FirstConnectionForInstance)
@@ -343,7 +348,8 @@ public class Dispatcher : IBackgroundDispatcher
           startedRequest = true;
           pendingRequest.RecordDispatchTime();
           _logger.LogDebug("Dispatching pending request");
-
+          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.Duration.TotalMilliseconds);
+          _metricsLogger.PutMetric("DispatchDelay", (long)pendingRequest.Duration.TotalMilliseconds, Unit.Milliseconds);
           if (pendingRequest.Duration > TimeSpan.FromSeconds(1))
           {
             _logger.LogWarning("Dispatching (background) pending request that has been waiting for {duration} ms", pendingRequest.Duration.TotalMilliseconds);
