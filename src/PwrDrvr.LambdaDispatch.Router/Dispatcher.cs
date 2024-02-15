@@ -111,6 +111,9 @@ public class Dispatcher : IBackgroundDispatcher
       Interlocked.Increment(ref _runningRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
+      // Tell the scaler we're running more requests now
+      await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+
       try
       {
         await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
@@ -120,7 +123,7 @@ public class Dispatcher : IBackgroundDispatcher
         Interlocked.Decrement(ref _runningRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
 
-        // Update number of instances that we want
+        // Tell the scaler about the lowered request count
         await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
       }
       return;
@@ -133,8 +136,8 @@ public class Dispatcher : IBackgroundDispatcher
     var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
     _pendingRequests.Enqueue(pendingRequest);
     Interlocked.Increment(ref _pendingRequestCount);
-    _pendingRequestSignal.Writer.TryWrite(1);
     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
+    _pendingRequestSignal.Writer.TryWrite(1);
 
     // Update number of instances that we want
     await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
@@ -187,11 +190,6 @@ public class Dispatcher : IBackgroundDispatcher
         && _pendingRequests.TryDequeue(out var pendingRequest))
     {
       _logger.LogDebug("Dispatching pending request to LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-      Interlocked.Decrement(ref _pendingRequestCount);
-      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-
-      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
-      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
 
       // Register the connection with the lambda
       var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, true);
@@ -202,13 +200,15 @@ public class Dispatcher : IBackgroundDispatcher
       {
         _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
         _pendingRequests.Enqueue(pendingRequest);
-        Interlocked.Increment(ref _pendingRequestCount);
         _pendingRequestSignal.Writer.TryWrite(1);
-        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
-        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.PendingDispatchCount);
-        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.PendingDispatchForegroundCount);
         return result;
       }
+
+      Interlocked.Decrement(ref _pendingRequestCount);
+      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
+
+      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
+      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
 
       // Start the response
       // This sends the headers
@@ -224,6 +224,10 @@ public class Dispatcher : IBackgroundDispatcher
       // Dispatch the request to the lambda
       Interlocked.Increment(ref _runningRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
+
+      // Update number of instances that we want
+      await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+
       try
       {
         await connection.RunRequest(pendingRequest.Request, pendingRequest.Response).ConfigureAwait(false);
@@ -358,6 +362,9 @@ public class Dispatcher : IBackgroundDispatcher
 
           Interlocked.Increment(ref _runningRequestCount);
           MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
+
+          // Update number of instances that we want
+          await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
 
           try
           {
