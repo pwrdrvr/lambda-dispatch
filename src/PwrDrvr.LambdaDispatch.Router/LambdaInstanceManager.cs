@@ -30,8 +30,6 @@ public interface ILambdaInstanceManager
   Task UpdateDesiredCapacity(int pendingRequests, int runningRequests);
 
   void CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false);
-
-  void CloseInstance(string instanceId, bool lambdaInitiated = false);
 }
 
 public class LambdaInstanceManager : ILambdaInstanceManager
@@ -629,22 +627,5 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     // If the Lambda initiated the close we can still replace it
     // (this can be for deadline exceeded or for lambda detecting idle)
     instance.Close(doNotReplace: !lambdaInitiated, lambdaInitiated: lambdaInitiated);
-  }
-
-  /// <summary>
-  /// Gracefully close an instance
-  /// </summary>
-  /// <param name="instanceId"></param>
-  /// <returns></returns>
-  public void CloseInstance(string instanceId, bool lambdaInitiated)
-  {
-    if (_instances.TryGetValue(instanceId, out var instance))
-    {
-      CloseInstance(instance, lambdaInitiated);
-    }
-    else
-    {
-      _logger.LogInformation("Instance {instanceId} not found during close", instanceId);
-    }
   }
 }

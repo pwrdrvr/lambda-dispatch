@@ -89,7 +89,10 @@ public class Dispatcher : IBackgroundDispatcher
 
   public void CloseInstance(string instanceId, bool lambdaInitiated = false)
   {
-    _lambdaInstanceManager.CloseInstance(instanceId, lambdaInitiated);
+    if (_lambdaInstanceManager.ValidateLambdaId(instanceId, out var instance))
+    {
+      _lambdaInstanceManager.CloseInstance(instance, lambdaInitiated);
+    }
   }
 
   // Add a new request, dispatch immediately if able
