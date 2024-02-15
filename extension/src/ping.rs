@@ -114,7 +114,7 @@ pub async fn send_ping_requests(
         Err(err) => {
           log::error!(
             "LambdaId: {} - PingLoop - Close request failed: {:?}",
-            lambda_id.clone(),
+            lambda_id,
             err
           );
         }
@@ -147,7 +147,7 @@ pub async fn send_ping_requests(
         .is_err()
       {
         // This gets hit when the connection faults
-        panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id.clone());
+        panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id);
       }
 
       let res = sender.send_request(ping_req).await;
@@ -206,7 +206,7 @@ pub async fn send_ping_requests(
         _ = cancel_sleep.cancelled() => {
           // The token was cancelled
           log::info!("LambdaId: {}, Reqs in Flight: {} - Ping Loop - Cancelled",
-            lambda_id.clone(),
+            lambda_id,
             requests_in_flight
           );
         }
