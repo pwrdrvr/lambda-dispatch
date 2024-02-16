@@ -304,11 +304,22 @@ public class LambdaConnection
         // for HTTP2 because we don't know if we sent or finished the whole
         // request or not.
         try { Request.HttpContext.Abort(); } catch { }
-        try { incomingRequest.HttpContext.Abort(); } catch { }
 
         // Just in case anything is still stuck
         CTS.Cancel();
+
+        throw;
       }
+    }
+    catch
+    {
+      // This happens when one of the tasks throws an exception in the second await
+      try { Request.HttpContext.Abort(); } catch { }
+
+      // Just in case anything is still stuck
+      CTS.Cancel();
+
+      throw;
     }
     finally
     {
@@ -491,19 +502,7 @@ public class LambdaConnection
       // We do what an AWS ALB does which is to send a 502 status code
       // and close the connection
       _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, incomingRequest.Path);
-      // Clear the headers
-      incomingResponse.Headers.Clear();
-      // Set the status code
-      incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
-      // Close the response from the extension
-      Request.HttpContext.Abort();
-      // Close the request to the extension
-      Response.HttpContext.Abort();
-      // Close the response to the client
-      await incomingResponse.CompleteAsync();
-      // Close the request from the client, if not closed already
-      incomingRequest.HttpContext.Abort();
-      return;
+      throw;
     }
     finally
     {

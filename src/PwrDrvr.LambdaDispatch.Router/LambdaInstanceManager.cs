@@ -311,12 +311,17 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             {
               // Schedule a scale down
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
-              cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(125));
+              cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             }
             else if (deferredScaleInNewDesiredInstanceCount != newDesiredInstanceCount)
             {
               // Leave the schedule but adjust the amount
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
+            }
+            else if (newDesiredInstanceCount >= _desiredInstanceCount)
+            {
+              // Cancel the scale down
+              cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             }
           }
         }

@@ -477,6 +477,12 @@ public class LambdaInstance : ILambdaInstance
       lock (requestCountLock)
       {
         outstandingRequestCount--;
+
+        // If we went from busy to non-busy, wakeup the background dispatcher
+        if (outstandingRequestCount == MaxConcurrentCount - 1)
+        {
+          dispatcher.WakeupBackgroundDispatcher();
+        }
       }
 
       //
@@ -491,24 +497,7 @@ public class LambdaInstance : ILambdaInstance
       // and a connection we can do it on
       //
 
-      // NOTE: We do not await this else we'd get locked up requests and deep call stacks
-      const int maxAttempts = 3;
-      Task.Run(async () =>
-      {
-        // We try this a few times, similarly to a spin lock
-        // Otherwise, single-channel situations will cause 2x-3x more
-        // background dispatches which are slow
-        for (int i = 0; i < maxAttempts; i++)
-        {
-          var result = await dispatcher.TryBackgroundDispatchOne(countAsForeground: true).ConfigureAwait(false);
 
-          // If the dispatch was successful, break out of the loop
-          if (result)
-          {
-            break;
-          }
-        }
-      });
 
       return Task.CompletedTask;
     });
@@ -842,6 +831,10 @@ public class LambdaInstance : ILambdaInstance
          // The Lambda invocation has completed
          _tcs.SetResult(true);
          _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
+       }
+       else
+       {
+         _tcs.SetException(new Exception("LambdaInvoke for LambdaId: " + this.Id + " did not complete"));
        }
      });
 
