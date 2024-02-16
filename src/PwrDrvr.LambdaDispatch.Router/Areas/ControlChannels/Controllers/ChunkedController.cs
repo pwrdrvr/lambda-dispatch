@@ -41,10 +41,10 @@ public class ChunkedController : ControllerBase
 
   [HttpGet]
   [Route("close/{lambdaId}")]
-  public IActionResult CloseInstance(string lambdaId)
+  public async Task<IActionResult> CloseInstance(string lambdaId)
   {
     logger.LogInformation("Router.ChunkedController.CloseInstance - Closing LambdaId: {lambdaId}", lambdaId);
-    dispatcher.CloseInstance(lambdaId, lambdaInitiated: true);
+    await dispatcher.CloseInstance(lambdaId, lambdaInitiated: true);
 
     return Ok();
   }

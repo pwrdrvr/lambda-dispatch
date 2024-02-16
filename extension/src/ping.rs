@@ -93,6 +93,7 @@ pub async fn send_ping_requests(
         .is_err()
       {
         goaway_received.store(true, Ordering::Relaxed);
+
         // This gets hit when the connection for HTTP/1.1 faults
         panic!(
           "Ping Loop - Router connection ready check threw error - connection has disconnected, should reconnect"
@@ -120,7 +121,7 @@ pub async fn send_ping_requests(
         }
       }
 
-      // Mark that we received a goaway since close returned
+      // Now mark that we are going away, after router has responded to our close request
       goaway_received.store(true, Ordering::Relaxed);
       break;
     }

@@ -106,11 +106,11 @@ public class Dispatcher : IBackgroundDispatcher
     return found;
   }
 
-  public void CloseInstance(string instanceId, bool lambdaInitiated = false)
+  public async Task CloseInstance(string instanceId, bool lambdaInitiated = false)
   {
     if (_lambdaInstanceManager.ValidateLambdaId(instanceId, out var instance))
     {
-      _lambdaInstanceManager.CloseInstance(instance, lambdaInitiated);
+      await _lambdaInstanceManager.CloseInstance(instance, lambdaInitiated);
     }
   }
 

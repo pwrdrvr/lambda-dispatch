@@ -29,7 +29,7 @@ public interface ILambdaInstanceManager
 
   void UpdateDesiredCapacity(int pendingRequests, int runningRequests);
 
-  void CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false);
+  Task CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false);
 }
 
 public class LambdaInstanceManager : ILambdaInstanceManager
@@ -313,14 +313,15 @@ public class LambdaInstanceManager : ILambdaInstanceManager
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
               cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             }
-            else if (deferredScaleInNewDesiredInstanceCount != newDesiredInstanceCount)
+            else if (deferredScaleInNewDesiredInstanceCount > newDesiredInstanceCount)
             {
               // Leave the schedule but adjust the amount
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
             }
-            else if (newDesiredInstanceCount >= _desiredInstanceCount)
+            else
             {
               // Cancel the scale down
+              deferredScaleInNewDesiredInstanceCount = null;
               cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             }
           }
@@ -390,7 +391,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
               // Close the instance
               _logger.LogInformation("ManageCapacity - Closing least busy instance, LambdaId: {lambdaId}", leastBusyInstance.Id);
-              CloseInstance(leastBusyInstance);
+              // We are not awaiting the close
+              _ = CloseInstance(leastBusyInstance);
             }
             else
             {
@@ -492,23 +494,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
         _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
 
-        // Starting lambdas can't be seen by the scale down
-        // If we have too many running instances we tell this one to stop
-        // If we don't do this, it will hang out for 5 seconds if all traffic stops
-        // This can cause a massive traffic spike
-        // Stopping instances allow a replacement to start while they are between the
-        // close message and the invoke returning
-        if (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount > _desiredInstanceCount)
-        {
-          // OnOpen got called
-          // That means WasOpened on the instance will be true
-          // We have to tell the LambdaInstance that the open was rejected
-          // so we don't double-decrement starting or running counts
-          _logger.LogInformation("LambdaInstance {instanceId} opened but we have too many running instances, closing", instance.Id);
-          instance.Close(doNotReplace: true, openWasRejected: true);
-          return;
-        }
-
         _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
 
         // We need to keep track of how many Lambdas are running
@@ -549,6 +534,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             // We need to start a new instance
             if (instance.LamdbdaInitiatedClose)
             {
+              // Mark that we are replacing this instance
+              instance.Replacing = true;
               _metricsLogger.PutMetric("LambdaInitiatedCloseReplacing", 1, Unit.Count);
             }
             StartNewInstance();
@@ -603,11 +590,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // Remove this instance from the collection
           _instances.TryRemove(instance.Id, out var instanceFromList);
 
-          // The instance will already be marked as closing
-          if (instanceFromList != null)
+          // We don't want to wait for this, let it happen in the background
+          if (transitionResult.TransitionedToClosing)
           {
-            // We don't want to wait for this, let it happen in the background
-            instanceFromList.Close();
+            // We were the first to notice the close - the close was not initiated by the router
+            // but by a faulted invoke
+            instance.InvokeCompleted();
           }
 
           if (instance.DoNotReplace)
@@ -635,13 +623,13 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// Gracefully close an instance
   /// </summary>
   /// <param name="instance"></param>
-  public void CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false)
+  public async Task CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false)
   {
     // The instance is going to get cleaned up by the OnInvocationComplete handler
     // Counts will be decremented, the instance will be replaced, etc.
     // We just need to get the Lambda to return from the invoke
     // If the Lambda initiated the close we can still replace it
     // (this can be for deadline exceeded or for lambda detecting idle)
-    instance.Close(doNotReplace: !lambdaInitiated, lambdaInitiated: lambdaInitiated);
+    await instance.Close(doNotReplace: !lambdaInitiated, lambdaInitiated: lambdaInitiated);
   }
 }
