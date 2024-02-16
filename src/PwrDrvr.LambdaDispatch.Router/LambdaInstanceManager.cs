@@ -207,7 +207,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
     var trailingAverage = new TrailingAverage();
-    var scaleTokenBucket = new TokenBucket(5, TimeSpan.FromSeconds(1));
+    var scaleTokenBucket = new TokenBucket(10, TimeSpan.FromMilliseconds(100));
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
     var noMessagesRead = true;
     int? deferredScaleInNewDesiredInstanceCount = null;
@@ -239,8 +239,10 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
 
         // Rip through any other messages, up to a limit of 100
+        // But keep reading if we keep ending on a message with no pending or running requests
         var messagesToRead = 100;
-        while (_capacityChannel.Reader.TryRead(out var nextMessage) && --messagesToRead > 0)
+        while (_capacityChannel.Reader.TryRead(out var nextMessage)
+          && (--messagesToRead > 0 || nextMessage.PendingRequests == 0 && nextMessage.RunningRequests == 0))
         {
           pendingRequests = nextMessage.PendingRequests;
           runningRequests = nextMessage.RunningRequests;
@@ -264,8 +266,10 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         {
           // If we are already at the desired count and we have no starting instances, then we are done
           if (newDesiredInstanceCount == _desiredInstanceCount
-              && _startingInstanceCount + _runningInstanceCount == _desiredInstanceCount)
+              && _startingInstanceCount + _runningInstanceCount - _stoppingInstanceCount == _desiredInstanceCount)
           {
+            // Clear any deferred scale down
+            deferredScaleInNewDesiredInstanceCount = null;
             // Nothing to do
             continue;
           }
@@ -307,7 +311,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             {
               // Schedule a scale down
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
-              cts = new CancellationTokenSource(TimeSpan.FromSeconds(125));
+              cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(125));
             }
             else if (deferredScaleInNewDesiredInstanceCount != newDesiredInstanceCount)
             {
@@ -331,7 +335,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // See if we have a deferred scale down to apply
           if (deferredScaleInNewDesiredInstanceCount.HasValue)
           {
-            _logger.LogInformation("ManageCapacity - Applying deferred scale down value");
+            _logger.LogInformation("ManageCapacity - Applying deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
+              _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
             _metricsLogger.PutMetric("LambdaDesiredCount", 0, Unit.Count);
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
@@ -365,7 +370,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // Stopping: 0
           // We need to stop 80 - 50 = 30 instances, but 0 are already stopping so 30 - 0 = 30 more need to be stopped
           // At worst, we won't stop enough until the next loop.
-          var scaleInCount = Math.Max(_runningInstanceCount - _desiredInstanceCount, 0);
+          var scaleInCount = Math.Max(_runningInstanceCount - _stoppingInstanceCount - _desiredInstanceCount, 0);
           _metricsLogger.PutMetric("LambdaScaleInCount", scaleInCount, Unit.Count);
           while (scaleInCount-- > 0)
           {
@@ -386,7 +391,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             {
               // We have no instances to close
               // This can happen if all instances are busy and we're starting a lot of new instances to replace them
-              _logger.LogError("ManageCapacity - No instances to close - _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}", _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount);
+              _logger.LogError("ManageCapacity - No instances to close - _desiredInstanceCount {_desiredInstanceCount}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}, _stoppingInstanceCount {_stoppingInstanceCount}",
+                _desiredInstanceCount, _runningInstanceCount, _startingInstanceCount, _stoppingInstanceCount);
               break;
             }
           }
