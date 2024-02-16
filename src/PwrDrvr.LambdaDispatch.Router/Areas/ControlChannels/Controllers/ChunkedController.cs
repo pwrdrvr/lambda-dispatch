@@ -142,7 +142,7 @@ public class ChunkedController : ControllerBase
           try
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
-            logger.LogInformation("Router.ChunkedController.Post - LambdaInstance found for X-Lambda-Id header: {lambdaId} but it is already closed", lambdaId);
+            logger.LogDebug("Router.ChunkedController.Post - LambdaInstance found for X-Lambda-Id header: {lambdaId} but it is already closed", lambdaId);
 
             // LambdaInstanceManager.AddConnectionForLambda has already closed the request/response
 
