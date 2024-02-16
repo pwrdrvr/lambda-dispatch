@@ -222,7 +222,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(1));
 
       // Reinstate the connection
-      await instance.ReenqueueUnusedConnection(connection);
+      instance.ReenqueueUnusedConnection(connection);
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(4));
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(4));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));

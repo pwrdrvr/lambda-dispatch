@@ -115,7 +115,7 @@ public class Dispatcher : IBackgroundDispatcher
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
       // Tell the scaler we're running more requests now
-      await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
 
       try
       {
@@ -127,7 +127,7 @@ public class Dispatcher : IBackgroundDispatcher
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
 
         // Tell the scaler about the lowered request count
-        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
       }
       return;
     }
@@ -143,7 +143,7 @@ public class Dispatcher : IBackgroundDispatcher
     _pendingRequestSignal.Writer.TryWrite(1);
 
     // Update number of instances that we want
-    await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+    _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
 
     // Wait for the request to be dispatched or to timeout
     // await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(30000));
@@ -228,7 +228,7 @@ public class Dispatcher : IBackgroundDispatcher
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
       // Update number of instances that we want
-      await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
 
       try
       {
@@ -246,7 +246,7 @@ public class Dispatcher : IBackgroundDispatcher
         pendingRequest.ResponseFinishedTCS.SetResult();
 
         // Update number of instances that we want
-        await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
       }
 
       return result;
@@ -269,7 +269,7 @@ public class Dispatcher : IBackgroundDispatcher
     // Tell the scaler about the number of running instances
     if (result.Connection != null && result.Connection.FirstConnectionForInstance)
     {
-      await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
     }
 
     return result;
@@ -341,7 +341,7 @@ public class Dispatcher : IBackgroundDispatcher
           _logger.LogDebug("TryBackgroundDispatchOne - No connections available");
 
           // Start more instances if needed
-          await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount).ConfigureAwait(false);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
           return false;
         }
 
@@ -379,13 +379,10 @@ public class Dispatcher : IBackgroundDispatcher
           MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
           // Update number of instances that we want
-          await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
 
-          try
-          {
-            await lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ConfigureAwait(false);
-          }
-          finally
+          // Do not await this, let it loop around
+          _ = lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ContinueWith(_ =>
           {
             Interlocked.Decrement(ref _runningRequestCount);
             MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
@@ -394,8 +391,8 @@ public class Dispatcher : IBackgroundDispatcher
             pendingRequest.ResponseFinishedTCS.SetResult();
 
             // Update number of instances that we want
-            await _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
-          }
+            _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          }).ConfigureAwait(false);
 
           return true;
         }
@@ -404,7 +401,7 @@ public class Dispatcher : IBackgroundDispatcher
           _logger.LogDebug("TryBackgroundDispatchOne - No pending requests, putting connection back");
 
           // We didn't get a pending request, so put the connection back
-          await _lambdaInstanceManager.ReenqueueUnusedConnection(lambdaConnection, lambdaConnection.Instance.Id);
+          _lambdaInstanceManager.ReenqueueUnusedConnection(lambdaConnection, lambdaConnection.Instance.Id);
 
           return false;
         }

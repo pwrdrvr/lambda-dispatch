@@ -19,7 +19,7 @@ public interface ILambdaInstanceManager
 
   bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance);
 
-  Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
+  void ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
 
   Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false);
 
@@ -27,7 +27,7 @@ public interface ILambdaInstanceManager
   void DebugAddInstance(string instanceId);
 #endif
 
-  Task UpdateDesiredCapacity(int pendingRequests, int runningRequests);
+  void UpdateDesiredCapacity(int pendingRequests, int runningRequests);
 
   void CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false);
 }
@@ -118,14 +118,14 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     return _instances.TryGetValue(lambdaId, out instance);
   }
 
-  public async Task ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId)
+  public void ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      await instance.ReenqueueUnusedConnection(connection);
+      instance.ReenqueueUnusedConnection(connection);
 
       // Put this instance back into rotation if it was busy
       _leastOutstandingQueue.ReinstateFullInstance(instance);
@@ -399,7 +399,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
   }
 
-  public async Task UpdateDesiredCapacity(int pendingRequests, int runningRequests)
+  public void UpdateDesiredCapacity(int pendingRequests, int runningRequests)
   {
     // In the nominal case of the right amount of capacity, we avoid writing to the channel
     // if (ComputeDesiredInstanceCount(pendingRequests, runningRequests) == _desiredInstanceCount)
@@ -410,7 +410,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
     // Send the message to the channel
     // This will return immediately because we drop any prior message and only keep the latest
-    await _capacityChannel.Writer.WriteAsync(new LambdaInstanceCapacityMessage()
+    _capacityChannel.Writer.TryWrite(new LambdaInstanceCapacityMessage()
     {
       PendingRequests = pendingRequests,
       RunningRequests = runningRequests
@@ -579,7 +579,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           }
           else
           {
-            _logger.LogInformation("LambdaInstance {instanceId} was never opened, replacing", instance.Id);
+            _logger.LogInformation("LambdaInstance {instanceId} was never opened", instance.Id);
             // The instance never opened (e.g. throttled and failed) so decrement the starting count
             _startingInstanceCount--;
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);

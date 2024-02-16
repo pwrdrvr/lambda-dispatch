@@ -129,7 +129,7 @@ public interface ILambdaInstance
 
   public Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false);
 
-  public ValueTask ReenqueueUnusedConnection(LambdaConnection connection);
+  public void ReenqueueUnusedConnection(LambdaConnection connection);
 }
 
 /// <summary>
@@ -857,7 +857,7 @@ public class LambdaInstance : ILambdaInstance
     });
   }
 
-  public async ValueTask ReenqueueUnusedConnection(LambdaConnection connection)
+  public void ReenqueueUnusedConnection(LambdaConnection connection)
   {
     lock (requestCountLock)
     {
@@ -872,7 +872,7 @@ public class LambdaInstance : ILambdaInstance
     // that has to be handled in shutdown
     if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
     {
-      await connection.Discard();
+      _ = connection.Discard();
       return;
     }
 
