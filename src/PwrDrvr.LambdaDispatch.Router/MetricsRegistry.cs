@@ -209,6 +209,12 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Requests,
   };
 
+  public static readonly GaugeOptions IncomingRequestDurationEWMA = new()
+  {
+    Name = "IncomingRequestDurationEWMA",
+    MeasurementUnit = Unit.Custom("ms"),
+  };
+
   public static readonly GaugeOptions LambdaInstanceStoppingCount = new()
   {
     Name = "LambdaInstanceStoppingCount",

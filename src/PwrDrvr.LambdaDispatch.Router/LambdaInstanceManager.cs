@@ -25,7 +25,7 @@ public interface ILambdaInstanceManager
 
   void ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
 
-  Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false);
+  Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue);
 
 #if TEST_RUNNERS
   void DebugAddInstance(string instanceId);
@@ -107,7 +107,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     _metricsLogger = metricsLogger;
 
     // Start the capacity manager
-    Task.Run(ManageCapacity);
+    Task.Factory.StartNew(ManageCapacity, TaskCreationOptions.LongRunning);
   }
 
   public void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher)
@@ -147,17 +147,17 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
   }
 
-  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, bool immediateDispatch = false)
+  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var connection = await instance.AddConnection(request, response, channelId, immediateDispatch).ConfigureAwait(false);
+      var connection = await instance.AddConnection(request, response, channelId, dispatchMode).ConfigureAwait(false);
 
       // Check where this instance is in the least outstanding queue
-      if (!immediateDispatch)
+      if (dispatchMode == AddConnectionDispatchMode.Enqueue)
       {
         _leastOutstandingQueue.ReinstateFullInstance(instance);
       }

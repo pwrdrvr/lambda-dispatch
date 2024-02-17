@@ -8,6 +8,13 @@ using System.Diagnostics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
+public enum AddConnectionDispatchMode
+{
+  ImmediateDispatch,
+  TentativeDispatch,
+  Enqueue
+}
+
 public enum LambdaInstanceState
 {
   /// <summary>
@@ -156,7 +163,7 @@ public interface ILambdaInstance
 
   void TryGetConnectionWillUse(LambdaConnection connection);
 
-  Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false);
+  Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue);
 
   void ReenqueueUnusedConnection(LambdaConnection connection);
 }
@@ -347,7 +354,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false)
+  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId,
+    AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue)
   {
     // This does not need a state lock because the race around
     // closing is handled
@@ -398,7 +406,7 @@ public class LambdaInstance : ILambdaInstance
     var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
 
     // Only make this connection visible if we're not going to immediately use it for a queued request
-    if (!immediateDispatch)
+    if (dispatchMode == AddConnectionDispatchMode.Enqueue)
     {
       // Start the response
       // This sends the headers
@@ -411,13 +419,12 @@ public class LambdaInstance : ILambdaInstance
     else
     {
       //
-      // IMMEDIATE DISPATCH - We're going to try to use this right now
+      // IMMEDIATE or TENTATIVE DISPATCH - We're going to try to use this right now
       //
       var canUseNow = false;
       lock (requestCountLock)
       {
         // Only allow the immediate dispatch if we have room for it
-        // TODO: We should also maybe decide to push this back to the background dispatcher
         if (outstandingRequestCount < maxConcurrentCount)
         {
           // The connection is being immediately used
@@ -439,7 +446,16 @@ public class LambdaInstance : ILambdaInstance
       }
 
       // Add handler to register the decrement of outstanding requests
-      TryGetConnectionWillUse(connection);
+      if (dispatchMode == AddConnectionDispatchMode.ImmediateDispatch)
+      {
+        TryGetConnectionWillUse(connection);
+      }
+      else
+      {
+        // We want uniformity for tentative connections passed through the background dispatcher:
+        // they must all have the response headers sent already
+        await response.StartAsync();
+      }
     }
 
     return connection;
@@ -527,27 +543,7 @@ public class LambdaInstance : ILambdaInstance
       lock (requestCountLock)
       {
         outstandingRequestCount--;
-
-        // If we went from busy to non-busy, wakeup the background dispatcher
-        if (outstandingRequestCount == MaxConcurrentCount - 1)
-        {
-          dispatcher.WakeupBackgroundDispatcher();
-        }
       }
-
-      //
-      // We have decremented the outstanding request count, which means,
-      // if our instance has pre-emptive connections, that our instance
-      // can now handle one more request
-      //
-      // If we do not dispatch here then the background dispatcher will
-      // pick this up, but only 1 every 10 ms.  That's very slow.
-      //
-      // So see if there is a pending request that we can dispatch
-      // and a connection we can do it on
-      //
-
-
 
       return Task.CompletedTask;
     });

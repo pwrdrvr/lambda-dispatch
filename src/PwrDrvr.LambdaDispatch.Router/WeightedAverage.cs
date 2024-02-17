@@ -36,80 +36,87 @@ public class WeightedAverage
     {
       while (true)
       {
-        var now = _sw.Elapsed;
-        var nextTickMilliseconds = ((now.TotalMilliseconds / 100) + 1) * 100;
-        var delay = nextTickMilliseconds - now.TotalMilliseconds;
-        await Task.Delay((int)delay);
-
-        CleanupOldData();
-
-        now = _sw.Elapsed;
-        var currentSecond = (int)now.TotalSeconds;
-        var proportionOfSecondElapsed = now.TotalMilliseconds % 1000 / 1000;
-        var currentValue = _value.GetAndReset();
-        var currentCount = _count.GetAndReset();
-
-        // If the list is empty or the current second is different from the first second in the list,
-        // insert a new item at the beginning of the list
-        if (_data.Count == 0 || _data[0].timestamp != currentSecond)
+        try
         {
-          _data.Insert(0, (currentSecond, currentValue, currentCount));
-        }
-        else
-        {
-          // Otherwise, update the count for the current second
-          var first = _data[0];
-          _data[0] = (first.timestamp, first.value + currentValue, first.count + currentCount);
-        }
+          var now = _sw.Elapsed;
+          var nextTickMilliseconds = ((now.TotalMilliseconds / 100) + 1) * 100;
+          var delay = nextTickMilliseconds - now.TotalMilliseconds;
+          await Task.Delay((int)delay);
 
-        double ewma = _mean ? 0.0 : double.NaN;
+          CleanupOldData();
 
-        // Calculate the EWMA of the counts per second
-        var index = 0;
-        foreach (var (_, value, count) in _data)
-        {
-          if (index == 0)
+          now = _sw.Elapsed;
+          var currentSecond = (int)now.TotalSeconds;
+          var proportionOfSecondElapsed = now.TotalMilliseconds % 1000 / 1000;
+          var currentValue = _value.GetAndReset();
+          var currentCount = _count.GetAndReset();
+
+          // If the list is empty or the current second is different from the first second in the list,
+          // insert a new item at the beginning of the list
+          if (_data.Count == 0 || _data[0].timestamp != currentSecond)
           {
-            // Extrapolate data for the current second
-            if (!_mean)
-            {
-              var adj = value / proportionOfSecondElapsed;
-
-              // Start off with the first value at weight of 100%
-              ewma = adj;
-            }
-            else
-            {
-              // Mean is always value / count
-              // Note: this is the duration and count of requests
-              // that finished in this second, not the count of incoming
-              // requests and duration of other requests that finished
-              if (count > 0)
-              {
-                ewma = value / count;
-              }
-            }
+            _data.Insert(0, (currentSecond, currentValue, currentCount));
           }
           else
           {
-            // Use the actual count for the previous seconds
-            if (!_mean)
+            // Otherwise, update the count for the current second
+            var first = _data[0];
+            _data[0] = (first.timestamp, first.value + currentValue, first.count + currentCount);
+          }
+
+          double ewma = _mean ? 0.0 : double.NaN;
+
+          // Calculate the EWMA of the counts per second
+          var index = 0;
+          foreach (var (_, value, count) in _data)
+          {
+            if (index == 0)
             {
-              ewma = Alpha * value + (1 - Alpha) * ewma;
+              // Extrapolate data for the current second
+              if (!_mean)
+              {
+                var adj = value / proportionOfSecondElapsed;
+
+                // Start off with the first value at weight of 100%
+                ewma = adj;
+              }
+              else
+              {
+                // Mean is always value / count
+                // Note: this is the duration and count of requests
+                // that finished in this second, not the count of incoming
+                // requests and duration of other requests that finished
+                if (count > 0)
+                {
+                  ewma = value / count;
+                }
+              }
             }
             else
             {
-              if (count > 0)
+              // Use the actual count for the previous seconds
+              if (!_mean)
               {
-                ewma = Alpha * (value / count) + (1 - Alpha) * ewma;
+                ewma = Alpha * value + (1 - Alpha) * ewma;
+              }
+              else
+              {
+                if (count > 0)
+                {
+                  ewma = Alpha * (value / count) + (1 - Alpha) * ewma;
+                }
               }
             }
+
+            index++;
           }
 
-          index++;
+          _ewma = ewma;
         }
-
-        _ewma = ewma;
+        catch (Exception ex)
+        {
+          Console.WriteLine($"Exception in WeightedAverage: {ex.Message}");
+        }
       }
     });
   }

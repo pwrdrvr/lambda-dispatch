@@ -59,7 +59,6 @@ public class ChunkedController : ControllerBase
 
     using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.LambdaRequestTimer))
     {
-      var sw = System.Diagnostics.Stopwatch.StartNew();
       try
       {
         if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues lambdaIdMulti) || lambdaIdMulti.Count != 1)
@@ -174,10 +173,7 @@ public class ChunkedController : ControllerBase
           throw;
         }
       }
-      finally
-      {
-        metricsLogger.PutMetric("LambdaRequestDuration", sw.ElapsedMilliseconds, Unit.Milliseconds);
-      }
+
     }
   }
 }
