@@ -137,12 +137,11 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly TimerOptions IncomingRequestTimer = new()
+  public static readonly HistogramOptions IncomingRequestDuration = new()
   {
-    Name = "IncomingRequestTimer",
+    Name = "IncomingRequestDuration",
     MeasurementUnit = Unit.Custom("ms"),
-    DurationUnit = TimeUnit.Milliseconds,
-    RateUnit = TimeUnit.Milliseconds,
+    Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
   public static readonly TimerOptions LambdaRequestTimer = new()

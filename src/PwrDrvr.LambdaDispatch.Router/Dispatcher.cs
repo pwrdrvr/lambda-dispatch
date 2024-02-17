@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading.Channels;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
@@ -18,22 +19,16 @@ public class PendingRequest
   public HttpResponse Response { get; private set; }
   public TaskCompletionSource ResponseFinishedTCS { get; private set; } = new TaskCompletionSource();
   public CancellationTokenSource GatewayTimeoutCTS { get; private set; } = new CancellationTokenSource();
-  public DateTime CreationTime { get; }
   public DateTime? DispatchTime { get; private set; }
   public bool Dispatched { get; private set; } = false;
+
+  private readonly Stopwatch _swDispatch = Stopwatch.StartNew();
 
   public TimeSpan DispatchDelay
   {
     get
     {
-      if (DispatchTime != null)
-      {
-        return (DateTime)DispatchTime - CreationTime;
-      }
-      else
-      {
-        return DateTime.Now - CreationTime;
-      }
+      return _swDispatch.Elapsed;
     }
   }
 
@@ -41,7 +36,6 @@ public class PendingRequest
   {
     Request = request;
     Response = response;
-    CreationTime = DateTime.Now;
   }
 
   public void Abort()
@@ -52,7 +46,7 @@ public class PendingRequest
   public void RecordDispatchTime()
   {
     Dispatched = true;
-    DispatchTime = DateTime.Now;
+    _swDispatch.Stop();
   }
 }
 
@@ -74,6 +68,7 @@ public class Dispatcher : IBackgroundDispatcher
   private readonly IMetricsLogger _metricsLogger;
 
   private readonly WeightedAverage _weightedAverage = new(15);
+  private readonly WeightedAverage _incomingRequestDurationAverage = new(15, mean: true);
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
@@ -129,6 +124,7 @@ public class Dispatcher : IBackgroundDispatcher
     // If no queue and idle lambdas, try to get an idle lambda and dispatch immediately
     if (_pendingRequestCount == 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
     {
+      var sw = System.Diagnostics.Stopwatch.StartNew();
       _logger.LogDebug("Dispatching incoming request immediately to LambdaId: {Id}", lambdaConnection.Instance.Id);
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ImmediateDispatchCount);
@@ -173,6 +169,9 @@ public class Dispatcher : IBackgroundDispatcher
       {
         Interlocked.Decrement(ref _runningRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
+
+        _incomingRequestDurationAverage.Add(sw.ElapsedMilliseconds);
+        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, sw.ElapsedMilliseconds);
 
         // Tell the scaler about the lowered request count
         _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
@@ -478,8 +477,7 @@ public class Dispatcher : IBackgroundDispatcher
           if (_pendingRequests.TryPeek(out var peekPendingRequest))
           {
             if (peekPendingRequest.GatewayTimeoutCTS.IsCancellationRequested
-                && _pendingRequests.TryDequeue(out PendingRequest? peekPendingRequestRemoved)
-                )
+                && _pendingRequests.TryDequeue(out PendingRequest? peekPendingRequestRemoved))
             {
               if (peekPendingRequestRemoved.GatewayTimeoutCTS.IsCancellationRequested)
               {
@@ -491,6 +489,7 @@ public class Dispatcher : IBackgroundDispatcher
               else
               {
                 // Just put it back
+                // TODO: this is terrible as it puts the oldest requests at the end of the queue
                 _pendingRequests.Enqueue(peekPendingRequestRemoved);
               }
             }
@@ -544,6 +543,10 @@ public class Dispatcher : IBackgroundDispatcher
 
             // Signal the pending request that it's been completed
             pendingRequest.ResponseFinishedTCS.SetResult();
+
+            // Record the duration
+            _incomingRequestDurationAverage.Add((long)pendingRequest.DispatchDelay.TotalMilliseconds);
+            MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
 
             // Update number of instances that we want
             _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);

@@ -62,7 +62,7 @@ public class WeightedAverage
           _data[0] = (first.timestamp, first.value + currentValue, first.count + currentCount);
         }
 
-        double ewma = 0.0;
+        double ewma = _mean ? 0.0 : double.NaN;
 
         // Calculate the EWMA of the counts per second
         var index = 0;
@@ -133,7 +133,7 @@ public class WeightedAverage
     }
   }
 
-  public void Add(int count = 1)
+  public void Add(long count = 1)
   {
     _value.Add(count);
     if (_mean)
