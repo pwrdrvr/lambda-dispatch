@@ -25,6 +25,12 @@ public enum LambdaInstanceState
   Open,
 
   /// <summary>
+  /// The Lambda is waiting to be replaced
+  /// before starting to close connections
+  /// </summary>
+  Replacing,
+
+  /// <summary>
   /// The Lambda is closing down
   /// New connections will be rejected
   /// </summary>
@@ -78,6 +84,11 @@ public interface ILambdaInstance
   /// We set this when we decide to stop an instance
   /// </summary>
   bool DoNotReplace { get; }
+
+  /// <summary>
+  /// Is the Lambda effectively "Open" and able to be used
+  /// </summary>
+  bool IsOpen { get; }
 
   /// <summary>
   /// Set by LambdaInstanceManager if the instance is being replaced
@@ -171,6 +182,14 @@ public class LambdaInstance : ILambdaInstance
   public event Action<ILambdaInstance>? OnOpen;
 
   public bool Replacing { get; set; }
+
+  public bool IsOpen
+  {
+    get
+    {
+      return State == LambdaInstanceState.Open || State == LambdaInstanceState.Replacing;
+    }
+  }
 
   /// <summary>
   /// WARNING: This is going to enumerate the items in the queue to count them
@@ -323,8 +342,8 @@ public class LambdaInstance : ILambdaInstance
   {
     // This does not need a state lock because the race around
     // closing is handled
-    // We allow new connections for Closing but not Closed
     if (State == LambdaInstanceState.Closed
+        || State == LambdaInstanceState.Closing
         || State == LambdaInstanceState.Initial)
     {
       _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
@@ -427,13 +446,13 @@ public class LambdaInstance : ILambdaInstance
     // If we can't get a connection we just try another instance
 
     // We allow using instances that are Closing but not yet Closed
-    if (State == LambdaInstanceState.Closed)
+    if (State == LambdaInstanceState.Closed || State == LambdaInstanceState.Closing)
     {
-      _logger.LogWarning("Connection requested from Lambda Instance that is closed, LambdaId: {LambdaId}", Id);
+      _logger.LogWarning("Connection requested from Lambda Instance that is closed or closing, LambdaId: {LambdaId}", Id);
       return false;
     }
 
-    if (State != LambdaInstanceState.Open && State != LambdaInstanceState.Closing)
+    if (!IsOpen)
     {
       _logger.LogWarning("Connection requested from Lambda Instance that is not open, LambdaId: {LambdaId}", Id);
       return false;
@@ -576,11 +595,13 @@ public class LambdaInstance : ILambdaInstance
     return releasedConnectionCount;
   }
 
-  public TransitionResult TransitionToClosing()
+  public TransitionResult TransitionToClosing(bool replacing = false)
   {
     lock (stateLock)
     {
-      if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
+      if (State == LambdaInstanceState.Replacing
+          || State == LambdaInstanceState.Closing
+          || State == LambdaInstanceState.Closed)
       {
         // Already closing
         return new TransitionResult
@@ -886,12 +907,13 @@ public class LambdaInstance : ILambdaInstance
       outstandingRequestCount--;
     }
 
-    // If the lambda is Closed then we don't re-enqueue the connection
+    // If the lambda is Closing or Closed then we don't re-enqueue the connection
     // No lock here because we're not changing state
     // and because getting a non-Closed state with a lock
     // then enqueueing the connection is still a race condition
     // that has to be handled in shutdown
-    if (State == LambdaInstanceState.Closed)
+    if (State == LambdaInstanceState.Closing
+        || State == LambdaInstanceState.Closed)
     {
       _ = connection.Discard();
       return;

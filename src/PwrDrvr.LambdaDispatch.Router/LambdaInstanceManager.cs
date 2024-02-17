@@ -641,6 +641,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             if (instance.LamdbdaInitiatedClose)
             {
               // Mark that we are replacing this instance
+              // TODO: Only mark that we're replacing this if it was open for a while
               instance.Replacing = true;
               _metricsLogger.PutMetric("LambdaInitiatedCloseReplacing", 1, Unit.Count);
             }

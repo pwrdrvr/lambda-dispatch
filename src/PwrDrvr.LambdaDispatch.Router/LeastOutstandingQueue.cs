@@ -129,9 +129,9 @@ public class LeastOutstandingQueue : IDisposable
         // We got an instance with, what we think, is the least outstanding requests
         // But, the instance may actually be closed or full due to disconnects
         // So we'll check that here
-        if (dequeuedInstance.State != LambdaInstanceState.Open && dequeuedInstance.State != LambdaInstanceState.Closing)
+        if (!dequeuedInstance.IsOpen)
         {
-          // The instance is not open or closing, so we'll drop it on the floor and move on
+          // The instance is not open for requests, so we'll drop it on the floor and move on
           continue;
         }
         if (dequeuedInstance.AvailableConnectionCount <= 0)
@@ -179,9 +179,9 @@ public class LeastOutstandingQueue : IDisposable
         // We got an instance with, what we think, is the least outstanding requests
         // But, the instance may actually be closed or full due to disconnects
         // So we'll check that here
-        if (instance.State != LambdaInstanceState.Open && instance.State != LambdaInstanceState.Closing)
+        if (!instance.IsOpen)
         {
-          // The instance is not open or closing, so we'll drop it on the floor and move on
+          // The instance is not open, so we'll drop it on the floor and move on
           continue;
         }
         if (instance.AvailableConnectionCount <= 0)
@@ -234,9 +234,9 @@ public class LeastOutstandingQueue : IDisposable
         continue;
       }
 
-      if (instance.State != LambdaInstanceState.Open && instance.State != LambdaInstanceState.Closing)
+      if (!instance.IsOpen)
       {
-        // The instance is not open or closing so drop it on the floor and move on
+        // The instance is not open so drop it on the floor and move on
         continue;
       }
 
@@ -379,9 +379,9 @@ public class LeastOutstandingQueue : IDisposable
           continue;
         }
 
-        if (instance.State != LambdaInstanceState.Open && instance.State != LambdaInstanceState.Closing)
+        if (!instance.IsOpen)
         {
-          // The instance is not open or closing so drop it on the floor and move on
+          // The instance is not open so drop it on the floor and move on
           continue;
         }
 
