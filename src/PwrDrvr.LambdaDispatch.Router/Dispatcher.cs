@@ -434,11 +434,11 @@ public class Dispatcher : IBackgroundDispatcher
           // because we want to skip these 10 loops if there are no requests waiting anymore
           _pendingRequestCount > 0
           && !TryBackgroundDispatchOne()
-          && tryCount++ < 10)
+          && tryCount++ < 1000)
         {
           _logger.LogDebug("BackgroundPendingRequestDispatcher - Could not dispatch one, trying again");
 
-          await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
+          // await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
         }
       }
       catch (OperationCanceledException)
