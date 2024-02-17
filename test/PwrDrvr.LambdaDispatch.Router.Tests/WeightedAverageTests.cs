@@ -42,4 +42,25 @@ public class WeightedAverageTests
 
     Assert.LessOrEqual(ewma, 10);
   }
+
+  [Test]
+  public void TestMeanTrue()
+  {
+    // Arrange
+    var weightedAverage = new WeightedAverage(5, true);
+
+    // Act
+    for (int i = 1; i <= 10; i++)
+    {
+      weightedAverage.Add(i);
+    }
+
+    Thread.Sleep(100); // Sleep to allow the background task to compute the EWMA
+
+    // Assert
+    // The exact value of EWMA will depend on the timing of the test, so we can't check for a specific value.
+    // Instead, we can check that it's within a reasonable range.
+    Assert.That(weightedAverage.EWMA, Is.GreaterThan(0));
+    Assert.That(weightedAverage.EWMA, Is.LessThan(10));
+  }
 }
