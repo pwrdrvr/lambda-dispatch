@@ -83,6 +83,13 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly IMetricsLogger _metricsLogger;
 
+  private readonly Channel<LambdaInstanceCapacityMessage> _capacityChannel
+    = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(100)
+    {
+      FullMode = BoundedChannelFullMode.DropOldest,
+      SingleReader = true,
+    });
+
   /// <summary>
   /// Used to lookup instances by ID
   /// This allows associating the connecitons with their owning lambda instance
@@ -176,12 +183,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
     return null;
   }
-
-  private readonly Channel<LambdaInstanceCapacityMessage> _capacityChannel = Channel.CreateBounded<LambdaInstanceCapacityMessage>(new BoundedChannelOptions(100)
-  {
-    FullMode = BoundedChannelFullMode.DropOldest,
-    SingleReader = true,
-  });
 
   private int ComputeDesiredInstanceCount(int pendingRequests, int runningRequests)
   {
@@ -357,7 +358,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // See if we are allowed to adjust the desired count
           // We are always allowed to scale out from 0 without consuming a token
           // We are always allowed to scale in to 0 without consuming a token
-          if ((_desiredInstanceCount == 0 && newDesiredInstanceCount > 0)
+          var allowScaleWithoutToken = _desiredInstanceCount == 0 && newDesiredInstanceCount > 0;
+          if (allowScaleWithoutToken
               // Allowing unlimited ins gets way too chatty
               // || (_desiredInstanceCount > 0 && newDesiredInstanceCount == 0)
               || scaleTokenBucket.TryGetToken())
@@ -368,7 +370,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             _metricsLogger.PutMetric("RunningRequestCount", runningRequests, Unit.Count);
 
             // Start instances if needed
-            if (newDesiredInstanceCount > _runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount)
+            if (newDesiredInstanceCount > _desiredInstanceCount)
             {
               _logger.LogInformation("ManageCapacity - Performing scale out: _desiredInstanceCount {_desiredInstanceCount} -> {newDesiredInstanceCount}, ewmaScalerDesiredInstanceCount {ewmaScalerDesiredInstanceCount}, simpleScalerDesiredInstanceCount {simpleScalerDesiredInstanceCount}, prevDesiredInstanceCount {prevDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}",
                       _desiredInstanceCount, newDesiredInstanceCount, ewmaScalerDesiredInstanceCount != null ? ewmaScalerDesiredInstanceCount.Value : null, simpleScalerDesiredInstanceCount, prevDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda != null ? requestsPerSecondPerLambda.Value : Double.NaN, 1));
