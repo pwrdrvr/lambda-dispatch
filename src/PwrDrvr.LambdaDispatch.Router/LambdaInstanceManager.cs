@@ -212,7 +212,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
     var trailingAverage = new TrailingAverage();
-    var scaleTokenBucket = new TokenBucket(10, TimeSpan.FromMilliseconds(100));
+    var scaleTokenBucket = new TokenBucket(2, TimeSpan.FromMilliseconds(1000));
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
     var noMessagesRead = true;
     int? deferredScaleInNewDesiredInstanceCount = null;
@@ -276,8 +276,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
         // Override the simple scale-from zero logic (which uses running and pending requests only)
         // with the EWMA data, if available
-        if (newDesiredInstanceCount != 0
-            && requestsPerSecondEWMA > 0 && Math.Max(requestDurationEWMA, 0.1) > 0)
+        if (requestsPerSecondEWMA > 0 && Math.Max(requestDurationEWMA, 0.1) > 0)
         {
           // Calculate the desired count
           requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * _maxConcurrentCount;
