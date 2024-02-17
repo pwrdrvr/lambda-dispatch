@@ -215,6 +215,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
     var noMessagesRead = true;
     int? deferredScaleInNewDesiredInstanceCount = null;
+    const int maxScaleOut = 5;
+    const double maxScaleOutPercent = .33;
+    const double maxScaleInPercent = .33;
 
     while (true)
     {
@@ -266,6 +269,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var newDesiredInstanceCount = averageCount == 0
           || (messagesToRead != 0 && pendingRequests == 0 && runningRequests == 0)
             ? 0 : (int)Math.Ceiling(averageCount);
+        var simpleScalerDesiredInstanceCount = newDesiredInstanceCount;
+        int? ewmaScalerDesiredInstanceCount = null;
+        double? requestsPerSecondPerLambda = null;
 
         // Override the simple scale-from zero logic (which uses running and pending requests only)
         // with the EWMA data, if available
@@ -273,30 +279,88 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             && requestsPerSecondEWMA > 0 && Math.Max(requestDurationEWMA, 0.1) > 0)
         {
           // Calculate the desired count
-          var requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * _maxConcurrentCount;
+          requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * _maxConcurrentCount;
           var oldDesiredInstanceCount = newDesiredInstanceCount;
-          newDesiredInstanceCount = (int)Math.Ceiling(requestsPerSecondEWMA / requestsPerSecondPerLambda);
-          // _logger.LogDebug("ManageCapacity - Using EWMA data, newDesiredInstanceCount {newDesiredInstanceCount}, oldDesiredInstanceCount {oldDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}",
-          // newDesiredInstanceCount, oldDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda, 1));
+          ewmaScalerDesiredInstanceCount = (int)Math.Ceiling(requestsPerSecondEWMA / (double)requestsPerSecondPerLambda);
+          newDesiredInstanceCount = (int)ewmaScalerDesiredInstanceCount;
         }
+
+        // This was a temp hack before removing the 10 ms sleep in the background dispatcher
+        // newDesiredInstanceCount = (int)Math.Ceiling((double)newDesiredInstanceCount / 4);
 
         //
         // Locking instance counts - Do not do anything Async / IO in this block
         //
         lock (_instanceCountLock)
         {
+          // Calculate the maximum allowed change
+          int maxScaleOutChange = Math.Max(1, Math.Min((int)Math.Ceiling(_desiredInstanceCount * maxScaleOutPercent), maxScaleOut));
+          int maxScaleInChange = Math.Max(1, (int)Math.Ceiling(_desiredInstanceCount * maxScaleInPercent));
+
+          // Calculate the proposed change
+          int proposedChange = newDesiredInstanceCount - _desiredInstanceCount;
+
+          // If the proposed change is greater than the maximum allowed change, adjust newDesiredInstanceCount
+          if (proposedChange > maxScaleOutChange)
+          {
+            newDesiredInstanceCount = _desiredInstanceCount + maxScaleOutChange;
+          }
+
+          // If the proposed change is less than the negative of the maximum allowed change, adjust newDesiredInstanceCount
+          if (proposedChange < -maxScaleInChange)
+          {
+            newDesiredInstanceCount = _desiredInstanceCount - maxScaleInChange;
+          }
+
           // If we are already at the desired count and we have no starting instances, then we are done
-          if (newDesiredInstanceCount == _desiredInstanceCount
-              && _startingInstanceCount + _runningInstanceCount - _stoppingInstanceCount == _desiredInstanceCount)
+          if (!deferredScaleInNewDesiredInstanceCount.HasValue
+              && newDesiredInstanceCount == _desiredInstanceCount
+              && _startingInstanceCount + _runningInstanceCount - _stoppingInstanceCount <= _desiredInstanceCount)
           {
             // Clear any deferred scale down
             deferredScaleInNewDesiredInstanceCount = null;
+
+            // Restore any missing instances
+            if (_startingInstanceCount + _runningInstanceCount - _stoppingInstanceCount < _desiredInstanceCount)
+            {
+              _logger.LogInformation("ManageCapacity - Desired count unchanged, restoring {} missing instances: _startingInstanceCount {} + _runningInstanceCount {} - _stoppingInstanceCount {} -> _desiredInstanceCount {}",
+                     _desiredInstanceCount - (_startingInstanceCount + _runningInstanceCount - _stoppingInstanceCount), _startingInstanceCount, _runningInstanceCount, _stoppingInstanceCount, _desiredInstanceCount); ;
+
+              while (_startingInstanceCount + _runningInstanceCount - _stoppingInstanceCount < _desiredInstanceCount)
+              {
+                // Start a new instance
+                StartNewInstance();
+              }
+            }
+
             // Nothing to do
             continue;
           }
 
+          if (deferredScaleInNewDesiredInstanceCount.HasValue
+            && deferredScaleInNewDesiredInstanceCount.Value == newDesiredInstanceCount)
+          {
+            // We are already scheduled to scale to this count
+            continue;
+          }
+
+          // The current scale is already correct
+          if (newDesiredInstanceCount == _desiredInstanceCount)
+          {
+            // The new desired count is the same as the current count
+            // We have no need to scale down if we were going to
+            // We also have no need to scale up
+            deferredScaleInNewDesiredInstanceCount = null;
+            continue;
+          }
+
           // See if we are allowed to adjust the desired count
-          if (scaleTokenBucket.TryGetToken())
+          // We are always allowed to scale out from 0 without consuming a token
+          // We are always allowed to scale in to 0 without consuming a token
+          if ((_desiredInstanceCount == 0 && newDesiredInstanceCount > 0)
+              // Allowing unlimited ins gets way too chatty
+              // || (_desiredInstanceCount > 0 && newDesiredInstanceCount == 0)
+              || scaleTokenBucket.TryGetToken())
           {
             var prevDesiredInstanceCount = _desiredInstanceCount;
 
@@ -306,6 +370,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             // Start instances if needed
             if (newDesiredInstanceCount > _runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount)
             {
+              _logger.LogInformation("ManageCapacity - Performing scale out: _desiredInstanceCount {_desiredInstanceCount} -> {newDesiredInstanceCount}, ewmaScalerDesiredInstanceCount {ewmaScalerDesiredInstanceCount}, simpleScalerDesiredInstanceCount {simpleScalerDesiredInstanceCount}, prevDesiredInstanceCount {prevDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}",
+                      _desiredInstanceCount, newDesiredInstanceCount, ewmaScalerDesiredInstanceCount != null ? ewmaScalerDesiredInstanceCount.Value : null, simpleScalerDesiredInstanceCount, prevDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda != null ? requestsPerSecondPerLambda.Value : Double.NaN, 1));
+
               // Clear any deferred scale down
               deferredScaleInNewDesiredInstanceCount = null;
 
@@ -317,7 +384,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
               MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
               _metricsLogger.PutMetric("LambdaDesiredCount", newDesiredInstanceCount, Unit.Count);
 
-              var scaleOutCount = Math.Max(newDesiredInstanceCount - _runningInstanceCount - _startingInstanceCount, 0);
+              var scaleOutCount = Math.Max(newDesiredInstanceCount - (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount), 0);
+              scaleOutCount = Math.Min(scaleOutCount, maxScaleOut);
+              scaleOutCount = Math.Min(scaleOutCount, (int)Math.Ceiling(_desiredInstanceCount * maxScaleOutPercent));
               if (scaleOutCount > 0)
               {
                 _metricsLogger.PutMetric("LambdaScaleOutCount", scaleOutCount, Unit.Count);
@@ -328,19 +397,29 @@ public class LambdaInstanceManager : ILambdaInstanceManager
                 StartNewInstance();
               }
             }
-            else if (!deferredScaleInNewDesiredInstanceCount.HasValue)
+            else if (!deferredScaleInNewDesiredInstanceCount.HasValue
+                    && newDesiredInstanceCount < _desiredInstanceCount)
             {
+              _logger.LogDebug("ManageCapacity - Scheduling scale in: _desiredInstanceCount {_desiredInstanceCount} -> {newDesiredInstanceCount}, ewmaScalerDesiredInstanceCount {ewmaScalerDesiredInstanceCount}, simpleScalerDesiredInstanceCount {simpleScalerDesiredInstanceCount}, prevDesiredInstanceCount {prevDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}, _runningInstanceCount {}, _startingInstanceCount {}, _stoppingInstanceCount {}",
+                     _desiredInstanceCount, newDesiredInstanceCount, ewmaScalerDesiredInstanceCount != null ? ewmaScalerDesiredInstanceCount.Value : null, simpleScalerDesiredInstanceCount, prevDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda != null ? requestsPerSecondPerLambda.Value : Double.NaN, 1), _runningInstanceCount, _startingInstanceCount, _stoppingInstanceCount);
+
               // Schedule a scale down
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
-              cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+              cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(125));
             }
-            else if (deferredScaleInNewDesiredInstanceCount > newDesiredInstanceCount)
+            else if (deferredScaleInNewDesiredInstanceCount.GetValueOrDefault() > newDesiredInstanceCount)
             {
+              _logger.LogInformation("ManageCapacity - Adjusting scheduled scale in: _desiredInstanceCount {_desiredInstanceCount} -> {newDesiredInstanceCount}, ewmaScalerDesiredInstanceCount {ewmaScalerDesiredInstanceCount}, simpleScalerDesiredInstanceCount {simpleScalerDesiredInstanceCount}, prevDesiredInstanceCount {prevDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}",
+                                   _desiredInstanceCount, newDesiredInstanceCount, ewmaScalerDesiredInstanceCount != null ? ewmaScalerDesiredInstanceCount.Value : null, simpleScalerDesiredInstanceCount, prevDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda != null ? requestsPerSecondPerLambda.Value : Double.NaN, 1));
+
               // Leave the schedule but adjust the amount
               deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
             }
             else
             {
+              _logger.LogInformation("ManageCapacity - Cancelling scheduled scale in: _desiredInstanceCount {_desiredInstanceCount} -> {newDesiredInstanceCount}, ewmaScalerDesiredInstanceCount {ewmaScalerDesiredInstanceCount}, simpleScalerDesiredInstanceCount {simpleScalerDesiredInstanceCount}, prevDesiredInstanceCount {prevDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}",
+                                   _desiredInstanceCount, newDesiredInstanceCount, ewmaScalerDesiredInstanceCount != null ? ewmaScalerDesiredInstanceCount.Value : null, simpleScalerDesiredInstanceCount, prevDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda != null ? requestsPerSecondPerLambda.Value : Double.NaN, 1));
+
               // Cancel the scale down
               deferredScaleInNewDesiredInstanceCount = null;
               cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -362,6 +441,14 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // See if we have a deferred scale down to apply
           if (deferredScaleInNewDesiredInstanceCount.HasValue)
           {
+            if (deferredScaleInNewDesiredInstanceCount.Value == _desiredInstanceCount)
+            {
+              // Nothing to do, just go around
+              _logger.LogInformation("ManageCapacity - Skipping applying deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
+                _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
+              deferredScaleInNewDesiredInstanceCount = null;
+              continue;
+            }
             _logger.LogInformation("ManageCapacity - Applying deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
               _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
@@ -398,6 +485,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // We need to stop 80 - 50 = 30 instances, but 0 are already stopping so 30 - 0 = 30 more need to be stopped
           // At worst, we won't stop enough until the next loop.
           var scaleInCount = Math.Max(_runningInstanceCount - _stoppingInstanceCount - _desiredInstanceCount, 0);
+          scaleInCount = Math.Min(scaleInCount, maxScaleOut);
+          scaleInCount = Math.Min(scaleInCount, (int)Math.Ceiling(_desiredInstanceCount * maxScaleInPercent));
           _metricsLogger.PutMetric("LambdaScaleInCount", scaleInCount, Unit.Count);
           while (scaleInCount-- > 0)
           {
