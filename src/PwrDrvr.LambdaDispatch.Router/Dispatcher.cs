@@ -73,6 +73,8 @@ public class Dispatcher : IBackgroundDispatcher
 
   private readonly IMetricsLogger _metricsLogger;
 
+  private readonly WeightedAverage _weightedAverage = new(15);
+
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
   private readonly ConcurrentQueue<PendingRequest> _pendingRequests = new();
@@ -120,6 +122,9 @@ public class Dispatcher : IBackgroundDispatcher
     _logger.LogDebug("Adding request to the Dispatcher");
 
     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
+    MetricsRegistry.Metrics.Measure.Meter.Mark(MetricsRegistry.IncomingRequestsMeter, 1);
+    _weightedAverage.Add();
+    MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _weightedAverage.EWMA);
 
     // If no queue and idle lambdas, try to get an idle lambda and dispatch immediately
     if (_pendingRequestCount == 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
