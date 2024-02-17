@@ -67,7 +67,7 @@ public class Dispatcher : IBackgroundDispatcher
 
   private readonly IMetricsLogger _metricsLogger;
 
-  private readonly WeightedAverage _weightedAverage = new(15);
+  private readonly WeightedAverage _incomingRequestsWeightedAverage = new(15);
   private readonly WeightedAverage _incomingRequestDurationAverage = new(15, mean: true);
 
   // Requests that are waiting to be dispatched to a Lambda
@@ -118,8 +118,8 @@ public class Dispatcher : IBackgroundDispatcher
 
     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
     MetricsRegistry.Metrics.Measure.Meter.Mark(MetricsRegistry.IncomingRequestsMeter, 1);
-    _weightedAverage.Add();
-    MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _weightedAverage.EWMA);
+    _incomingRequestsWeightedAverage.Add();
+    MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestsWeightedAverage.EWMA);
 
     // If no queue and idle lambdas, try to get an idle lambda and dispatch immediately
     if (_pendingRequestCount == 0 && _lambdaInstanceManager.TryGetConnection(out var lambdaConnection))
@@ -135,7 +135,7 @@ public class Dispatcher : IBackgroundDispatcher
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
       // Tell the scaler we're running more requests now
-      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
 
       try
       {
@@ -174,7 +174,7 @@ public class Dispatcher : IBackgroundDispatcher
         MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, sw.ElapsedMilliseconds);
 
         // Tell the scaler about the lowered request count
-        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
       }
       return;
     }
@@ -190,7 +190,7 @@ public class Dispatcher : IBackgroundDispatcher
     _pendingRequestSignal.Writer.TryWrite(1);
 
     // Update number of instances that we want
-    _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+    _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
 
     // Wait for the request to be dispatched or to timeout
     // TODO: Get this timeout from the config
@@ -316,7 +316,7 @@ public class Dispatcher : IBackgroundDispatcher
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
         // Update number of instances that we want
-        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
 
         try
         {
@@ -361,7 +361,7 @@ public class Dispatcher : IBackgroundDispatcher
           pendingRequest.ResponseFinishedTCS.SetResult();
 
           // Update number of instances that we want
-          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
         }
 
         return result;
@@ -370,7 +370,7 @@ public class Dispatcher : IBackgroundDispatcher
       {
         Interlocked.Decrement(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
 
         // We loop around because there may be more expired requests to discard
       }
@@ -398,7 +398,7 @@ public class Dispatcher : IBackgroundDispatcher
     // Tell the scaler about the number of running instances
     if (result.Connection != null && result.Connection.FirstConnectionForInstance)
     {
-      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
     }
 
     return result;
@@ -484,7 +484,7 @@ public class Dispatcher : IBackgroundDispatcher
                 // The pending request at front of queue was canceled, we're removing it
                 Interlocked.Decrement(ref _pendingRequestCount);
                 MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-                _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+                _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
               }
               else
               {
@@ -496,7 +496,7 @@ public class Dispatcher : IBackgroundDispatcher
           }
 
           // Start more instances if needed
-          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
           return false;
         }
 
@@ -505,7 +505,7 @@ public class Dispatcher : IBackgroundDispatcher
         {
           Interlocked.Decrement(ref _pendingRequestCount);
           MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
         }
         else if (pendingRequest != null)
         {
@@ -533,7 +533,7 @@ public class Dispatcher : IBackgroundDispatcher
           MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
           // Update number of instances that we want
-          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
 
           // Do not await this, let it loop around
           _ = lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ContinueWith(async Task (task) =>
@@ -549,7 +549,7 @@ public class Dispatcher : IBackgroundDispatcher
             MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
 
             // Update number of instances that we want
-            _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount);
+            _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA);
 
             // Handle the exception
             if (task.IsFaulted)

@@ -9,6 +9,10 @@ public struct LambdaInstanceCapacityMessage
 {
   public int PendingRequests { get; set; }
   public int RunningRequests { get; set; }
+
+  public double RequestsPerSecondEWMA { get; set; }
+
+  public double RequestDurationEWMA { get; set; }
 }
 
 public interface ILambdaInstanceManager
@@ -27,7 +31,7 @@ public interface ILambdaInstanceManager
   void DebugAddInstance(string instanceId);
 #endif
 
-  void UpdateDesiredCapacity(int pendingRequests, int runningRequests);
+  void UpdateDesiredCapacity(int pendingRequests, int runningRequests, double requestsPerSecondEWMA, double requestDurationEWMA);
 
   Task CloseInstance(ILambdaInstance instance, bool lambdaInitiated = false);
 }
@@ -232,6 +236,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var message = await _capacityChannel.Reader.ReadAsync(cts.Token);
         var pendingRequests = message.PendingRequests;
         var runningRequests = message.RunningRequests;
+        var requestsPerSecondEWMA = message.RequestsPerSecondEWMA;
+        var requestDurationEWMA = message.RequestDurationEWMA;
 
         // Mark that we read a message
         noMessagesRead = false;
@@ -246,6 +252,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         {
           pendingRequests = nextMessage.PendingRequests;
           runningRequests = nextMessage.RunningRequests;
+          requestsPerSecondEWMA = nextMessage.RequestsPerSecondEWMA;
+          requestDurationEWMA = nextMessage.RequestDurationEWMA;
 
           trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
         }
@@ -258,6 +266,19 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var newDesiredInstanceCount = averageCount == 0
           || (messagesToRead != 0 && pendingRequests == 0 && runningRequests == 0)
             ? 0 : (int)Math.Ceiling(averageCount);
+
+        // Override the simple scale-from zero logic (which uses running and pending requests only)
+        // with the EWMA data, if available
+        if (newDesiredInstanceCount != 0
+            && requestsPerSecondEWMA > 0 && Math.Max(requestDurationEWMA, 0.1) > 0)
+        {
+          // Calculate the desired count
+          var requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * _maxConcurrentCount;
+          var oldDesiredInstanceCount = newDesiredInstanceCount;
+          newDesiredInstanceCount = (int)Math.Ceiling(requestsPerSecondEWMA / requestsPerSecondPerLambda);
+          // _logger.LogDebug("ManageCapacity - Using EWMA data, newDesiredInstanceCount {newDesiredInstanceCount}, oldDesiredInstanceCount {oldDesiredInstanceCount}, requestsPerSecondEWMA {requestsPerSecondEWMA}, requestDurationEWMA {requestDurationEWMA}, requestsPerSecondPerLambda {requestsPerSecondPerLambda}",
+          // newDesiredInstanceCount, oldDesiredInstanceCount, Math.Round(requestsPerSecondEWMA, 1), Math.Round(requestDurationEWMA, 1), Math.Round(requestsPerSecondPerLambda, 1));
+        }
 
         //
         // Locking instance counts - Do not do anything Async / IO in this block
@@ -412,21 +433,16 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
   }
 
-  public void UpdateDesiredCapacity(int pendingRequests, int runningRequests)
+  public void UpdateDesiredCapacity(int pendingRequests, int runningRequests, double requestsPerSecondEWMA, double requestDurationEWMA)
   {
-    // In the nominal case of the right amount of capacity, we avoid writing to the channel
-    // if (ComputeDesiredInstanceCount(pendingRequests, runningRequests) == _desiredInstanceCount)
-    // {
-    //   // Nothing to do
-    //   return;
-    // }
-
     // Send the message to the channel
     // This will return immediately because we drop any prior message and only keep the latest
     _capacityChannel.Writer.TryWrite(new LambdaInstanceCapacityMessage()
     {
       PendingRequests = pendingRequests,
-      RunningRequests = runningRequests
+      RunningRequests = runningRequests,
+      RequestsPerSecondEWMA = requestsPerSecondEWMA,
+      RequestDurationEWMA = requestDurationEWMA,
     });
   }
 
