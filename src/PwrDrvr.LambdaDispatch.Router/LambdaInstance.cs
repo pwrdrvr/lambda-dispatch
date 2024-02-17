@@ -4,6 +4,7 @@ using PwrDrvr.LambdaDispatch.Messages;
 using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -25,10 +26,11 @@ public enum LambdaInstanceState
   Open,
 
   /// <summary>
-  /// The Lambda is waiting to be replaced
-  /// before starting to close connections
+  /// The Lambda is being evaluated for closing
+  /// The lambda will either wait to be replaced
+  /// or immediately proceed to closing
   /// </summary>
-  Replacing,
+  Draining,
 
   /// <summary>
   /// The Lambda is closing down
@@ -45,7 +47,7 @@ public enum LambdaInstanceState
 
 public struct TransitionResult
 {
-  public bool TransitionedToClosing { get; set; }
+  public bool TransitionedToDraining { get; set; }
   public bool WasOpened { get; set; }
   public bool OpenWasRejected { get; set; }
 }
@@ -96,6 +98,11 @@ public interface ILambdaInstance
   bool Replacing { get; set; }
 
   /// <summary>
+  /// Duration that the close can be delayed as determined by the LambdaInstanceManager
+  /// </summary>
+  TimeSpan AllowedDrainingDelay { get; set; }
+
+  /// <summary>
   /// If true, the Lambda Instance close was initiated by the Lambda itself
   /// </summary>
   public bool LamdbdaInitiatedClose { get; }
@@ -139,11 +146,11 @@ public interface ILambdaInstance
   bool InvokeCompleted();
 
   /// <summary>
-  /// Destructive - Transitions to the Closing state
-  /// if not already in Closing or Closed
+  /// Destructive - Transitions to the Draining state
+  /// if not already in Draining, Closing, or Closed
   /// </summary>
   /// <returns>Whether the transition was successful</returns>
-  TransitionResult TransitionToClosing();
+  TransitionResult TransitionToDraining();
 
   bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
 
@@ -164,7 +171,7 @@ public class LambdaInstance : ILambdaInstance
 {
   private readonly ILogger<LambdaInstance> _logger = LoggerInstance.CreateLogger<LambdaInstance>();
 
-  private readonly DateTime _startTime = DateTime.Now;
+  private readonly Stopwatch _startTime = new();
 
   /// <summary>
   /// Raised when the Lambda Instance has completed it's invocation
@@ -183,11 +190,13 @@ public class LambdaInstance : ILambdaInstance
 
   public bool Replacing { get; set; }
 
+  public TimeSpan AllowedDrainingDelay { get; set; } = TimeSpan.Zero;
+
   public bool IsOpen
   {
     get
     {
-      return State == LambdaInstanceState.Open || State == LambdaInstanceState.Replacing;
+      return State == LambdaInstanceState.Open || State == LambdaInstanceState.Draining;
     }
   }
 
@@ -377,7 +386,7 @@ public class LambdaInstance : ILambdaInstance
           firstConnectionForInstance = true;
           // Signal that we are open
           WasOpened = true;
-          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
+          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
           OnOpen?.Invoke(this);
         }
       }
@@ -595,27 +604,27 @@ public class LambdaInstance : ILambdaInstance
     return releasedConnectionCount;
   }
 
-  public TransitionResult TransitionToClosing(bool replacing = false)
+  public TransitionResult TransitionToDraining()
   {
     lock (stateLock)
     {
-      if (State == LambdaInstanceState.Replacing
+      if (State == LambdaInstanceState.Draining
           || State == LambdaInstanceState.Closing
           || State == LambdaInstanceState.Closed)
       {
         // Already closing
         return new TransitionResult
         {
-          TransitionedToClosing = false,
+          TransitionedToDraining = false,
           WasOpened = WasOpened,
           OpenWasRejected = OpenWasRejected
         };
       }
 
-      State = LambdaInstanceState.Closing;
+      State = LambdaInstanceState.Draining;
       return new TransitionResult
       {
-        TransitionedToClosing = true,
+        TransitionedToDraining = true,
         WasOpened = WasOpened,
         OpenWasRejected = OpenWasRejected
       };
@@ -643,7 +652,7 @@ public class LambdaInstance : ILambdaInstance
   public async Task Close(bool doNotReplace = false, bool lambdaInitiated = false, bool openWasRejected = false)
   {
     // Ignore if already closing
-    if (!TransitionToClosing().TransitionedToClosing)
+    if (!TransitionToDraining().TransitionedToDraining)
     {
       // Already closing
       return;
@@ -668,8 +677,24 @@ public class LambdaInstance : ILambdaInstance
 
     if (Replacing)
     {
-      // Wait for this instance to be replaced
-      await Task.Delay(500);
+      // Check if the instances likely hit its deadline rather than being closed for being idle
+      if (_startTime.Elapsed > TimeSpan.FromSeconds(10))
+      {
+        // Wait 10% of the elapsed time or up to 5 seconds for a replacement
+        var waitTime = TimeSpan.FromSeconds(Math.Min(_startTime.Elapsed.TotalSeconds * 0.1, 5));
+        _logger.LogInformation("Close - Waiting for replacement for LambdaId: {LambdaId}, WaitTime: {WaitTime} ms", Id, (int)waitTime.TotalMilliseconds);
+        await Task.Delay(waitTime);
+      }
+    }
+
+    // Flip all instances from Draining to Closing here
+    // We either waited or didn't
+    lock (stateLock)
+    {
+      if (State == LambdaInstanceState.Draining)
+      {
+        State = LambdaInstanceState.Closing;
+      }
     }
 
     // We do this in the background so the Lambda can exit as soon as the last
@@ -855,6 +880,7 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // Should not wait here as we will not get a response until the Lambda is done
+    _startTime.Start();
     var invokeTask = LambdaClient.InvokeAsync(request);
 
     // Handle completion of the task

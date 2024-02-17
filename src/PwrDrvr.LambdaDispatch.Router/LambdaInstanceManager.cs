@@ -655,12 +655,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       {
         lock (_instanceCountLock)
         {
-          var transitionResult = instance.TransitionToClosing();
+          var transitionResult = instance.TransitionToDraining();
 
           // If the instance just returned but was not marked as closing,
           // then we should not decrement the stopping count.
           // But if Closing was initiated then we should decrement the count.
-          if (!transitionResult.TransitionedToClosing)
+          if (!transitionResult.TransitionedToDraining)
           {
             _stoppingInstanceCount--;
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
@@ -698,7 +698,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           _instances.TryRemove(instance.Id, out var instanceFromList);
 
           // We don't want to wait for this, let it happen in the background
-          if (transitionResult.TransitionedToClosing)
+          if (transitionResult.TransitionedToDraining)
           {
             // We were the first to notice the close - the close was not initiated by the router
             // but by a faulted invoke
