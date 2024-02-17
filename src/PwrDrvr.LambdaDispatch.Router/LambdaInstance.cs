@@ -382,6 +382,10 @@ public class LambdaInstance : ILambdaInstance
     }
     else
     {
+      //
+      // IMMEDIATE DISPATCH - We're going to try to use this right now
+      //
+      var canUseNow = false;
       lock (requestCountLock)
       {
         // Only allow the immediate dispatch if we have room for it
@@ -391,12 +395,21 @@ public class LambdaInstance : ILambdaInstance
           // The connection is being immediately used
           // Need to track the outstanding request
           outstandingRequestCount++;
-        }
-        else
-        {
-          return null;
+          canUseNow = true;
         }
       }
+
+      if (!canUseNow)
+      {
+        // We are not allowed to use this right now
+        // Enqueue the connection for later use
+        await response.StartAsync();
+
+        Interlocked.Increment(ref internalActualAvailableConnectionCount);
+        connectionQueue.Enqueue(connection);
+        return null;
+      }
+
       // Add handler to register the decrement of outstanding requests
       TryGetConnectionWillUse(connection);
     }
