@@ -280,7 +280,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         if (requestsPerSecondEWMA > 0 && Math.Max(requestDurationEWMA, 0.1) > 0)
         {
           // Calculate the desired count
-          requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * _maxConcurrentCount;
+          var targetConcurrentRequestsPerInstance = (int)Math.Ceiling((double)_maxConcurrentCount / _instanceCountMultiplier);
+          requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * targetConcurrentRequestsPerInstance;
           var oldDesiredInstanceCount = newDesiredInstanceCount;
           ewmaScalerDesiredInstanceCount = (int)Math.Ceiling(requestsPerSecondEWMA / (double)requestsPerSecondPerLambda);
           newDesiredInstanceCount = (int)ewmaScalerDesiredInstanceCount;
