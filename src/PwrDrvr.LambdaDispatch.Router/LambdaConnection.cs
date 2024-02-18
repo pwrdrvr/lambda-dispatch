@@ -80,7 +80,7 @@ public class LambdaConnection
     // Handle an abnormal connection termination
     Request.HttpContext.RequestAborted.Register(() =>
     {
-      _logger.LogWarning("LambdaId: {}, ChannelId: {} - ProxyRequestToLambda - Incoming request aborted", Instance.Id, ChannelId);
+      _logger.LogWarning("LambdaId: {}, ChannelId: {} - LambdaConnection - Incoming request aborted", Instance.Id, ChannelId);
 
       Instance.ConnectionClosed(State == LambdaConnectionState.Busy);
 
@@ -120,9 +120,14 @@ public class LambdaConnection
       // as 200 if this connection was in the queue
       // There will either be no subsequent connection or it will
       // get immediately rejected with a 409
-      await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
-      await Response.CompleteAsync();
-      try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
+      try
+      {
+        await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
+        await Response.CompleteAsync();
+        try { await Request.Body.CopyToAsync(Stream.Null); }
+        catch { try { Request.HttpContext.Abort(); } catch { } }
+      }
+      catch { try { Request.HttpContext.Abort(); } catch { } }
     }
     finally
     {
@@ -309,21 +314,16 @@ public class LambdaConnection
           }
         }
 
-        // We have to abort the connection for HTTP/1.1 or the stream
-        // for HTTP2 because we don't know if we sent or finished the whole
-        // request or not.
-        try { Request.HttpContext.Abort(); } catch { }
-
-        // Just in case anything is still stuck
-        CTS.Cancel();
-
         throw;
       }
     }
     catch
     {
-      // This happens when one of the tasks throws an exception in the second await
+      // We have to abort the connection for HTTP/1.1 or the stream
+      // for HTTP2 because we don't know if we sent or finished the whole
+      // request or not.
       try { Request.HttpContext.Abort(); } catch { }
+      try { Response.HttpContext.Abort(); } catch { }
 
       // Just in case anything is still stuck
       CTS.Cancel();
@@ -511,6 +511,21 @@ public class LambdaConnection
       // We do what an AWS ALB does which is to send a 502 status code
       // and close the connection
       _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, incomingRequest.Path);
+      try
+      {// Clear the headers
+        incomingResponse.Headers.Clear();
+        // Set the status code
+        incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
+      }
+      catch { }
+      // Close the response from the extension
+      try { Request.HttpContext.Abort(); } catch { }
+      // Close the response to the client
+      try { await incomingResponse.CompleteAsync(); }
+      catch
+      {
+        try { incomingResponse.HttpContext.Abort(); } catch { }
+      }
       throw;
     }
     finally
