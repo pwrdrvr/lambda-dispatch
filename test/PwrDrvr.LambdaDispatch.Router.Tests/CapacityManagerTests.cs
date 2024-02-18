@@ -56,6 +56,8 @@ public class CapacityManagerTests
   [TestCase(2, 10, 0, 0.33, 0.33, ExpectedResult = 6)]
   [TestCase(0, 1, 5, 0.33, 0.33, ExpectedResult = 0)]
   [TestCase(13, 30, 5, 0.33, 0.33, ExpectedResult = 20)]
+  [TestCase(0, 400, 5, 0.33, 0.33, ExpectedResult = 0)]
+  [TestCase(0, 4, 5, 0.1, 0.1, ExpectedResult = 0)]
   public int ConstrainDesiredInstanceCount_ReturnsExpectedResult(
     int proposedDesiredInstanceCount, int currentDesiredInstanceCount,
       int maxScaleOut, double maxScaleOutRatio, double maxScaleInRatio)

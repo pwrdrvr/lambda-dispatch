@@ -62,6 +62,12 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
     int maxScaleInChange
       = Math.Max(maxScaleOut, (int)Math.Ceiling(currentDesiredInstanceCount * maxScaleInRatio));
 
+    // We always allow scaling to 0
+    if (proposedDesiredInstanceCount == 0)
+    {
+      return 0;
+    }
+
     // Calculate the proposed change
     int proposedChange = proposedDesiredInstanceCount - currentDesiredInstanceCount;
 

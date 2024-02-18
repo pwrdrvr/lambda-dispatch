@@ -191,7 +191,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   private async Task ManageCapacity()
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
-    var trailingAverage = new TrailingAverage();
     var scaleTokenBucket = new TokenBucket(2, TimeSpan.FromMilliseconds(1000));
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
     int? deferredScaleInNewDesiredInstanceCount = null;
@@ -222,8 +221,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var requestsPerSecondEWMA = message.RequestsPerSecondEWMA;
         var requestDurationEWMA = message.RequestDurationEWMA;
 
-        trailingAverage.Add(_capacityManager.SimpleDesiredInstanceCount(pendingRequests, runningRequests));
-
         // Rip through any other messages, up to a limit of 100
         // But keep reading if we keep ending on a message with no pending or running requests
         var messagesToRead = 100;
@@ -234,22 +231,17 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           runningRequests = nextMessage.RunningRequests;
           requestsPerSecondEWMA = nextMessage.RequestsPerSecondEWMA;
           requestDurationEWMA = nextMessage.RequestDurationEWMA;
-
-          trailingAverage.Add(_capacityManager.SimpleDesiredInstanceCount(pendingRequests, runningRequests));
         }
 
-        var averageCount = trailingAverage.Average;
-        // If the entire average count is 0 then we want 0 instances
-        // OR: If there we read all the messages and there are no pending or running requests
-        //     in the last read message then we want 0 instances - this helps avoid
-        //     5 second waits to stop instances when load disappears
+        // Start with the simple count
         var simpleScalerDesiredInstanceCount = _capacityManager.SimpleDesiredInstanceCount(pendingRequests, runningRequests);
         var newDesiredInstanceCount = simpleScalerDesiredInstanceCount;
 
         // Override the simple scale-from zero logic (which uses running and pending requests only)
         // with the EWMA data, if available
         int? ewmaScalerDesiredInstanceCount = null;
-        if (requestsPerSecondEWMA > 0 && requestDurationEWMA > 0)
+        if (simpleScalerDesiredInstanceCount != 0
+            && requestsPerSecondEWMA > 0 && requestDurationEWMA > 0)
         {
           newDesiredInstanceCount = _capacityManager.EwmaDesiredInstanceCount(requestsPerSecondEWMA, requestDurationEWMA);
           ewmaScalerDesiredInstanceCount = newDesiredInstanceCount;
@@ -260,24 +252,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         //
         lock (_instanceCountLock)
         {
-          // Calculate the maximum allowed change
-          int maxScaleOutChange = Math.Max(maxScaleOut, (int)Math.Ceiling(_desiredInstanceCount * maxScaleOutPercent));
-          int maxScaleInChange = Math.Max(maxScaleOut, (int)Math.Ceiling(_desiredInstanceCount * maxScaleInPercent));
-
-          // Calculate the proposed change
-          int proposedChange = newDesiredInstanceCount - _desiredInstanceCount;
-
-          // If the proposed change is greater than the maximum allowed change, adjust newDesiredInstanceCount
-          if (proposedChange > maxScaleOutChange)
-          {
-            newDesiredInstanceCount = _desiredInstanceCount + maxScaleOutChange;
-          }
-
-          // If the proposed change is less than the negative of the maximum allowed change, adjust newDesiredInstanceCount
-          if (proposedChange < -maxScaleInChange)
-          {
-            newDesiredInstanceCount = _desiredInstanceCount - maxScaleInChange;
-          }
+          newDesiredInstanceCount = _capacityManager.ConstrainDesiredInstanceCount(
+            newDesiredInstanceCount, _desiredInstanceCount, maxScaleOut, maxScaleOutPercent, maxScaleInPercent);
 
           // If we are already at the desired count and we have no starting instances, then we are done
           if (!deferredScaleInNewDesiredInstanceCount.HasValue
