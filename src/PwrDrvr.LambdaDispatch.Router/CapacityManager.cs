@@ -21,15 +21,11 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
     var targetConcurrentRequestsPerInstance
       = (int)Math.Ceiling((double)_maxConcurrentCount / _instanceCountMultiplier);
 
-    // Calculate how many extra connections we'll have for the "running" instances
-    var surplusConcurrentRequestsPerInstance
-      = _maxConcurrentCount - targetConcurrentRequestsPerInstance;
-
     // Calculate the desired count
     // We have to have enough capacity for the currently running requests
     // For running requests we want to try to keep the instances at their target concurrent requests
     var requiredRunningCount
-      = cleanRunningRequests / targetConcurrentRequestsPerInstance;
+      = (double)cleanRunningRequests / targetConcurrentRequestsPerInstance;
 
     // We want to be able to dispatch a portion of the pending requests
     // For pending requests, the dispacher will chew up all the connections, not just the target ones
@@ -37,7 +33,7 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
     // If we really start building a queue the EWMA scaler will kick in
     // Also as these shift over to running they will cause further scale up if they stick around
     var pendingDispatchCount
-      = cleanPendingRequests / _maxConcurrentCount * .5;
+      = (double)cleanPendingRequests / _maxConcurrentCount * .5;
 
     return (int)Math.Ceiling(requiredRunningCount + pendingDispatchCount);
   }

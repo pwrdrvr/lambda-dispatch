@@ -40,6 +40,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 {
   private readonly ILogger<LambdaInstanceManager> _logger = LoggerInstance.CreateLogger<LambdaInstanceManager>();
 
+  private readonly CapacityManager _capacityManager;
+
   private readonly LeastOutstandingQueue _leastOutstandingQueue;
 
   private IBackgroundDispatcher? _dispatcher;
@@ -105,6 +107,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     _functionName = config.FunctionNameOnly;
     _functionNameQualifier = config.FunctionNameQualifier;
     _metricsLogger = metricsLogger;
+    _capacityManager = new(_maxConcurrentCount, _instanceCountMultiplier);
 
     // Start the capacity manager
     Task.Factory.StartNew(ManageCapacity, TaskCreationOptions.LongRunning);
@@ -243,7 +246,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var requestsPerSecondEWMA = message.RequestsPerSecondEWMA;
         var requestDurationEWMA = message.RequestDurationEWMA;
 
-        trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
+        trailingAverage.Add(_capacityManager.SimpleDesiredInstanceCount(pendingRequests, runningRequests));
 
         // Rip through any other messages, up to a limit of 100
         // But keep reading if we keep ending on a message with no pending or running requests
@@ -256,7 +259,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           requestsPerSecondEWMA = nextMessage.RequestsPerSecondEWMA;
           requestDurationEWMA = nextMessage.RequestDurationEWMA;
 
-          trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
+          trailingAverage.Add(_capacityManager.SimpleDesiredInstanceCount(pendingRequests, runningRequests));
         }
 
         var averageCount = trailingAverage.Average;
