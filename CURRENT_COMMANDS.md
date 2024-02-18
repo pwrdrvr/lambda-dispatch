@@ -26,7 +26,8 @@ aws ecr get-login-password --region us-east-2 | docker login --username AWS --pa
 
 docker build --build-arg GIT_HASH=$(git rev-parse --short HEAD) --build-arg BUILD_TIME="$(date)" --file DockerfileRouter -t lambda-dispatch-router . && \
 docker tag lambda-dispatch-router:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest && \
-docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router:latest && \
+date
 
 # d-router - fix-scale-down-timer branch
 
@@ -37,7 +38,8 @@ BUILD_TIME=$(date) GIT_HASH=$(git rev-parse --short HEAD) LAMBDA_DISPATCH_MaxWor
 docker build --file DockerfileExtension -t lambda-dispatch-extension . && \
 docker build --file DockerfileLambdaDemoApp -t lambda-dispatch-demo-app . && \
 docker tag lambda-dispatch-demo-app:latest 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest && \
-docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest
+docker push 220761759939.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app:latest && \
+date
 
 # killall
 
