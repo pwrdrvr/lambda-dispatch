@@ -4,7 +4,15 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
 {
   private readonly int _maxConcurrentCount = maxConcurrentCount;
   private readonly int _instanceCountMultiplier = instanceCountMultiplier;
+  private readonly int _targetConcurrentRequestsPerInstance
+    = (int)Math.Ceiling((double)maxConcurrentCount / instanceCountMultiplier);
 
+  /// <summary>
+  /// Calculate the desired instance count based on the number of pending and running requests
+  /// </summary>
+  /// <param name="pendingRequests"></param>
+  /// <param name="runningRequests"></param>
+  /// <returns></returns>
   public int SimpleDesiredInstanceCount(int pendingRequests, int runningRequests)
   {
     // Calculate the desired count
@@ -17,15 +25,11 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
       return 0;
     }
 
-    // Calculate the target concurrent requests per instance
-    var targetConcurrentRequestsPerInstance
-      = (int)Math.Ceiling((double)_maxConcurrentCount / _instanceCountMultiplier);
-
     // Calculate the desired count
     // We have to have enough capacity for the currently running requests
     // For running requests we want to try to keep the instances at their target concurrent requests
     var requiredRunningCount
-      = (double)cleanRunningRequests / targetConcurrentRequestsPerInstance;
+      = (double)cleanRunningRequests / _targetConcurrentRequestsPerInstance;
 
     // We want to be able to dispatch a portion of the pending requests
     // For pending requests, the dispacher will chew up all the connections, not just the target ones
@@ -36,6 +40,17 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
       = (double)cleanPendingRequests / _maxConcurrentCount * .5;
 
     return (int)Math.Ceiling(requiredRunningCount + pendingDispatchCount);
+  }
+
+  public int EwmaDesiredInstanceCount(double requestsPerSecondEWMA, double requestDurationEWMA)
+  {
+    double requestsPerSecondPerLambda
+      = 1000 / Math.Max(2, requestDurationEWMA) * _targetConcurrentRequestsPerInstance;
+
+    var ewmaScalerDesiredInstanceCount
+      = (int)Math.Ceiling(requestsPerSecondEWMA / requestsPerSecondPerLambda);
+
+    return ewmaScalerDesiredInstanceCount;
   }
 
   // public bool ManageCapacity(out int desiredInstanceCount,

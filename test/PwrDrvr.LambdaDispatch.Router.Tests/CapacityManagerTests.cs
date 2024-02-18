@@ -20,4 +20,24 @@ public class CapacityManagerTests
     var capacityManager = new CapacityManager(maxConcurrentCount, instanceCountMultiplier);
     return capacityManager.SimpleDesiredInstanceCount(pendingRequests, runningRequests);
   }
+
+  [TestCase(0, 0, 0, 0, ExpectedResult = 0)]
+  [TestCase(10, 2, 0, 0, ExpectedResult = 0)]
+  [TestCase(10, 2, 1, 0, ExpectedResult = 1)]
+  [TestCase(10, 2, 1, 1, ExpectedResult = 1)]
+  [TestCase(10, 2, 1, 1500, ExpectedResult = 1)]
+  [TestCase(10, 2, 1, 59500, ExpectedResult = 12)]
+  [TestCase(10, 2, 3000, 21, ExpectedResult = 13)]
+  [TestCase(10, 2, 3000, 6, ExpectedResult = 4)]
+  [TestCase(1, 1, 1, 1, ExpectedResult = 1)]
+  [TestCase(10, 5, 2, 2, ExpectedResult = 1)]
+  [TestCase(20, 10, 5, 2, ExpectedResult = 1)]
+  [TestCase(10, 2, 100, 2, ExpectedResult = 1)]
+  [TestCase(20, 4, 1000, 100, ExpectedResult = 20)]
+  public int EwmaDesiredInstanceCount_ReturnsExpectedResult(
+   int maxConcurrentCount, int instanceCountMultiplier, double requestsPerSecondEWMA, double requestDurationEWMA)
+  {
+    var capacityManager = new CapacityManager(maxConcurrentCount, instanceCountMultiplier);
+    return capacityManager.EwmaDesiredInstanceCount(requestsPerSecondEWMA, requestDurationEWMA);
+  }
 }

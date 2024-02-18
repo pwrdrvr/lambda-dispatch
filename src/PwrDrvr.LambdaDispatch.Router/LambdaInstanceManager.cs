@@ -188,30 +188,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     return null;
   }
 
-  private int ComputeDesiredInstanceCount(int pendingRequests, int runningRequests)
-  {
-    // Calculate the desired count
-    var cleanPendingRequests = Math.Max(pendingRequests, 0);
-    var cleanRunningRequests = Math.Max(runningRequests, 0);
-
-    // Calculate the target concurrent requests per instance
-    var targetConcurrentRequestsPerInstance = (int)Math.Ceiling((double)_maxConcurrentCount / _instanceCountMultiplier);
-
-    // Calculate the desired count
-    var totalDesiredRequestCapacity = cleanPendingRequests + cleanRunningRequests;
-    var desiredInstanceCount = (int)Math.Ceiling((double)totalDesiredRequestCapacity / targetConcurrentRequestsPerInstance);
-
-    // Special case for 0 pending or running requests
-    if (cleanPendingRequests == 0 && cleanRunningRequests == 0)
-    {
-      desiredInstanceCount = 0;
-    }
-
-    return desiredInstanceCount;
-  }
-
-  // TODO: This should project excess capacity and not use 100% of max capacity at all times
-  // TODO: This should not start new instances for pending requests at a 1/1 ratio but rather something less than that
   private async Task ManageCapacity()
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
@@ -285,9 +261,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           ewmaScalerDesiredInstanceCount = (int)Math.Ceiling(requestsPerSecondEWMA / (double)requestsPerSecondPerLambda);
           newDesiredInstanceCount = (int)ewmaScalerDesiredInstanceCount;
         }
-
-        // This was a temp hack before removing the 10 ms sleep in the background dispatcher
-        // newDesiredInstanceCount = (int)Math.Ceiling((double)newDesiredInstanceCount / 4);
 
         //
         // Locking instance counts - Do not do anything Async / IO in this block
