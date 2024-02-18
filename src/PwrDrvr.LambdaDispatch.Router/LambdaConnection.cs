@@ -27,6 +27,9 @@ public enum LambdaConnectionState
 
 public class LambdaConnection
 {
+  private readonly static string _gitHash = Environment.GetEnvironmentVariable("GIT_HASH") ?? "unknown";
+  private readonly static string _buildTime = Environment.GetEnvironmentVariable("BUILD_TIME") ?? "unknown";
+
   private readonly ILogger<LambdaConnection> _logger = LoggerInstance.CreateLogger<LambdaConnection>();
 
   /// <summary>
@@ -496,6 +499,10 @@ public class LambdaConnection
         // Move the start to the character after '\n'
         startOfNextLine = endOfLine + 1;
       }
+
+      // Add identifying headers
+      incomingResponse.Headers.Append("x-lambda-dispatch-version", _gitHash);
+      incomingResponse.Headers.Append("x-lambda-dispatch-build-time", _buildTime);
 
       // Flush any remaining bytes in the buffer
       if (startOfNextLine < totalBytesRead)
