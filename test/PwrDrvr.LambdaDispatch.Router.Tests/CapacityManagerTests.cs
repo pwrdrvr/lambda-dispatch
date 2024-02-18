@@ -40,4 +40,28 @@ public class CapacityManagerTests
     var capacityManager = new CapacityManager(maxConcurrentCount, instanceCountMultiplier);
     return capacityManager.EwmaDesiredInstanceCount(requestsPerSecondEWMA, requestDurationEWMA);
   }
+
+  // Scale Out Tests
+  [TestCase(0, 0, 0, 0.33, 0.33, ExpectedResult = 0)]
+  [TestCase(10, 2, 0, 0.33, 0.33, ExpectedResult = 3)]
+  [TestCase(25, 15, 5, 0.5, 0.33, ExpectedResult = 23)]
+  [TestCase(10, 2, 5, 0.33, 0.33, ExpectedResult = 7)]
+  [TestCase(10, 2, 1, 0.33, 0.33, ExpectedResult = 3)]
+  [TestCase(1, 1, 1, 0.33, 0.33, ExpectedResult = 1)]
+  [TestCase(13, 3, 2, 1, 0.33, ExpectedResult = 6)]
+  [TestCase(13, 3, 5, 1, 0.33, ExpectedResult = 8)]
+  [TestCase(20, 10, 5, 0.33, 0.33, ExpectedResult = 15)]
+  [TestCase(10, 2, 100, 0.33, 0.33, ExpectedResult = 10)]
+  // Scale In Tests
+  [TestCase(2, 10, 0, 0.33, 0.33, ExpectedResult = 6)]
+  [TestCase(0, 1, 5, 0.33, 0.33, ExpectedResult = 0)]
+  [TestCase(13, 30, 5, 0.33, 0.33, ExpectedResult = 20)]
+  public int ConstrainDesiredInstanceCount_ReturnsExpectedResult(
+    int proposedDesiredInstanceCount, int currentDesiredInstanceCount,
+      int maxScaleOut, double maxScaleOutRatio, double maxScaleInRatio)
+  {
+    var capacityManager = new CapacityManager(10, 2);
+    return capacityManager.ConstrainDesiredInstanceCount(proposedDesiredInstanceCount, currentDesiredInstanceCount,
+      maxScaleOut, maxScaleOutRatio, maxScaleInRatio);
+  }
 }
