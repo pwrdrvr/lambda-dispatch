@@ -330,6 +330,9 @@ public class Dispatcher : IBackgroundDispatcher
   /// </summary>
   private void BackgroundPendingRequestDispatcher()
   {
+    var capacityMessageInterval = TimeSpan.FromMilliseconds(250);
+    var swLastCapacityMessage = Stopwatch.StartNew();
+
     while (true)
     {
       // Wait for the signal or 1 second
@@ -347,10 +350,13 @@ public class Dispatcher : IBackgroundDispatcher
         }
         else
         {
+          var anyDispatched = false;
+
           // We check here for connections that have snuck by the pending queue
           while (_lambdaInstanceManager.TryGetConnection(out connection, tentative: true)
                   && TryGetPendingRequestAndDispatch(connection))
           {
+            anyDispatched = true;
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
 
             // We don't want to starve the LOQ, so we need to check if some connections need to move over
@@ -358,6 +364,19 @@ public class Dispatcher : IBackgroundDispatcher
             {
               _lambdaInstanceManager.ReenqueueUnusedConnection(connection, connection.Instance.Id);
             }
+          }
+
+          if (anyDispatched)
+          {
+            // We dispatched some requests, so we should check the capacity
+            swLastCapacityMessage.Restart();
+          }
+          else if (swLastCapacityMessage.Elapsed > capacityMessageInterval)
+          {
+            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
+            _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+            swLastCapacityMessage.Restart();
           }
         }
       }

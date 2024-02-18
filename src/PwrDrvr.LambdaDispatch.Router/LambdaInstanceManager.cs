@@ -215,7 +215,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     var trailingAverage = new TrailingAverage();
     var scaleTokenBucket = new TokenBucket(2, TimeSpan.FromMilliseconds(1000));
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-    var noMessagesRead = true;
     int? deferredScaleInNewDesiredInstanceCount = null;
     const int maxScaleOut = 5;
     const double maxScaleOutPercent = .33;
@@ -243,9 +242,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var runningRequests = message.RunningRequests;
         var requestsPerSecondEWMA = message.RequestsPerSecondEWMA;
         var requestDurationEWMA = message.RequestDurationEWMA;
-
-        // Mark that we read a message
-        noMessagesRead = false;
 
         trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
 
@@ -461,15 +457,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             // Clear the deferred value
             deferredScaleInNewDesiredInstanceCount = null;
           }
-          else if (noMessagesRead && _desiredInstanceCount > 0)
-          {
-            // When no messages were read it means we need zero capacity
-            _logger.LogDebug("ManageCapacity - No messages read, setting desired count to 0");
-            _desiredInstanceCount = 0;
-            _metricsLogger.PutMetric("LambdaDesiredCount", 0, Unit.Count);
-            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
-          }
-          noMessagesRead = true;
 
           // Time to check if we can reduce capacity
 
