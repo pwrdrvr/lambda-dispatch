@@ -277,11 +277,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
         // Override the simple scale-from zero logic (which uses running and pending requests only)
         // with the EWMA data, if available
-        if (requestsPerSecondEWMA > 0 && Math.Max(requestDurationEWMA, 0.1) > 0)
+        if (requestsPerSecondEWMA > 0 && requestDurationEWMA > 0)
         {
           // Calculate the desired count
           var targetConcurrentRequestsPerInstance = (int)Math.Ceiling((double)_maxConcurrentCount / _instanceCountMultiplier);
-          requestsPerSecondPerLambda = 1000 / Math.Max(requestDurationEWMA, 0.1) * targetConcurrentRequestsPerInstance;
+          requestsPerSecondPerLambda = 1000 / requestDurationEWMA * targetConcurrentRequestsPerInstance;
           var oldDesiredInstanceCount = newDesiredInstanceCount;
           ewmaScalerDesiredInstanceCount = (int)Math.Ceiling(requestsPerSecondEWMA / (double)requestsPerSecondPerLambda);
           newDesiredInstanceCount = (int)ewmaScalerDesiredInstanceCount;
@@ -296,8 +296,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         lock (_instanceCountLock)
         {
           // Calculate the maximum allowed change
-          int maxScaleOutChange = Math.Max(1, Math.Min((int)Math.Ceiling(_desiredInstanceCount * maxScaleOutPercent), maxScaleOut));
-          int maxScaleInChange = Math.Max(1, (int)Math.Ceiling(_desiredInstanceCount * maxScaleInPercent));
+          int maxScaleOutChange = Math.Max(maxScaleOut, (int)Math.Ceiling(_desiredInstanceCount * maxScaleOutPercent));
+          int maxScaleInChange = Math.Max(maxScaleOut, (int)Math.Ceiling(_desiredInstanceCount * maxScaleInPercent));
 
           // Calculate the proposed change
           int proposedChange = newDesiredInstanceCount - _desiredInstanceCount;
