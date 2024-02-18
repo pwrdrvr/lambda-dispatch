@@ -143,7 +143,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
     else
     {
-      _logger.LogWarning("ReenqueueUnusedConnection - Connection added to Lambda Instance {lambdaId} that does not exist - closing with 409", lambdaId);
+      _logger.LogWarning("ReenqueueUnusedConnection - Connection added to Lambda that does not exist - closing with 409, LambdaId: {LambdaId}, ChannelId: {ChannelId}", lambdaId, connection.ChannelId);
+      _ = connection.Discard();
     }
   }
 
