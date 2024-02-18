@@ -10,7 +10,7 @@ public class WeightedAverage
 
   private readonly List<(int timestamp, long value, long count)> _data = [];
   private readonly int _windowSizeInSeconds;
-  private const double Alpha = 0.1;
+  private readonly double Alpha = 0.1;
   private double _ewma;
   private readonly bool _mean;
   private readonly Stopwatch _sw = new();
@@ -25,11 +25,18 @@ public class WeightedAverage
   /// </summary>
   /// <param name="windowSizeInSeconds"></param>
   /// <param name="mean">Compute EWMA of mean of values</param>
-  public WeightedAverage(int windowSizeInSeconds, bool mean = false)
+  public WeightedAverage(int windowSizeInSeconds, bool mean = false, double alpha = 0.9)
   {
     _mean = mean;
     _windowSizeInSeconds = windowSizeInSeconds;
     _sw.Start();
+
+    if (alpha < 0 || alpha > 1)
+    {
+      throw new ArgumentOutOfRangeException(nameof(alpha), "Alpha must be between 0 and 1");
+    }
+
+    Alpha = alpha;
 
     // Start a task to compute the average
     Task.Run(async () =>
@@ -64,12 +71,14 @@ public class WeightedAverage
             _data[0] = (first.timestamp, first.value + currentValue, first.count + currentCount);
           }
 
-          double ewma = _mean ? 0.0 : double.NaN;
+          double ewma = 0.0;
 
           // Calculate the EWMA of the counts per second
           var index = 0;
-          foreach (var (_, value, count) in _data)
+          for (int i = _data.Count - 1; i >= 0; i--)
           {
+            var (_, value, count) = _data[i];
+
             if (index == 0)
             {
               // Extrapolate data for the current second
@@ -78,7 +87,7 @@ public class WeightedAverage
                 var adj = value / proportionOfSecondElapsed;
 
                 // Start off with the first value at weight of 100%
-                ewma = adj;
+                ewma = Alpha * value + (1 - Alpha) * ewma;
               }
               else
               {
@@ -88,7 +97,7 @@ public class WeightedAverage
                 // requests and duration of other requests that finished
                 if (count > 0)
                 {
-                  ewma = value / count;
+                  ewma = Alpha * (value / count) + (1 - Alpha) * ewma;
                 }
               }
             }
