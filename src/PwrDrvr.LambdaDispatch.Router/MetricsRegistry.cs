@@ -144,6 +144,13 @@ public static class MetricsRegistry
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
+  public static readonly HistogramOptions IncomingRequestDurationAfterDispatch = new()
+  {
+    Name = "IncomingRequestDurationAfterDispatch",
+    MeasurementUnit = Unit.Custom("ms"),
+    Reservoir = () => new DefaultAlgorithmRReservoir(),
+  };
+
   public static readonly TimerOptions LambdaRequestTimer = new()
   {
     Name = "LambdaRequestTimer",

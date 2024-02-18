@@ -54,6 +54,10 @@ public class PendingRequest
 
   public void RecordDispatchTime()
   {
+    if (Dispatched)
+    {
+      return;
+    }
     Dispatched = true;
     _swDispatch.Stop();
   }
@@ -192,7 +196,9 @@ public class Dispatcher : IBackgroundDispatcher
         _incomingRequestDurationAverage.Add((long)sw.Elapsed.TotalMilliseconds * 1000);
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
         MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, sw.ElapsedMilliseconds);
+        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDurationAfterDispatch, sw.ElapsedMilliseconds);
         _metricsLogger.PutMetric("IncomingRequestDuration", Math.Round(sw.Elapsed.TotalMilliseconds, 1), Unit.Milliseconds);
+        _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(sw.Elapsed.TotalMilliseconds, 1), Unit.Milliseconds);
 
         // Tell the scaler about the lowered request count
         _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
@@ -279,6 +285,12 @@ public class Dispatcher : IBackgroundDispatcher
       return result;
     }
 
+    if (_pendingRequestCount == 0)
+    {
+      result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, dispatchMode: AddConnectionDispatchMode.Enqueue);
+      return result;
+    }
+
     // Register the connection but keep it private until the background dispatcher handles it
     result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId,
       dispatchMode: AddConnectionDispatchMode.TentativeDispatch);
@@ -340,7 +352,7 @@ public class Dispatcher : IBackgroundDispatcher
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
 
             // We don't want to starve the LOQ, so we need to check if some connections need to move over
-            while (_newConnections.TryTake(out connection))
+            if (_newConnections.TryTake(out connection))
             {
               _lambdaInstanceManager.ReenqueueUnusedConnection(connection, connection.Instance.Id);
             }
@@ -404,7 +416,7 @@ public class Dispatcher : IBackgroundDispatcher
       pendingRequest.RecordDispatchTime();
       _logger.LogDebug("Dispatching pending request");
       MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
-      _metricsLogger.PutMetric("DispatchDelay", (long)pendingRequest.DispatchDelay.TotalMilliseconds, Unit.Milliseconds);
+      _metricsLogger.PutMetric("DispatchDelay", Math.Round(pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
       if (pendingRequest.DispatchDelay > TimeSpan.FromSeconds(1))
       {
         _logger.LogWarning("Dispatching (background) pending request that has been waiting for {duration} ms", pendingRequest.DispatchDelay.TotalMilliseconds);
@@ -438,7 +450,9 @@ public class Dispatcher : IBackgroundDispatcher
         _incomingRequestDurationAverage.Add((long)pendingRequest.Duration.TotalMilliseconds * 1000);
         MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
         MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, (long)pendingRequest.Duration.TotalMilliseconds);
+        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDurationAfterDispatch, (long)(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds));
         _metricsLogger.PutMetric("IncomingRequestDuration", Math.Round(pendingRequest.Duration.TotalMilliseconds, 1), Unit.Milliseconds);
+        _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
 
         // Update number of instances that we want
         _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
