@@ -447,12 +447,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             if (deferredScaleInNewDesiredInstanceCount.Value == _desiredInstanceCount)
             {
               // Nothing to do, just go around
-              _logger.LogInformation("ManageCapacity - Skipping applying deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
+              _logger.LogInformation("ManageCapacity - Skipping performing deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
                 _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
               deferredScaleInNewDesiredInstanceCount = null;
               continue;
             }
-            _logger.LogInformation("ManageCapacity - Applying deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
+            _logger.LogInformation("ManageCapacity - Performing deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
               _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
             _metricsLogger.PutMetric("LambdaDesiredCount", 0, Unit.Count);
