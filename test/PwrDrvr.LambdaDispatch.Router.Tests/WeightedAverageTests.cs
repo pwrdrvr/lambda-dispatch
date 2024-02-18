@@ -1,3 +1,5 @@
+namespace PwrDrvr.LambdaDispatch.Router.Tests;
+
 using PwrDrvr.LambdaDispatch.Router;
 
 [TestFixture]
