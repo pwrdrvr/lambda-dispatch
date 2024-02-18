@@ -100,25 +100,34 @@ public class LambdaConnection
     });
   }
 
+  /// <summary>
+  /// Discard the connection by writing a well known request path for a goaway to the Lambda
+  /// </summary>
+  /// <returns></returns>
   public async Task Discard()
   {
-    if (State == LambdaConnectionState.Closed)
+    try
     {
-      return;
+      if (State == LambdaConnectionState.Closed)
+      {
+        return;
+      }
+
+      State = LambdaConnectionState.Closed;
+
+      // Close the connection
+      // Do not set the status code because it's already been sent
+      // as 200 if this connection was in the queue
+      // There will either be no subsequent connection or it will
+      // get immediately rejected with a 409
+      await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
+      await Response.CompleteAsync();
+      try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
     }
-
-    State = LambdaConnectionState.Closed;
-
-    // Close the connection
-    // Do not set the status code because it's already been sent
-    // as 200 if this connection was in the queue
-    // There will either be no subsequent connection or it will
-    // get immediately rejected with a 409
-    await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
-    await Response.CompleteAsync();
-    try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
-
-    TCS.SetResult();
+    finally
+    {
+      TCS.SetResult();
+    }
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
