@@ -109,7 +109,9 @@ public class Dispatcher : IBackgroundDispatcher
     _lambdaInstanceManager.AddBackgroundDispatcherReference(this);
 
     // Start the background task to process pending requests
-    Task.Run(BackgroundPendingRequestDispatcher);
+    // This needs it's own thread because BlockingCollection will block the thread
+    // and we don't want to block a ThreadPool worker thread (which we are limiting)
+    new Thread(BackgroundPendingRequestDispatcher).Start();
   }
 
   public bool PingInstance(string instanceId)
