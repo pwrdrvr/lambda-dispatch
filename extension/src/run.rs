@@ -479,7 +479,10 @@ pub async fn run(
 
   // Print final stats
   let elapsed = time::current_time_millis() - start_time;
-  let rps = count.load(Ordering::Acquire) as f64 / (elapsed as f64 / 1000.0);
+  let rps = format!(
+    "{:.1}",
+    count.load(Ordering::Acquire) as f64 / (elapsed as f64 / 1000.0)
+  );
   log::info!(
     "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {} - Returning from run",
     lambda_id,

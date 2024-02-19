@@ -56,18 +56,9 @@ pub async fn send_ping_requests(
     let rps = format!("{:.1}", count as f64 / (elapsed as f64 / 1000.0));
 
     // TODO: Compute time we should stop at based on the initial function timeout duration
-    if last_active == 0 {
-      // Don't do the exit logic since we haven't been initialized yet
-      log::info!(
-        "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Not initialized",
-        lambda_id,
-        count,
-        goaway_received.load(Ordering::Acquire),
-        requests_in_flight,
-        elapsed,
-        rps
-      );
-    } else if (last_active_ago_ms > 1 * last_active_grace_period_ms && requests_in_flight == 0)
+    if (last_active != 0
+      && last_active_ago_ms > last_active_grace_period_ms
+      && requests_in_flight == 0)
       || time::current_time_millis() + close_before_deadline_ms > deadline_ms
     {
       if last_active_ago_ms > 1 * last_active_grace_period_ms {
@@ -226,9 +217,13 @@ pub async fn send_ping_requests(
     tokio::select! {
         _ = cancel_token.cancelled() => {
           // The token was cancelled
-          log::info!("LambdaId: {}, Reqs in Flight: {} - Ping Loop - Cancelled",
+          log::info!("LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Cancelled",
             lambda_id,
-            requests_in_flight
+            count,
+            goaway_received.load(Ordering::Acquire),
+            requests_in_flight,
+            elapsed,
+            rps
           );
         }
         _ = tokio::time::sleep(Duration::from_millis(100)) => {
