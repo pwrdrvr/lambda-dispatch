@@ -12,7 +12,7 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>) {
   let app_port = app_url.port_u16().unwrap_or(80);
   let app_addr = format!("{}:{}", app_host, app_port);
 
-  while goaway_received.load(std::sync::atomic::Ordering::Relaxed) == false {
+  while goaway_received.load(std::sync::atomic::Ordering::Acquire) == false {
     // Delay 10 ms
     tokio::time::sleep(Duration::from_millis(10)).await;
 
