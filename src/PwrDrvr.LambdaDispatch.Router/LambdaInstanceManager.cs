@@ -340,9 +340,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
               MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
               _metricsLogger.PutMetric("LambdaDesiredCount", newDesiredInstanceCount, Unit.Count);
 
+              // Apply the scale out on the delta from reality to desired not on desired to desired
               var scaleOutCount = Math.Max(newDesiredInstanceCount - (_runningInstanceCount + _startingInstanceCount - _stoppingInstanceCount), 0);
-              scaleOutCount = Math.Min(scaleOutCount, maxScaleOut);
-              scaleOutCount = Math.Min(scaleOutCount, (int)Math.Ceiling(_desiredInstanceCount * maxScaleOutPercent));
               if (scaleOutCount > 0)
               {
                 _metricsLogger.PutMetric("LambdaScaleOutCount", scaleOutCount, Unit.Count);
@@ -434,8 +433,6 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           // We need to stop 80 - 50 = 30 instances, but 0 are already stopping so 30 - 0 = 30 more need to be stopped
           // At worst, we won't stop enough until the next loop.
           var scaleInCount = Math.Max(_runningInstanceCount - _stoppingInstanceCount - _desiredInstanceCount, 0);
-          scaleInCount = Math.Min(scaleInCount, maxScaleOut);
-          scaleInCount = Math.Min(scaleInCount, (int)Math.Ceiling(_desiredInstanceCount * maxScaleInPercent));
           _metricsLogger.PutMetric("LambdaScaleInCount", scaleInCount, Unit.Count);
           while (scaleInCount-- > 0)
           {
