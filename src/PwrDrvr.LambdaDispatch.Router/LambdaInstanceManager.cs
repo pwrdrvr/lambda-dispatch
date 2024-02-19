@@ -393,10 +393,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
               deferredScaleInNewDesiredInstanceCount = null;
               continue;
             }
+
             _logger.LogInformation("ManageCapacity - Performing deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
               _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
-            _metricsLogger.PutMetric("LambdaDesiredCount", 0, Unit.Count);
+            _metricsLogger.PutMetric("LambdaDesiredCount", _desiredInstanceCount, Unit.Count);
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
 
             // Clear the deferred value
@@ -435,7 +436,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
               stoppingInstances.Add(leastBusyInstance.Id, leastBusyInstance);
 
               // Close the instance
-              _logger.LogInformation("ManageCapacity - Closing least busy instance, LambdaId: {lambdaId}", leastBusyInstance.Id);
+              _logger.LogInformation("ManageCapacity - Closing least busy instance, LambdaId: {lambdaId}, OutstandingRequestCount: {}, AvailableConnectionsCount: {}, QueueApproximateCount: {}",
+                leastBusyInstance.Id, leastBusyInstance.OutstandingRequestCount, leastBusyInstance.AvailableConnectionCount, leastBusyInstance.QueueApproximateCount);
               // We are not awaiting the close
               _ = CloseInstance(leastBusyInstance);
             }
