@@ -85,7 +85,7 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 
     foreach (var meter in metricsData.Contexts.SelectMany(context => context.Meters))
     {
-      await sw.WriteLineAsync($"{meter.Name}: {meter.Value.Count} count {Math.Round(meter.Value.MeanRate, 1)} mean rate {Math.Round(meter.Value.OneMinuteRate, 1)} 1 min {Math.Round(meter.Value.FiveMinuteRate, 1)} 5 min {Math.Round(meter.Value.FifteenMinuteRate, 1)} 15 min {meter.Unit}");
+      await sw.WriteLineAsync($"{meter.Name}: {meter.Value.Count} count {Math.Round(meter.Value.MeanRate, 1)} mean rate {Math.Round(meter.Value.OneMinuteRate, 1)} 1min ewma {Math.Round(meter.Value.FiveMinuteRate, 1)} 5min ewma {Math.Round(meter.Value.FifteenMinuteRate, 1)} 15min ewma {meter.Unit}");
     }
 
     // Sort the metric text and write it to the output stream
