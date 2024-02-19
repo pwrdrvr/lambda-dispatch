@@ -544,14 +544,12 @@ public class LambdaInstance : ILambdaInstance
       {
         outstandingRequestCount--;
 
-        // // If we went from busy to non-busy, wakeup the background dispatcher
-        // if (outstandingRequestCount == MaxConcurrentCount - 1)
-        // {
-        //   if (TryGetConnection(out var newConnection, tentative: true))
-        //   {
-        //     dispatcher.WakeupBackgroundDispatcher(newConnection);
-        //   }
-        // }
+        // If we went from busy to non-busy, wakeup the background dispatcher
+        if (outstandingRequestCount == MaxConcurrentCount - 1
+            && AvailableConnectionCount > 0)
+        {
+          dispatcher.WakeupBackgroundDispatcher(null);
+        }
       }
 
       return Task.CompletedTask;

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Threading.Channels;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
@@ -69,7 +68,7 @@ public class PendingRequest
 /// </summary>
 public interface IBackgroundDispatcher
 {
-  void WakeupBackgroundDispatcher(LambdaConnection lambdaConnection);
+  void WakeupBackgroundDispatcher(LambdaConnection? connection);
 }
 
 public class Dispatcher : IBackgroundDispatcher
@@ -87,7 +86,12 @@ public class Dispatcher : IBackgroundDispatcher
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
+
+  /// <summary>
+  /// Requests that are waiting for a connection
+  /// </summary>
   private readonly BlockingCollection<PendingRequest> _pendingRequests = [];
+
   /// <summary>
   /// All connections in this queue should be available for use, marked as in use, but not yet confirmed
   /// to be used.
@@ -95,17 +99,20 @@ public class Dispatcher : IBackgroundDispatcher
   /// The background dispatcher will pick these up and either use them or add them to the LOQ using
   /// ReenqueueUnusedConnection() in that case.
   /// </summary>
-  private readonly BlockingCollection<LambdaConnection> _newConnections = [];
+  private readonly BlockingCollection<LambdaConnection?> _newConnections = [];
+
+  private readonly IShutdownSignal _shutdownSignal;
 
   // We need to keep a count of the running requests so we can set the desired count
   private volatile int _runningRequestCount = 0;
 
-  public Dispatcher(ILogger<Dispatcher> logger, IMetricsLogger metricsLogger, ILambdaInstanceManager lambdaInstanceManager)
+  public Dispatcher(ILogger<Dispatcher> logger, IMetricsLogger metricsLogger, ILambdaInstanceManager lambdaInstanceManager, IShutdownSignal shutdownSignal)
   {
     _logger = logger;
     _metricsLogger = metricsLogger;
     _logger.LogDebug("Dispatcher created");
     _lambdaInstanceManager = lambdaInstanceManager;
+    _shutdownSignal = shutdownSignal;
     _lambdaInstanceManager.AddBackgroundDispatcherReference(this);
 
     // Start the background task to process pending requests
@@ -142,10 +149,8 @@ public class Dispatcher : IBackgroundDispatcher
     MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestsWeightedAverage.EWMA);
 
     // If idle lambdas, try to get an idle lambda and dispatch immediately
-    // Note: We don't care about the pending requests, they are already on a different path
-    // We want to keep as many requests as possible on the fast path
-    // New connections will get dumped through the path that will help the background dispatcher,
-    // so everything will work out on that path
+    // If there is a queue, they are going to see the new connections before us anyway
+    // If we get a connection from the queue, it's fair game
     if (_lambdaInstanceManager.TryGetConnection(out var lambdaConnection, tentative: false))
     {
       var sw = Stopwatch.StartNew();
@@ -287,10 +292,34 @@ public class Dispatcher : IBackgroundDispatcher
       return result;
     }
 
-    if (_pendingRequestCount == 0)
+    // We have a valid connection
+    // But, the instance may be at it's outstanding request limit
+    // since we can have more connections than we are allowed to use
+    // Check if we are allowed (race condition, sure) to use this connection
+    // Let's try to dispatch if there is a pending request in the queue
+    // Get the pending request
+    if (_pendingRequestCount > 0
+        // This connection may be hidden
+        && instance.OutstandingRequestCount < instance.MaxConcurrentCount)
     {
-      result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, dispatchMode: AddConnectionDispatchMode.Enqueue);
-      return result;
+      // Register the connection with the lambda
+      var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch);
+
+      // If the connection returned is null then the Response has already been disposed
+      // This will be null if the Lambda was actually gone when we went to add it to the instance manager
+      if (connection == null)
+      {
+        _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+        return result;
+      }
+
+      if (TryGetPendingRequestAndDispatch(connection))
+      {
+        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
+        result.ImmediatelyDispatched = true;
+        result.Connection = connection;
+        return result;
+      }
     }
 
     // Register the connection but keep it private until the background dispatcher handles it
@@ -318,9 +347,14 @@ public class Dispatcher : IBackgroundDispatcher
   /// sees a completed request that exposes an existing unused / hidden connection
   /// </summary>
   /// <param name="lambdaConnection"></param>
-  public void WakeupBackgroundDispatcher(LambdaConnection lambdaConnection)
+  public void WakeupBackgroundDispatcher(LambdaConnection? lambdaConnection)
   {
-    _newConnections.Add(lambdaConnection);
+    // Yes, it is a race condition, but it doesn't matter because the
+    // background dispatcher will check it shortly after
+    if (_pendingRequestCount != 0)
+    {
+      _newConnections.Add(lambdaConnection);
+    }
   }
 
   /// <summary>
@@ -335,35 +369,31 @@ public class Dispatcher : IBackgroundDispatcher
 
     while (true)
     {
-      // Wait for the signal or 1 second
       try
       {
-        // Create a CancellationToken that will be cancelled after 1 second
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-
         // This blocks until a connection is available
         // or the timeout is hit
-        if (_newConnections.TryTake(out var connection, 20))
+        if (_newConnections.TryTake(out var connection, 20, _shutdownSignal.Shutdown.Token) && connection != null)
         {
-          _logger.LogDebug("BackgroundPendingRequestDispatcher - Got a connection for LambdaId {}, ChannelId {}", connection.Instance.Id, connection.ChannelId);
-          TryGetPendingRequestAndDispatch(connection);
+          _logger.LogDebug("BackgroundPendingRequestDispatcher - Got a connection for LambdaId {}, ChannelId {}",
+            connection.Instance.Id, connection.ChannelId);
+          if (TryGetPendingRequestAndDispatch(connection))
+          {
+            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+            swLastCapacityMessage.Restart();
+          }
         }
         else
         {
+          // The LOQ may have a connection if ChannelCount > MaxConcurrentCount
+          // and a response has been completed
+          // We get woken up here when a connection is added to the LOQ, so let's check
           var anyDispatched = false;
-
-          // We check here for connections that have snuck by the pending queue
           while (_lambdaInstanceManager.TryGetConnection(out connection, tentative: true)
                   && TryGetPendingRequestAndDispatch(connection))
           {
             anyDispatched = true;
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
-
-            // We don't want to starve the LOQ, so we need to check if some connections need to move over
-            if (_newConnections.TryTake(out connection))
-            {
-              _lambdaInstanceManager.ReenqueueUnusedConnection(connection, connection.Instance.Id);
-            }
           }
 
           if (anyDispatched)
@@ -380,6 +410,11 @@ public class Dispatcher : IBackgroundDispatcher
           }
         }
       }
+      catch (OperationCanceledException)
+      {
+        _logger.LogInformation("BackgroundPendingRequestDispatcher - Exiting Loop");
+        return;
+      }
       catch (Exception ex)
       {
         _logger.LogError(ex, "BackgroundPendingRequestDispatcher - Exception");
@@ -387,6 +422,15 @@ public class Dispatcher : IBackgroundDispatcher
     }
   }
 
+  /// <summary>
+  /// Get a pending request and dispatch it to a Lambda
+  ///
+  /// Assumes that the connection is marked for TentativeDispatch
+  /// 
+  /// Re-enqueues the tentative connection if it's not used
+  /// 
+  /// Handles adjusting all counts
+  /// </summary>
   private bool TryGetPendingRequestAndDispatch(LambdaConnection connection)
   {
     var dispatchedRequest = false;
@@ -430,10 +474,13 @@ public class Dispatcher : IBackgroundDispatcher
   /// Handles adjusting all counts
   /// </summary>
   /// <returns>Whether a request was dispatched</returns>
-  private void TryBackgroundDispatchOne(PendingRequest pendingRequest, LambdaConnection lambdaConnection)
+  private bool TryBackgroundDispatchOne(PendingRequest pendingRequest, LambdaConnection lambdaConnection)
   {
+    var startedRequest = false;
+
     try
     {
+      startedRequest = true;
       pendingRequest.RecordDispatchTime();
       _logger.LogDebug("Dispatching pending request");
       MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
@@ -504,10 +551,13 @@ public class Dispatcher : IBackgroundDispatcher
           }
         }
       }).ConfigureAwait(false);
+
+      return startedRequest;
     }
     catch (Exception ex)
     {
       _logger.LogError(ex, "TryBackgroundDispatchOne - Exception");
+      return startedRequest;
     }
   }
 }
