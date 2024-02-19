@@ -405,14 +405,14 @@ public class LambdaInstance : ILambdaInstance
 
     var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
 
+    // Start the response
+    // This sends the headers
+    // The response will then hang around waiting for the data to be written to it
+    await response.StartAsync();
+
     // Only make this connection visible if we're not going to immediately use it for a queued request
     if (dispatchMode == AddConnectionDispatchMode.Enqueue)
     {
-      // Start the response
-      // This sends the headers
-      // The response will then hang around waiting for the data to be written to it
-      await response.StartAsync();
-
       Interlocked.Increment(ref internalActualAvailableConnectionCount);
       connectionQueue.Enqueue(connection);
     }
@@ -438,8 +438,6 @@ public class LambdaInstance : ILambdaInstance
       {
         // We are not allowed to use this right now
         // Enqueue the connection for later use
-        await response.StartAsync();
-
         Interlocked.Increment(ref internalActualAvailableConnectionCount);
         connectionQueue.Enqueue(connection);
         return null;
@@ -449,12 +447,6 @@ public class LambdaInstance : ILambdaInstance
       if (dispatchMode == AddConnectionDispatchMode.ImmediateDispatch)
       {
         TryGetConnectionWillUse(connection);
-      }
-      else
-      {
-        // We want uniformity for tentative connections passed through the background dispatcher:
-        // they must all have the response headers sent already
-        await response.StartAsync();
       }
     }
 
