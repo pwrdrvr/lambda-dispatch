@@ -65,4 +65,52 @@ public class WeightedAverageTests
     Assert.That(weightedAverage.EWMA, Is.GreaterThan(0));
     Assert.That(weightedAverage.EWMA, Is.LessThan(10));
   }
+
+  [Test]
+  public async Task TestConstantRateCalc()
+  {
+    // Arrange
+    var weightedAverage = new WeightedAverage(5);
+    var timer = new System.Timers.Timer(50);
+    var counter = 0;
+
+    timer.Elapsed += (sender, e) =>
+    {
+      for (int i = 0; i < 200; i++)
+      {
+        weightedAverage.Add(1);
+      }
+
+      counter++;
+
+      // Stop the timer after approximately 5 seconds
+      if (counter >= 100)
+      {
+        timer.Stop();
+      }
+    };
+
+    // Act
+    timer.Start();
+
+    double lastEWMA = 0;
+
+    // Wait for the timer to finish
+    while (timer.Enabled)
+    {
+      await Task.Delay(100);
+
+      double currentEWMA = weightedAverage.EWMA;
+
+      Assert.That(currentEWMA, Is.GreaterThanOrEqualTo(lastEWMA));
+
+      // The exact value of EWMA will depend on the timing of the test, so we can't check for a specific value.
+      // Instead, we can check that it's within a reasonable range.
+      Assert.That(weightedAverage.EWMA, Is.GreaterThan(0));
+      // Assert.That(weightedAverage.EWMA, Is.GreaterThan(1000));
+      Assert.That(weightedAverage.EWMA, Is.LessThanOrEqualTo(10000));
+
+      lastEWMA = currentEWMA;
+    }
+  }
 }
