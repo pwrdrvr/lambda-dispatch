@@ -1,6 +1,7 @@
 namespace PwrDrvr.LambdaDispatch.Router;
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
@@ -207,9 +208,10 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   {
     Dictionary<string, ILambdaInstance> stoppingInstances = [];
     var trailingAverage = new TrailingAverage();
-    var scaleTokenBucket = new TokenBucket(2, TimeSpan.FromMilliseconds(500));
+    var scaleTokenBucket = new TokenBucket(10, TimeSpan.FromMilliseconds(100));
     var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
     int? deferredScaleInNewDesiredInstanceCount = null;
+    Stopwatch swLastNonZeroTime = new();
 
     while (true)
     {
@@ -231,6 +233,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         var message = await _capacityChannel.Reader.ReadAsync(cts.Token);
         var pendingRequests = message.PendingRequests;
         var runningRequests = message.RunningRequests;
+        var maxPendingRequests = pendingRequests;
+        var maxRunningRequests = runningRequests;
 
         trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
 
@@ -242,8 +246,15 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         {
           pendingRequests = nextMessage.PendingRequests;
           runningRequests = nextMessage.RunningRequests;
+          maxPendingRequests = Math.Max(maxPendingRequests, pendingRequests);
+          maxRunningRequests = Math.Max(maxRunningRequests, runningRequests);
 
           trailingAverage.Add(ComputeDesiredInstanceCount(pendingRequests, runningRequests));
+        }
+
+        if (maxPendingRequests != 0 || maxRunningRequests != 0)
+        {
+          swLastNonZeroTime.Restart();
         }
 
         var averageCount = trailingAverage.Average;
@@ -252,7 +263,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         //     in the last read message then we want 0 instances - this helps avoid
         //     5 second waits to stop instances when load disappears
         var newDesiredInstanceCount = averageCount == 0
-          || (messagesToRead != 0 && pendingRequests == 0 && runningRequests == 0)
+          || (messagesToRead != 0 && maxPendingRequests == 0 && maxRunningRequests == 0 && swLastNonZeroTime.ElapsedMilliseconds > 100)
             ? 0 : (int)Math.Ceiling(averageCount);
 
         //
