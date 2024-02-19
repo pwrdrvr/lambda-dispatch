@@ -225,6 +225,5 @@ pub(crate) async fn my_handler(
   )
   .await?;
 
-  log::info!("LambdaId: {} - Returning from invoke", lambda_id.clone());
   Ok(resp)
 }

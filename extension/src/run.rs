@@ -38,12 +38,13 @@ pub async fn run(
   router_url: Uri,
   deadline_ms: u64,
 ) -> anyhow::Result<()> {
+  let start_time = time::current_time_millis();
   let requests_in_flight = Arc::new(AtomicUsize::new(0));
   let cancel_token = tokio_util::sync::CancellationToken::new();
   let count = Arc::new(AtomicUsize::new(0));
   let mut rng = rand::rngs::StdRng::from_entropy();
   let goaway_received = Arc::new(AtomicBool::new(false));
-  let last_active = Arc::new(AtomicU64::new(time::current_time_millis()));
+  let last_active = Arc::new(AtomicU64::new(0));
 
   let scheme = router_url.scheme().unwrap().to_string();
   let use_https = scheme == "https";
@@ -205,24 +206,29 @@ pub async fn run(
                   // If the router returned a 409 when we opened the channel
                   // then we close the channel
                   if parts.status == 409 {
-                    if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
+                    if !goaway_received.load(std::sync::atomic::Ordering::Acquire) {
                       log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
                         lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
-                      goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
+                      goaway_received.store(true, std::sync::atomic::Ordering::Release);
                     }
                     tx.close().await.unwrap_or(());
                     break;
                   }
+
+                  // On first request this will release the ping task to start
+                  // We have to hold the pinger up else it will exit before connections to the router are established
+                  // We also count re-establishing a channel as an action since it can allow a request to flow in
+                  last_active.store(time::current_time_millis(), Ordering::Release);
 
                   // Read until we get all the request headers so we can construct our app request
                   let (app_req_builder, is_goaway, left_over_buf)
                       = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone()).await?;
 
                   if is_goaway {
-                      if !goaway_received.load(std::sync::atomic::Ordering::Relaxed) {
+                      if !goaway_received.load(std::sync::atomic::Ordering::Acquire) {
                         log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                           lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
-                        goaway_received.store(true, std::sync::atomic::Ordering::Relaxed);
+                        goaway_received.store(true, std::sync::atomic::Ordering::Release);
                       }
                       tx.close().await.unwrap_or(());
                       break;
@@ -446,7 +452,7 @@ pub async fn run(
                     }
                 }
 
-                count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
               }
 
               Ok::<(), anyhow::Error>(())
@@ -470,6 +476,17 @@ pub async fn run(
   // Wait for the ping loop to exit
   cancel_token.cancel();
   ping_task.await?;
+
+  // Print final stats
+  let elapsed = time::current_time_millis() - start_time;
+  let rps = count.load(Ordering::Acquire) as f64 / (elapsed as f64 / 1000.0);
+  log::info!(
+    "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {} - Returning from run",
+    lambda_id,
+    count.load(Ordering::Acquire),
+    elapsed,
+    rps
+  );
 
   Ok(())
 }
