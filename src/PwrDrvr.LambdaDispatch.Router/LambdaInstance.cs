@@ -543,6 +543,15 @@ public class LambdaInstance : ILambdaInstance
       lock (requestCountLock)
       {
         outstandingRequestCount--;
+
+        // // If we went from busy to non-busy, wakeup the background dispatcher
+        // if (outstandingRequestCount == MaxConcurrentCount - 1)
+        // {
+        //   if (TryGetConnection(out var newConnection, tentative: true))
+        //   {
+        //     dispatcher.WakeupBackgroundDispatcher(newConnection);
+        //   }
+        // }
       }
 
       return Task.CompletedTask;
