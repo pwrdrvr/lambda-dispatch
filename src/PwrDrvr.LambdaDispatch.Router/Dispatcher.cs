@@ -309,7 +309,9 @@ public class Dispatcher : IBackgroundDispatcher
       // This will be null if the Lambda was actually gone when we went to add it to the instance manager
       if (connection == null)
       {
-        _logger.LogError("Failed adding connection to LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+        // AddConnectionForLambda returns null if the connection is added but
+        // not suppoed to be used due to being at MaxConcurrentCount
+        _logger.LogDebug("Failed adding connection to LambdaId (happens with hidden connections) {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
         return result;
       }
 
@@ -320,6 +322,11 @@ public class Dispatcher : IBackgroundDispatcher
         result.Connection = connection;
         return result;
       }
+
+      // Have to return here, else connection gets added twice below
+      result.ImmediatelyDispatched = false;
+      result.Connection = connection;
+      return result;
     }
 
     // Register the connection but keep it private until the background dispatcher handles it
