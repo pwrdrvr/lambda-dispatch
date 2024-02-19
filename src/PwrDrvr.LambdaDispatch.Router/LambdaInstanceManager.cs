@@ -344,7 +344,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             _logger.LogInformation("ManageCapacity - Applying deferred scale down: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
               _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
-            _metricsLogger.PutMetric("LambdaDesiredCount", 0, Unit.Count);
+            _metricsLogger.PutMetric("LambdaDesiredCount", _desiredInstanceCount, Unit.Count);
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
 
             // Clear the deferred value
