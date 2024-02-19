@@ -8,12 +8,11 @@ public class WeightedAverage
   private readonly StripedLongAdder _value = new();
   private readonly StripedLongAdder _count = new();
 
-  private readonly List<(int timestamp, long value, long count)> _data = [];
   private readonly int _windowSizeInSeconds;
-  private readonly double Alpha = 0.1;
-  private double _ewma;
+  private readonly double Alpha;
+  private readonly int tickIntervalMs = 100;
+  private double _ewma = 0;
   private readonly bool _mean;
-  private readonly Stopwatch _sw = new();
 
   /// <summary>
   /// Get the Exponential Weighted Moving Average that is computed in the background
@@ -25,18 +24,12 @@ public class WeightedAverage
   /// </summary>
   /// <param name="windowSizeInSeconds"></param>
   /// <param name="mean">Compute EWMA of mean of values</param>
-  public WeightedAverage(int windowSizeInSeconds, bool mean = false, double alpha = 0.9)
+  public WeightedAverage(int windowSizeInSeconds, bool mean = false)
   {
     _mean = mean;
     _windowSizeInSeconds = windowSizeInSeconds;
-    _sw.Start();
 
-    if (alpha < 0 || alpha > 1)
-    {
-      throw new ArgumentOutOfRangeException(nameof(alpha), "Alpha must be between 0 and 1");
-    }
-
-    Alpha = alpha;
+    Alpha = 1 - Math.Exp(-tickIntervalMs / (_windowSizeInSeconds * 1000.0));
 
     // Start a task to compute the average
     Task.Run(async () =>
@@ -45,82 +38,23 @@ public class WeightedAverage
       {
         try
         {
-          var now = _sw.Elapsed;
-          var nextTickMilliseconds = ((now.TotalMilliseconds / 100) + 1) * 100;
-          var delay = nextTickMilliseconds - now.TotalMilliseconds;
-          await Task.Delay((int)delay);
+          await Task.Delay((int)tickIntervalMs);
 
-          CleanupOldData();
-
-          now = _sw.Elapsed;
-          var currentSecond = (int)now.TotalSeconds;
-          var proportionOfSecondElapsed = now.TotalMilliseconds % 1000 / 1000;
           var currentValue = _value.GetAndReset();
           var currentCount = _count.GetAndReset();
 
-          // If the list is empty or the current second is different from the first second in the list,
-          // insert a new item at the beginning of the list
-          if (_data.Count == 0 || _data[0].timestamp != currentSecond)
+          var instantRate = (double)currentValue / (tickIntervalMs / 1000.0);
+          var instantMean = currentCount > 0 ? (double)currentValue / (double)currentCount : 0;
+
+          // Calculate the EWMA of the counts per second
+          if (_mean)
           {
-            _data.Insert(0, (currentSecond, currentValue, currentCount));
+            _ewma = Alpha * instantMean + (1 - Alpha) * _ewma;
           }
           else
           {
-            // Otherwise, update the count for the current second
-            var first = _data[0];
-            _data[0] = (first.timestamp, first.value + currentValue, first.count + currentCount);
+            _ewma = Alpha * instantRate + (1 - Alpha) * _ewma;
           }
-
-          double ewma = 0.0;
-
-          // Calculate the EWMA of the counts per second
-          var index = 0;
-          for (int i = _data.Count - 1; i >= 0; i--)
-          {
-            var (_, value, count) = _data[i];
-
-            if (index == 0)
-            {
-              // Extrapolate data for the current second
-              if (!_mean)
-              {
-                var adj = value / proportionOfSecondElapsed;
-
-                // Start off with the first value at weight of 100%
-                ewma = Alpha * value + (1 - Alpha) * ewma;
-              }
-              else
-              {
-                // Mean is always value / count
-                // Note: this is the duration and count of requests
-                // that finished in this second, not the count of incoming
-                // requests and duration of other requests that finished
-                if (count > 0)
-                {
-                  ewma = Alpha * (value / count) + (1 - Alpha) * ewma;
-                }
-              }
-            }
-            else
-            {
-              // Use the actual count for the previous seconds
-              if (!_mean)
-              {
-                ewma = Alpha * value + (1 - Alpha) * ewma;
-              }
-              else
-              {
-                if (count > 0)
-                {
-                  ewma = Alpha * (value / count) + (1 - Alpha) * ewma;
-                }
-              }
-            }
-
-            index++;
-          }
-
-          _ewma = ewma;
         }
         catch (Exception ex)
         {
@@ -128,25 +62,6 @@ public class WeightedAverage
         }
       }
     });
-  }
-
-  private void CleanupOldData()
-  {
-    var now = _sw.Elapsed;
-    var currentSecond = (int)now.TotalSeconds;
-
-    // Remove items that are older than _windowSizeInSeconds from the end of the list
-    // We keep an extra data point for the current second, which is prorated
-    while (_data.Count > 0 && (currentSecond - _data[^1].timestamp) > _windowSizeInSeconds + 1)
-    {
-      _data.RemoveAt(_data.Count - 1);
-    }
-
-    // Remove runs of zeros from the oldest data points
-    while (_data.Count > 1 && _data[^1].value == 0)
-    {
-      _data.RemoveAt(_data.Count - 1);
-    }
   }
 
   public void Add(long count = 1)
