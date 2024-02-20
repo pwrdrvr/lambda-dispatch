@@ -216,16 +216,13 @@ public class Dispatcher : IBackgroundDispatcher
   // Add a new connection for a lambda, dispatch to it immediately if a request is waiting
   public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId)
   {
-    DispatcherAddConnectionResult result = new();
-
     _logger.LogDebug("Adding Connection for Lambda {lambdaID} to the Dispatcher", lambdaId);
 
     // Validate that the Lambda ID is valid
     if (string.IsNullOrWhiteSpace(lambdaId))
     {
       _logger.LogError("Lambda ID is blank");
-      result.LambdaIDNotFound = true;
-      return result;
+      return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
     }
 
 #if TEST_RUNNERS
@@ -238,8 +235,22 @@ public class Dispatcher : IBackgroundDispatcher
     if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId, out var instance))
     {
       _logger.LogDebug("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-      result.LambdaIDNotFound = true;
-      return result;
+      return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
+    }
+
+    // Register the connection with the lambda
+    var addConnectionResult = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch);
+
+    if (addConnectionResult.WasRejected || addConnectionResult.Connection == null)
+    {
+      _logger.LogDebug("Failed adding connection - Lambda not known or closed, LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+      return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
+    }
+
+    // Tell the scaler about the number of running instances
+    if (addConnectionResult.Connection.FirstConnectionForInstance)
+    {
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
     }
 
     // We have a valid connection
@@ -248,55 +259,25 @@ public class Dispatcher : IBackgroundDispatcher
     // Check if we are allowed (race condition, sure) to use this connection
     // Let's try to dispatch if there is a pending request in the queue
     // Get the pending request
-    if (_pendingRequestCount > 0
-        // This connection may be hidden
-        && instance.OutstandingRequestCount < instance.MaxConcurrentCount)
+    if (_pendingRequestCount > 0 && addConnectionResult.CanUseNow)
     {
-      // Register the connection with the lambda
-      var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch);
-
-      // If the connection returned is null then the Response has already been disposed
-      // This will be null if the Lambda was actually gone when we went to add it to the instance manager
-      if (connection == null)
-      {
-        // AddConnectionForLambda returns null if the connection is added but
-        // not suppoed to be used due to being at MaxConcurrentCount
-        _logger.LogDebug("Failed adding connection to LambdaId (happens with hidden connections) {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
-        return result;
-      }
-
-      if (TryGetPendingRequestAndDispatch(connection))
+      if (TryGetPendingRequestAndDispatch(addConnectionResult.Connection))
       {
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
-        result.ImmediatelyDispatched = true;
-        result.Connection = connection;
-        return result;
+        return new DispatcherAddConnectionResult { ImmediatelyDispatched = true, Connection = addConnectionResult.Connection };
       }
 
       // Have to return here, else connection gets added twice below
-      result.ImmediatelyDispatched = false;
-      result.Connection = connection;
-      return result;
+      return new DispatcherAddConnectionResult { ImmediatelyDispatched = false, Connection = addConnectionResult.Connection };
     }
 
-    // Register the connection but keep it private until the background dispatcher handles it
-    result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId,
-      dispatchMode: AddConnectionDispatchMode.TentativeDispatch);
-
-    if (result.Connection != null)
+    // Pass the connection through the background dispatcher
+    if (addConnectionResult.CanUseNow)
     {
-      // Pass the connection through the background dispatcher
-      _newConnections.Add(result.Connection);
+      _newConnections.Add(addConnectionResult.Connection);
     }
 
-    // Tell the scaler about the number of running instances
-    // Is this needed?
-    if (result.Connection != null && result.Connection.FirstConnectionForInstance)
-    {
-      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
-    }
-
-    return result;
+    return new DispatcherAddConnectionResult { ImmediatelyDispatched = false, Connection = addConnectionResult.Connection };
   }
 
   /// <summary>

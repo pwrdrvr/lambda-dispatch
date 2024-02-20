@@ -113,7 +113,7 @@ public class ChunkedController : ControllerBase
         // Register this Lambda with the Dispatcher
         var result = await dispatcher.AddConnectionForLambda(Request, Response, lambdaId, channelId);
 
-        if (result.LambdaIDNotFound)
+        if (result.LambdaIDNotFound || result.Connection == null)
         {
           try
           {
@@ -129,23 +129,6 @@ public class ChunkedController : ControllerBase
             await Response.CompleteAsync();
             try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
             logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closed", lambdaId, channelId);
-          }
-          catch (Exception ex)
-          {
-            logger.LogError(ex, "Router.ChunkedController.Post - Exception");
-          }
-          return;
-        }
-        else if (result.Connection == null)
-        {
-          try
-          {
-            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
-            logger.LogDebug("Router.ChunkedController.Post - LambdaInstance found for X-Lambda-Id header: {lambdaId} but it is already closed", lambdaId);
-
-            // LambdaInstanceManager.AddConnectionForLambda has already closed the request/response
-
-            // In this case the connection should already have been cleaned up
           }
           catch (Exception ex)
           {

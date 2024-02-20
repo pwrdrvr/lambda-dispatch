@@ -26,7 +26,7 @@ public interface ILambdaInstanceManager
 
   void ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
 
-  Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue);
+  Task<AddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode);
 
 #if TEST_RUNNERS
   void DebugAddInstance(string instanceId);
@@ -152,14 +152,19 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
   }
 
-  public async Task<LambdaConnection?> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue)
+  public async Task<AddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var connection = await instance.AddConnection(request, response, channelId, dispatchMode).ConfigureAwait(false);
+      var result = await instance.AddConnection(request, response, channelId, dispatchMode).ConfigureAwait(false);
+
+      if (result.WasRejected || result.Connection == null)
+      {
+        return result;
+      }
 
       // Check where this instance is in the least outstanding queue
       if (dispatchMode == AddConnectionDispatchMode.Enqueue)
@@ -167,26 +172,15 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         _leastOutstandingQueue.ReinstateFullInstance(instance);
       }
 
-      return connection;
+      return result;
     }
 
     _logger.LogWarning("AddConnectionForLambda - Connection added to Lambda that does not exist - closing with 409, LambdaId: {LambdaId}, ChannelId: {ChannelId}", lambdaId, channelId);
 
-    // Close the connection
-    try
+    return new AddConnectionResult()
     {
-      response.StatusCode = 409;
-      await response.StartAsync();
-      await response.WriteAsync("Lambda instance does not exist");
-      await response.CompleteAsync();
-      try { await request.BodyReader.CopyToAsync(Stream.Null); } catch { }
-    }
-    catch (Exception ex)
-    {
-      _logger.LogError(ex, "AddConnectionForLambda - Exception closing down connection to LambdaId: {LambdaId}, ChannelId: {ChannelId}", lambdaId, channelId);
-    }
-
-    return null;
+      WasRejected = true,
+    };
   }
 
   private async Task ManageCapacity()

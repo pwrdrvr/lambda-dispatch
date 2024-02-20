@@ -59,6 +59,13 @@ public struct TransitionResult
   public bool OpenWasRejected { get; set; }
 }
 
+public struct AddConnectionResult
+{
+  public bool WasRejected { get; set; }
+  public bool CanUseNow { get; set; }
+  public LambdaConnection? Connection { get; set; }
+}
+
 public interface ILambdaInstance
 {
   /// <summary>
@@ -163,7 +170,7 @@ public interface ILambdaInstance
 
   void TryGetConnectionWillUse(LambdaConnection connection);
 
-  Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue);
+  Task<AddConnectionResult> AddConnection(HttpRequest request, HttpResponse response, string channelId, AddConnectionDispatchMode dispatchMode);
 
   void ReenqueueUnusedConnection(LambdaConnection connection);
 }
@@ -354,8 +361,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId,
-    AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue)
+  public async Task<AddConnectionResult> AddConnection(HttpRequest request, HttpResponse response, string channelId,
+    AddConnectionDispatchMode dispatchMode)
   {
     // This does not need a state lock because the race around
     // closing is handled
@@ -365,21 +372,12 @@ public class LambdaInstance : ILambdaInstance
     {
       _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
 
-      // Close the connection
-      try
+      return new AddConnectionResult
       {
-        response.StatusCode = 409;
-        await response.StartAsync();
-        await response.WriteAsync($"LambdaInstance not in Open or Starting state for X-Lambda-Id: {Id}, X-Channel-Id: {channelId}, closing");
-        await response.CompleteAsync();
-        try { await request.BodyReader.CopyToAsync(Stream.Null); } catch { }
-      }
-      catch (Exception ex)
-      {
-        _logger.LogError(ex, "AddConnection - Exception closing down connection to LambdaId: {LambdaId}", Id);
-      }
-
-      return null;
+        WasRejected = true,
+        CanUseNow = false,
+        Connection = null
+      };
     }
 
     // Signal that we are ready if this the first connection
@@ -416,42 +414,56 @@ public class LambdaInstance : ILambdaInstance
     {
       Interlocked.Increment(ref internalActualAvailableConnectionCount);
       connectionQueue.Enqueue(connection);
+      return new AddConnectionResult
+      {
+        WasRejected = false,
+        CanUseNow = false,
+        Connection = connection
+      };
     }
-    else
+
+    //
+    // IMMEDIATE or TENTATIVE DISPATCH - We're going to try to use this right now
+    //
+    var canUseNow = false;
+    lock (requestCountLock)
     {
-      //
-      // IMMEDIATE or TENTATIVE DISPATCH - We're going to try to use this right now
-      //
-      var canUseNow = false;
-      lock (requestCountLock)
+      // Only allow the immediate dispatch if we have room for it
+      if (outstandingRequestCount < maxConcurrentCount)
       {
-        // Only allow the immediate dispatch if we have room for it
-        if (outstandingRequestCount < maxConcurrentCount)
-        {
-          // The connection is being immediately used
-          // Need to track the outstanding request
-          outstandingRequestCount++;
-          canUseNow = true;
-        }
-      }
-
-      if (!canUseNow)
-      {
-        // We are not allowed to use this right now
-        // Enqueue the connection for later use
-        Interlocked.Increment(ref internalActualAvailableConnectionCount);
-        connectionQueue.Enqueue(connection);
-        return null;
-      }
-
-      // Add handler to register the decrement of outstanding requests
-      if (dispatchMode == AddConnectionDispatchMode.ImmediateDispatch)
-      {
-        TryGetConnectionWillUse(connection);
+        // The connection is being immediately used
+        // Need to track the outstanding request
+        outstandingRequestCount++;
+        canUseNow = true;
       }
     }
 
-    return connection;
+    if (!canUseNow)
+    {
+      // We are not allowed to use this right now
+      // Enqueue the connection for later use
+      Interlocked.Increment(ref internalActualAvailableConnectionCount);
+      connectionQueue.Enqueue(connection);
+      return new AddConnectionResult
+      {
+        WasRejected = false,
+        CanUseNow = false,
+        Connection = connection
+      };
+    }
+
+    // Add handler to register the decrement of outstanding requests
+    if (dispatchMode == AddConnectionDispatchMode.ImmediateDispatch)
+    {
+      TryGetConnectionWillUse(connection);
+    }
+
+    return new AddConnectionResult
+    {
+      WasRejected = false,
+      CanUseNow = true,
+      Connection = connection
+    };
   }
 
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
