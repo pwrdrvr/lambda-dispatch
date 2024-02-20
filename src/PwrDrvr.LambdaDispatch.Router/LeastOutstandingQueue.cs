@@ -45,6 +45,11 @@ public class LeastOutstandingQueue : IDisposable
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be greater than 0");
     }
 
+    if (maxConcurrentCount > 100)
+    {
+      throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be less than 100");
+    }
+
     this.maxConcurrentCount = maxConcurrentCount;
 
     availableInstances = InitQueues(maxConcurrentCount);
@@ -85,13 +90,6 @@ public class LeastOutstandingQueue : IDisposable
   /// <exception cref="ArgumentOutOfRangeException"></exception>
   static private ConcurrentQueue<ILambdaInstance>[] InitQueues(int maxConcurrentCount)
   {
-    // TODO: Get up to 10 primes from 1 to maxCurrentCount that are at least 2x the previous prime
-    // But... for now, just reject anything over 10
-    if (maxConcurrentCount > 10)
-    {
-      throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be less than 10");
-    }
-
     // If an instance has maxConcurrentCount outstanding it goes in the full list
     var queueList = new ConcurrentQueue<ILambdaInstance>[maxConcurrentCount];
 
@@ -129,9 +127,9 @@ public class LeastOutstandingQueue : IDisposable
         // We got an instance with, what we think, is the least outstanding requests
         // But, the instance may actually be closed or full due to disconnects
         // So we'll check that here
-        if (dequeuedInstance.State != LambdaInstanceState.Open)
+        if (!dequeuedInstance.IsOpen)
         {
-          // The instance is not open, so we'll drop it on the floor and move on
+          // The instance is not open for requests, so we'll drop it on the floor and move on
           continue;
         }
         if (dequeuedInstance.AvailableConnectionCount <= 0)
@@ -179,7 +177,7 @@ public class LeastOutstandingQueue : IDisposable
         // We got an instance with, what we think, is the least outstanding requests
         // But, the instance may actually be closed or full due to disconnects
         // So we'll check that here
-        if (instance.State != LambdaInstanceState.Open)
+        if (!instance.IsOpen)
         {
           // The instance is not open, so we'll drop it on the floor and move on
           continue;
@@ -234,7 +232,7 @@ public class LeastOutstandingQueue : IDisposable
         continue;
       }
 
-      if (instance.State != LambdaInstanceState.Open)
+      if (!instance.IsOpen)
       {
         // The instance is not open so drop it on the floor and move on
         continue;
@@ -379,7 +377,7 @@ public class LeastOutstandingQueue : IDisposable
           continue;
         }
 
-        if (instance.State != LambdaInstanceState.Open)
+        if (!instance.IsOpen)
         {
           // The instance is not open so drop it on the floor and move on
           continue;
@@ -419,6 +417,11 @@ public class LeastOutstandingQueue : IDisposable
       // Log the size of each queue in availableInstances
       for (var i = 0; i < availableInstances.Length; i++)
       {
+        if (availableInstances[i].IsEmpty)
+        {
+          continue;
+        }
+
         stringWriter.WriteLine($"Queue {i} size: {availableInstances[i].Count}");
 
         // Print the OutstandingRequestCount of the items in the queue

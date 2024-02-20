@@ -163,6 +163,15 @@ public class Config : IConfig
       throw new ApplicationException($"Invalid PreferredControlChannelScheme in configuration: {PreferredControlChannelScheme}");
     }
 
+    if (MaxConcurrentCount < 1)
+    {
+      throw new ApplicationException($"Invalid MaxConcurrentCount in configuration, must be >= 1: {MaxConcurrentCount}");
+    }
+    if (MaxConcurrentCount > 100)
+    {
+      throw new ApplicationException($"Invalid MaxConcurrentCount in configuration, must be < 100: {MaxConcurrentCount}");
+    }
+
     // Need at least as many channels as max concurrent
     if (ChannelCount == -1)
     {

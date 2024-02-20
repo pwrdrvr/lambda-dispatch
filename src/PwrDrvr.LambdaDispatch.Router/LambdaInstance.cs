@@ -4,8 +4,16 @@ using PwrDrvr.LambdaDispatch.Messages;
 using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
+
+public enum AddConnectionDispatchMode
+{
+  ImmediateDispatch,
+  TentativeDispatch,
+  Enqueue
+}
 
 public enum LambdaInstanceState
 {
@@ -25,6 +33,13 @@ public enum LambdaInstanceState
   Open,
 
   /// <summary>
+  /// The Lambda is being evaluated for closing
+  /// The lambda will either wait to be replaced
+  /// or immediately proceed to closing
+  /// </summary>
+  Draining,
+
+  /// <summary>
   /// The Lambda is closing down
   /// New connections will be rejected
   /// </summary>
@@ -35,6 +50,13 @@ public enum LambdaInstanceState
   /// Invoke has returned and all sockets have been closed
   /// </summary>
   Closed,
+}
+
+public struct TransitionResult
+{
+  public bool TransitionedToDraining { get; set; }
+  public bool WasOpened { get; set; }
+  public bool OpenWasRejected { get; set; }
 }
 
 public interface ILambdaInstance
@@ -73,6 +95,26 @@ public interface ILambdaInstance
   bool DoNotReplace { get; }
 
   /// <summary>
+  /// Is the Lambda effectively "Open" and able to be used
+  /// </summary>
+  bool IsOpen { get; }
+
+  /// <summary>
+  /// Set by LambdaInstanceManager if the instance is being replaced
+  /// </summary>
+  bool Replacing { get; set; }
+
+  /// <summary>
+  /// Duration that the close can be delayed as determined by the LambdaInstanceManager
+  /// </summary>
+  TimeSpan AllowedDrainingDelay { get; set; }
+
+  /// <summary>
+  /// If true, the Lambda Instance close was initiated by the Lambda itself
+  /// </summary>
+  public bool LamdbdaInitiatedClose { get; }
+
+  /// <summary>
   /// Task that completes when the Lambda Instance is done
   /// </summary>
   Task<bool> InvokeCompletionTask { get; }
@@ -102,24 +144,28 @@ public interface ILambdaInstance
   /// <summary>
   /// Mark this instance as closing
   /// </summary>
-  public void Close(bool doNotReplace = false);
-
-  public bool WasOpened { get; }
+  Task Close(bool doNotReplace = false, bool lambdaInitiated = false, bool openWasRejected = false);
 
   /// <summary>
-  /// Destructive - Transitions to the Closing state
-  /// if not already in Closing or Closed
+  /// Used to mark the instance as closed when detected by invoke completion
+  /// </summary>
+  /// <returns></returns>
+  bool InvokeCompleted();
+
+  /// <summary>
+  /// Destructive - Transitions to the Draining state
+  /// if not already in Draining, Closing, or Closed
   /// </summary>
   /// <returns>Whether the transition was successful</returns>
-  public bool TransitionToClosing();
+  TransitionResult TransitionToDraining();
 
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
+  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
 
-  public void TryGetConnectionWillUse(LambdaConnection connection);
+  void TryGetConnectionWillUse(LambdaConnection connection);
 
-  public Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false);
+  Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue);
 
-  public ValueTask ReenqueueUnusedConnection(LambdaConnection connection);
+  void ReenqueueUnusedConnection(LambdaConnection connection);
 }
 
 /// <summary>
@@ -132,7 +178,7 @@ public class LambdaInstance : ILambdaInstance
 {
   private readonly ILogger<LambdaInstance> _logger = LoggerInstance.CreateLogger<LambdaInstance>();
 
-  private readonly DateTime _startTime = DateTime.Now;
+  private readonly Stopwatch _startTime = new();
 
   /// <summary>
   /// Raised when the Lambda Instance has completed it's invocation
@@ -149,7 +195,17 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public event Action<ILambdaInstance>? OnOpen;
 
-  public bool WasOpened { get; private set; } = false;
+  public bool Replacing { get; set; }
+
+  public TimeSpan AllowedDrainingDelay { get; set; } = TimeSpan.Zero;
+
+  public bool IsOpen
+  {
+    get
+    {
+      return State == LambdaInstanceState.Open || State == LambdaInstanceState.Draining;
+    }
+  }
 
   /// <summary>
   /// WARNING: This is going to enumerate the items in the queue to count them
@@ -168,6 +224,24 @@ public class LambdaInstance : ILambdaInstance
   /// We set this when we decide to stop an instance
   /// </summary>
   public bool DoNotReplace { get; private set; } = false;
+
+  /// <summary>
+  /// If true, the Lambda Instance close was initiated by the Lambda itself
+  /// </summary>
+  public bool LamdbdaInitiatedClose { get; private set; } = false;
+
+  /// <summary>
+  /// Was the lambda opened and registered with the InstanceManager
+  /// If true, and OpenWasRejected is true, this means the InstanceManager should decrement the running count on invoke complete
+  /// Else, if OpenWasRejected is false, then the InstanceManager should decrment the starting count on invoke complete
+  /// </summary>
+  private bool WasOpened { get; set; } = false;
+
+  /// <summary>
+  /// Was the open rejected by the OnOpen handler
+  /// If true, this means the InstanceManager should not decrement starting or running counts on invoke complete
+  /// </summary>
+  private bool OpenWasRejected { get; set; } = false;
 
   // Add a task completion source
   // When the lambda is done we set the task completion source
@@ -208,12 +282,14 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   private volatile int internalActualAvailableConnectionCount = 0;
 
+  private object requestCountLock = new();
+
   /// <summary>
   /// The actual number of requests in flight
   /// This is used to determine how busy we are, regardless of whether
   /// we have a full set of idle connections or a partial set
   /// </summary>
-  private volatile int outstandingRequestCount = 0;
+  private int outstandingRequestCount = 0;
 
   private volatile int openConnectionCount = 0;
 
@@ -278,15 +354,16 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   /// <param name="request"></param>
   /// <param name="response"></param>
-  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId, bool immediateDispatch = false)
+  public async Task<LambdaConnection?> AddConnection(HttpRequest request, HttpResponse response, string channelId,
+    AddConnectionDispatchMode dispatchMode = AddConnectionDispatchMode.Enqueue)
   {
     // This does not need a state lock because the race around
     // closing is handled
-    if (State == LambdaInstanceState.Closing
-        || State == LambdaInstanceState.Closed
+    if (State == LambdaInstanceState.Closed
+        || State == LambdaInstanceState.Closing
         || State == LambdaInstanceState.Initial)
     {
-      _logger.LogWarning("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+      _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
 
       // Close the connection
       try
@@ -306,46 +383,71 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // Signal that we are ready if this the first connection
-    var firstInstance = false;
-    lock (stateLock)
+    var firstConnectionForInstance = false;
+    if (State == LambdaInstanceState.Starting)
     {
-      if (State == LambdaInstanceState.Starting)
+      lock (stateLock)
       {
-        State = LambdaInstanceState.Open;
-        firstInstance = true;
+        if (State == LambdaInstanceState.Starting)
+        {
+          State = LambdaInstanceState.Open;
+          firstConnectionForInstance = true;
+          // Signal that we are open
+          WasOpened = true;
+          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
+          OnOpen?.Invoke(this);
+        }
       }
-    }
-    if (firstInstance)
-    {
-      // Signal that we are open
-      WasOpened = true;
-      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, (int)(DateTime.Now - _startTime).TotalMilliseconds);
-      OnOpen?.Invoke(this);
     }
 
     Interlocked.Increment(ref openConnectionCount);
     MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
 
-    var connection = new LambdaConnection(request, response, this, channelId);
+    var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
+
+    // Start the response
+    // This sends the headers
+    // The response will then hang around waiting for the data to be written to it
+    await response.StartAsync();
 
     // Only make this connection visible if we're not going to immediately use it for a queued request
-    if (!immediateDispatch)
+    if (dispatchMode == AddConnectionDispatchMode.Enqueue)
     {
-      // Start the response
-      // This sends the headers
-      // The response will then hang around waiting for the data to be written to it
-      await response.StartAsync();
-
       Interlocked.Increment(ref internalActualAvailableConnectionCount);
       connectionQueue.Enqueue(connection);
     }
     else
     {
-      // The connection is being immediately used
-      // Need to track the outstanding request
-      Interlocked.Increment(ref outstandingRequestCount);
+      //
+      // IMMEDIATE or TENTATIVE DISPATCH - We're going to try to use this right now
+      //
+      var canUseNow = false;
+      lock (requestCountLock)
+      {
+        // Only allow the immediate dispatch if we have room for it
+        if (outstandingRequestCount < maxConcurrentCount)
+        {
+          // The connection is being immediately used
+          // Need to track the outstanding request
+          outstandingRequestCount++;
+          canUseNow = true;
+        }
+      }
+
+      if (!canUseNow)
+      {
+        // We are not allowed to use this right now
+        // Enqueue the connection for later use
+        Interlocked.Increment(ref internalActualAvailableConnectionCount);
+        connectionQueue.Enqueue(connection);
+        return null;
+      }
+
       // Add handler to register the decrement of outstanding requests
-      TryGetConnectionWillUse(connection);
+      if (dispatchMode == AddConnectionDispatchMode.ImmediateDispatch)
+      {
+        TryGetConnectionWillUse(connection);
+      }
     }
 
     return connection;
@@ -360,13 +462,14 @@ public class LambdaInstance : ILambdaInstance
     // as this is the same as getting a connection from an instance that is not closing
     // If we can't get a connection we just try another instance
 
-    if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
+    // We allow using instances that are Closing but not yet Closed
+    if (State == LambdaInstanceState.Closed || State == LambdaInstanceState.Closing)
     {
-      _logger.LogWarning("Connection requested from Lambda Instance that is closing or closed, LambdaId: {LambdaId}", Id);
+      _logger.LogWarning("Connection requested from Lambda Instance that is closed or closing, LambdaId: {LambdaId}", Id);
       return false;
     }
 
-    if (State != LambdaInstanceState.Open)
+    if (!IsOpen)
     {
       _logger.LogWarning("Connection requested from Lambda Instance that is not open, LambdaId: {LambdaId}", Id);
       return false;
@@ -374,39 +477,42 @@ public class LambdaInstance : ILambdaInstance
 
     // Loop through the connections until we find one that is available
     // Hide the connections that are not supposed to be used
-    while (AvailableConnectionCount > 0
-          && connectionQueue.TryDequeue(out var dequeuedConnection))
+    lock (requestCountLock)
     {
-      // We found an available connection
-      Interlocked.Decrement(ref internalActualAvailableConnectionCount);
-
-      // The connection should only be Closed unexpectedly, not Busy
-      // This should not be a race condition as only one thread should
-      // dequeue the connection and handle it
-      if (dequeuedConnection.State == LambdaConnectionState.Busy)
+      while (AvailableConnectionCount > 0
+            && connectionQueue.TryDequeue(out var dequeuedConnection))
       {
-        _logger.LogError("TryGetConnection - Got a busy connection from queue, LambdaId: {LambdaId}, ChannelId: {ChannelId}", Id, dequeuedConnection.ChannelId);
-        continue;
+        // We found an available connection
+        Interlocked.Decrement(ref internalActualAvailableConnectionCount);
+
+        // The connection should only be Closed unexpectedly, not Busy
+        // This should not be a race condition as only one thread should
+        // dequeue the connection and handle it
+        if (dequeuedConnection.State == LambdaConnectionState.Busy)
+        {
+          _logger.LogError("TryGetConnection - Got a busy connection from queue, LambdaId: {LambdaId}, ChannelId: {ChannelId}", Id, dequeuedConnection.ChannelId);
+          continue;
+        }
+
+        // If the connection is Closed we discard it (can happen on abnormal close during idle)
+        if (dequeuedConnection.State == LambdaConnectionState.Closed)
+        {
+          // A connection that is closed should have triggered the onclose
+          // handler which would have decremented the available connection count
+          continue;
+        }
+
+        connection = dequeuedConnection;
+
+        outstandingRequestCount++;
+
+        if (!tentative)
+        {
+          TryGetConnectionWillUse(dequeuedConnection);
+        }
+
+        return true;
       }
-
-      // If the connection is Closed we discard it (can happen on abnormal close during idle)
-      if (dequeuedConnection.State == LambdaConnectionState.Closed)
-      {
-        // A connection that is closed should have triggered the onclose
-        // handler which would have decremented the available connection count
-        continue;
-      }
-
-      connection = dequeuedConnection;
-
-      Interlocked.Increment(ref outstandingRequestCount);
-
-      if (!tentative)
-      {
-        TryGetConnectionWillUse(dequeuedConnection);
-      }
-
-      return true;
     }
 
     // No available connections
@@ -426,38 +532,17 @@ public class LambdaInstance : ILambdaInstance
   {
     connection.Response.OnCompleted(Task () =>
     {
-      Interlocked.Decrement(ref outstandingRequestCount);
-
-      //
-      // We have decremented the outstanding request count, which means,
-      // if our instance has pre-emptive connections, that our instance
-      // can now handle one more request
-      //
-      // If we do not dispatch here then the background dispatcher will
-      // pick this up, but only 1 every 10 ms.  That's very slow.
-      //
-      // So see if there is a pending request that we can dispatch
-      // and a connection we can do it on
-      //
-
-      // NOTE: We do not await this else we'd get locked up requests and deep call stacks
-      const int maxAttempts = 3;
-      Task.Run(async () =>
+      lock (requestCountLock)
       {
-        // We try this a few times, similarly to a spin lock
-        // Otherwise, single-channel situations will cause 2x-3x more
-        // background dispatches which are slow
-        for (int i = 0; i < maxAttempts; i++)
-        {
-          var result = await dispatcher.TryBackgroundDispatchOne(countAsForeground: true).ConfigureAwait(false);
+        outstandingRequestCount--;
 
-          // If the dispatch was successful, break out of the loop
-          if (result)
-          {
-            break;
-          }
+        // If we went from busy to non-busy, wakeup the background dispatcher
+        if (outstandingRequestCount == MaxConcurrentCount - 1
+            && AvailableConnectionCount > 0)
+        {
+          dispatcher.WakeupBackgroundDispatcher(null);
         }
-      });
+      }
 
       return Task.CompletedTask;
     });
@@ -514,17 +599,44 @@ public class LambdaInstance : ILambdaInstance
     return releasedConnectionCount;
   }
 
-  public bool TransitionToClosing()
+  public TransitionResult TransitionToDraining()
   {
     lock (stateLock)
     {
-      if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
+      if (State == LambdaInstanceState.Draining
+          || State == LambdaInstanceState.Closing
+          || State == LambdaInstanceState.Closed)
       {
         // Already closing
+        return new TransitionResult
+        {
+          TransitionedToDraining = false,
+          WasOpened = WasOpened,
+          OpenWasRejected = OpenWasRejected
+        };
+      }
+
+      State = LambdaInstanceState.Draining;
+      return new TransitionResult
+      {
+        TransitionedToDraining = true,
+        WasOpened = WasOpened,
+        OpenWasRejected = OpenWasRejected
+      };
+    }
+  }
+
+  public bool InvokeCompleted()
+  {
+    lock (stateLock)
+    {
+      if (State == LambdaInstanceState.Closed)
+      {
+        // Already closed
         return false;
       }
 
-      State = LambdaInstanceState.Closing;
+      State = LambdaInstanceState.Closed;
       return true;
     }
   }
@@ -532,20 +644,53 @@ public class LambdaInstance : ILambdaInstance
   /// <summary>
   /// Closes in the background so the Lambda can exit as soon as it sees it's last connection close
   /// </summary>
-  public void Close(bool doNotReplace = false)
+  public async Task Close(bool doNotReplace = false, bool lambdaInitiated = false, bool openWasRejected = false)
   {
     // Ignore if already closing
-    if (!TransitionToClosing())
+    if (!TransitionToDraining().TransitionedToDraining)
     {
       // Already closing
       return;
     }
 
+    if (openWasRejected)
+    {
+      lock (stateLock)
+      {
+        // If the open was rejected, we should not consider the instance as having been opened
+        // The open is rejected if there are too many instances running vs the desired count
+        OpenWasRejected = true;
+      }
+    }
+
     DoNotReplace = doNotReplace;
+    LamdbdaInitiatedClose = lambdaInitiated;
 
     // We own the close, so we can replace this instance
     // Invoke close handler on the Instance Manager
     OnCloseInitiated?.Invoke(this);
+
+    if (Replacing)
+    {
+      // Check if the instances likely hit its deadline rather than being closed for being idle
+      if (_startTime.Elapsed > TimeSpan.FromSeconds(10))
+      {
+        // Wait 10% of the elapsed time or up to 5 seconds for a replacement
+        var waitTime = TimeSpan.FromSeconds(Math.Min(_startTime.Elapsed.TotalSeconds * 0.1, 5));
+        _logger.LogInformation("Close - Waiting for replacement for LambdaId: {LambdaId}, WaitTime: {WaitTime} ms", Id, (int)waitTime.TotalMilliseconds);
+        await Task.Delay(waitTime);
+      }
+    }
+
+    // Flip all instances from Draining to Closing here
+    // We either waited or didn't
+    lock (stateLock)
+    {
+      if (State == LambdaInstanceState.Draining)
+      {
+        State = LambdaInstanceState.Closing;
+      }
+    }
 
     // We do this in the background so the Lambda can exit as soon as the last
     // connection to it is closed
@@ -730,6 +875,7 @@ public class LambdaInstance : ILambdaInstance
     }
 
     // Should not wait here as we will not get a response until the Lambda is done
+    _startTime.Start();
     var invokeTask = LambdaClient.InvokeAsync(request);
 
     // Handle completion of the task
@@ -756,6 +902,10 @@ public class LambdaInstance : ILambdaInstance
          _tcs.SetResult(true);
          _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
        }
+       else
+       {
+         _tcs.SetException(new Exception("LambdaInvoke for LambdaId: " + this.Id + " did not complete"));
+       }
      });
 
     _ = Task.Run(async () =>
@@ -770,18 +920,23 @@ public class LambdaInstance : ILambdaInstance
     });
   }
 
-  public async ValueTask ReenqueueUnusedConnection(LambdaConnection connection)
+  public void ReenqueueUnusedConnection(LambdaConnection connection)
   {
-    Interlocked.Decrement(ref outstandingRequestCount);
+    lock (requestCountLock)
+    {
+      // Decrement the outstanding request count
+      outstandingRequestCount--;
+    }
 
-    // If the lambda is closing then we don't re-enqueue the connection
+    // If the lambda is Closing or Closed then we don't re-enqueue the connection
     // No lock here because we're not changing state
-    // and because getting a non-closing state with a lock
+    // and because getting a non-Closed state with a lock
     // then enqueueing the connection is still a race condition
     // that has to be handled in shutdown
-    if (State == LambdaInstanceState.Closing || State == LambdaInstanceState.Closed)
+    if (State == LambdaInstanceState.Closing
+        || State == LambdaInstanceState.Closed)
     {
-      await connection.Discard();
+      _ = connection.Discard();
       return;
     }
 

@@ -25,6 +25,14 @@ RUN dotnet publish src/PwrDrvr.LambdaDispatch.Router/PwrDrvr.LambdaDispatch.Rout
 # Use the runtime image for ARM64
 FROM amazonlinux:2023
 
+# Declare the build argument with a default value
+ARG GIT_HASH=none
+ARG BUILD_TIME=none
+
+# Set the environment variable
+ENV GIT_HASH=$GIT_HASH
+ENV BUILD_TIME=$BUILD_TIME
+
 # Set the working directory
 WORKDIR /app
 

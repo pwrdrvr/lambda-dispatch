@@ -188,6 +188,17 @@ pub(crate) async fn my_handler(
     return Ok(resp);
   }
 
+  // If the sent_time is more than a second old, just return
+  // This is mostly needed locally where requests get stuck in the queue
+  let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
+  if sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap() {
+    log::info!(
+      "LambdaId: {} - Returning from stale request",
+      lambda_id.clone()
+    );
+    return Ok(resp);
+  }
+
   log::info!(
     "LambdaId: {}, Timeout: {}s - Invoked",
     lambda_id,
@@ -214,6 +225,5 @@ pub(crate) async fn my_handler(
   )
   .await?;
 
-  log::info!("LambdaId: {} - Returning from invoke", lambda_id.clone());
   Ok(resp)
 }

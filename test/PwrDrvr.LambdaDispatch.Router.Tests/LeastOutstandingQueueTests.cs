@@ -51,8 +51,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var result = queue.TryGetLeastOustandingConnection(out var connection);
 
-      Assert.IsFalse(result);
-      Assert.IsNull(connection);
+      Assert.That(result, Is.False);
+      Assert.That(connection, Is.Null);
     }
 
     [Test]
@@ -67,11 +67,12 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
       instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
+      instance.Setup(i => i.IsOpen).Returns(true);
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       var connectionObject = connection.Object;
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
@@ -91,7 +92,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Throws<Exception>();
       result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
 
-      Assert.IsFalse(result);
+      Assert.That(result, Is.False);
       Assert.IsNull(dequeuedConnection);
     }
 
@@ -108,11 +109,12 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
       instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
+      instance.Setup(i => i.IsOpen).Returns(true);
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       instance.Setup(i => i.OutstandingRequestCount).Returns(0);
       var connectionObject = connection.Object;
@@ -123,16 +125,16 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
 
-      Assert.IsTrue(result);
-      Assert.IsNotNull(dequeuedConnection);
+      Assert.That(result, Is.True);
+      Assert.That(dequeuedConnection, Is.Not.Null);
 
       // Getting another instance should fail
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(false);
       result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
 
-      Assert.IsFalse(result);
-      Assert.IsNull(dequeuedConnection);
+      Assert.That(result, Is.False);
+      Assert.That(dequeuedConnection, Is.Null);
     }
 
     [Test]
@@ -147,11 +149,12 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
       instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
+      instance.Setup(i => i.IsOpen).Returns(true);
       instance.Setup(i => i.AvailableConnectionCount).Returns(0);
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
       var connectionObject = connection.Object;
@@ -193,11 +196,12 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
       instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
+      instance.Setup(i => i.IsOpen).Returns(true);
       instance.SetupSequence(i => i.AvailableConnectionCount).Returns(1).Returns(1).Returns(0);
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
       var connectionObject = connection.Object;

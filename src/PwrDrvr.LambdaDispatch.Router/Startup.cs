@@ -6,9 +6,12 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 
 namespace PwrDrvr.LambdaDispatch.Router;
+
 public class Startup
 {
     // public IConfiguration Configuration { get; }
+    private readonly ILogger _logger = LoggerInstance.CreateLogger<Startup>();
+    private readonly ShutdownSignal _shutdownSignal = new();
 
     public Startup()
     {
@@ -34,16 +37,19 @@ public class Startup
 
         services.AddSingleton<ILambdaInstanceManager, LambdaInstanceManager>();
         services.AddSingleton<Dispatcher>();
+        services.AddSingleton<IShutdownSignal>(_shutdownSignal);
 
         Task.Run(MetricsRegistry.PrintMetrics).ConfigureAwait(false);
     }
 
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IConfig config)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IConfig config, IHostApplicationLifetime applicationLifetime)
     {
         if (env.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
         }
+
+        applicationLifetime.ApplicationStopping.Register(OnShutdown);
 
         // Handle the proxied requests with middleware so we do not
         // have two competing sets of controllers
@@ -60,65 +66,10 @@ public class Startup
                     pattern: "{*url}");
         });
     }
-}
 
-public class IncomingRequestMiddleware
-{
-    private readonly RequestDelegate _next;
-    private readonly Dispatcher _dispatcher;
-    private readonly int[] _allowedPorts;
-
-    public IncomingRequestMiddleware(RequestDelegate next, Dispatcher dispatcher, int[] allowedPorts)
+    private void OnShutdown()
     {
-        _next = next;
-        _dispatcher = dispatcher;
-        _allowedPorts = allowedPorts;
-    }
-
-    public async Task InvokeAsync(HttpContext context)
-    {
-        if (_allowedPorts.Contains(context.Connection.LocalPort))
-        {
-            // Handle /health route
-            if (context.Request.Path == "/health")
-            {
-                context.Response.StatusCode = 200;
-                await context.Response.WriteAsync("OK");
-                return;
-            }
-
-            // We're going to handle this
-            // We will prevent the endpoint router from ever seeing this request
-            await _dispatcher.AddRequest(context.Request, context.Response);
-        }
-        else
-        {
-            await _next(context);
-        }
-    }
-}
-
-public class PortRestrictionMiddleware
-{
-    private readonly RequestDelegate _next;
-    private readonly int[] _allowedPorts;
-
-    public PortRestrictionMiddleware(RequestDelegate next, int[] allowedPorts)
-    {
-        _next = next;
-        _allowedPorts = allowedPorts;
-    }
-
-    public async Task InvokeAsync(HttpContext context)
-    {
-        if (_allowedPorts.Contains(context.Connection.LocalPort))
-        {
-            await _next(context);
-        }
-        else
-        {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            await context.Response.WriteAsync("Not found");
-        }
+        _logger.LogInformation("OnShutdown called");
+        _shutdownSignal.Shutdown.Cancel();
     }
 }
