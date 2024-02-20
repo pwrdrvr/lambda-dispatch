@@ -98,6 +98,10 @@ public class WeightedAverageTests
 
     double lastEWMA = 0;
 
+    await Task.Delay(110);
+
+    lastEWMA = weightedAverage.EWMA;
+
     // Wait for the timer to finish
     while (timer.Enabled)
     {
@@ -105,12 +109,11 @@ public class WeightedAverageTests
 
       double currentEWMA = weightedAverage.EWMA;
 
-      Assert.That(currentEWMA, Is.GreaterThanOrEqualTo(lastEWMA));
+      Assert.That(currentEWMA, Is.InRange(lastEWMA * .95, lastEWMA * 4));
 
       // The exact value of EWMA will depend on the timing of the test, so we can't check for a specific value.
       // Instead, we can check that it's within a reasonable range.
       Assert.That(weightedAverage.EWMA, Is.GreaterThan(0));
-      // Assert.That(weightedAverage.EWMA, Is.GreaterThan(1000));
       Assert.That(weightedAverage.EWMA, Is.LessThanOrEqualTo(10000));
 
       lastEWMA = currentEWMA;
