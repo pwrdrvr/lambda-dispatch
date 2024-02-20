@@ -408,6 +408,7 @@ public class LambdaInstance : ILambdaInstance
     // Start the response
     // This sends the headers
     // The response will then hang around waiting for the data to be written to it
+    response.StatusCode = 200;
     await response.StartAsync();
 
     // Only make this connection visible if we're not going to immediately use it for a queued request

@@ -14,6 +14,9 @@ public class PendingRequest
   private readonly Stopwatch _swDispatch = Stopwatch.StartNew();
   private readonly Stopwatch _swResponse = Stopwatch.StartNew();
 
+  /// <summary>
+  /// Time the request spent waiting for dispatch
+  /// </summary>
   public TimeSpan DispatchDelay
   {
     get
@@ -22,11 +25,30 @@ public class PendingRequest
     }
   }
 
+  /// <summary>
+  /// Total duration of the request, including waiting for dispatch
+  /// </summary>
   public TimeSpan Duration
   {
     get
     {
       return _swResponse.Elapsed;
+    }
+  }
+
+  /// <summary>
+  /// Time the request took after it was dispatched
+  /// </summary>
+  public TimeSpan DurationAfterDispatch
+  {
+    get
+    {
+      if (_swDispatch.IsRunning)
+      {
+        return _swDispatch.Elapsed;
+      }
+
+      return _swResponse.Elapsed - _swDispatch.Elapsed;
     }
   }
 
