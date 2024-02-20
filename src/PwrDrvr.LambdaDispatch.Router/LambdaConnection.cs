@@ -27,6 +27,9 @@ public enum LambdaConnectionState
 
 public class LambdaConnection
 {
+  private readonly static string _gitHash = Environment.GetEnvironmentVariable("GIT_HASH") ?? "unknown";
+  private readonly static string _buildTime = Environment.GetEnvironmentVariable("BUILD_TIME") ?? "unknown";
+
   private readonly ILogger<LambdaConnection> _logger = LoggerInstance.CreateLogger<LambdaConnection>();
 
   /// <summary>
@@ -55,18 +58,24 @@ public class LambdaConnection
   public string ChannelId { get; private set; }
 
   /// <summary>
+  /// Indicates whether this was the first connection for an instance, causing the instance to be marked `Open`
+  /// </summary>
+  public bool FirstConnectionForInstance { get; private set; }
+
+  /// <summary>
   /// Task that completes when the connection is closed
   /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
   private CancellationTokenSource CTS = new CancellationTokenSource();
 
-  public LambdaConnection(HttpRequest request, HttpResponse response, ILambdaInstance instance, string channelId)
+  public LambdaConnection(HttpRequest request, HttpResponse response, ILambdaInstance instance, string channelId, bool firstConnectionForInstance)
   {
     Request = request;
     Response = response;
     Instance = instance;
     ChannelId = channelId;
+    FirstConnectionForInstance = firstConnectionForInstance;
 
     // Set the state to open
     State = LambdaConnectionState.Open;
@@ -74,7 +83,7 @@ public class LambdaConnection
     // Handle an abnormal connection termination
     Request.HttpContext.RequestAborted.Register(() =>
     {
-      _logger.LogWarning("LambdaId: {}, ChannelId: {} - ProxyRequestToLambda - Incoming request aborted", Instance.Id, ChannelId);
+      _logger.LogWarning("LambdaId: {}, ChannelId: {} - LambdaConnection - Incoming request aborted", Instance.Id, ChannelId);
 
       Instance.ConnectionClosed(State == LambdaConnectionState.Busy);
 
@@ -94,25 +103,39 @@ public class LambdaConnection
     });
   }
 
+  /// <summary>
+  /// Discard the connection by writing a well known request path for a goaway to the Lambda
+  /// </summary>
+  /// <returns></returns>
   public async Task Discard()
   {
-    if (State == LambdaConnectionState.Closed)
+    try
     {
-      return;
+      if (State == LambdaConnectionState.Closed)
+      {
+        return;
+      }
+
+      State = LambdaConnectionState.Closed;
+
+      // Close the connection
+      // Do not set the status code because it's already been sent
+      // as 200 if this connection was in the queue
+      // There will either be no subsequent connection or it will
+      // get immediately rejected with a 409
+      try
+      {
+        await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
+        await Response.CompleteAsync();
+        try { await Request.Body.CopyToAsync(Stream.Null); }
+        catch { try { Request.HttpContext.Abort(); } catch { } }
+      }
+      catch { try { Request.HttpContext.Abort(); } catch { } }
     }
-
-    State = LambdaConnectionState.Closed;
-
-    // Close the connection
-    // Do not set the status code because it's already been sent
-    // as 200 if this connection was in the queue
-    // There will either be no subsequent connection or it will
-    // get immediately rejected with a 409
-    await Response.WriteAsync($"GET /_lambda_dispatch/goaway HTTP/1.1\r\nX-Lambda-Id: {Instance.Id}\r\nX-Channel-Id: {ChannelId}\r\n\r\n", CTS.Token);
-    await Response.CompleteAsync();
-    try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
-
-    TCS.SetResult();
+    finally
+    {
+      TCS.SetResult();
+    }
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -294,15 +317,21 @@ public class LambdaConnection
           }
         }
 
-        // We have to abort the connection for HTTP/1.1 or the stream
-        // for HTTP2 because we don't know if we sent or finished the whole
-        // request or not.
-        try { Request.HttpContext.Abort(); } catch { }
-        try { incomingRequest.HttpContext.Abort(); } catch { }
-
-        // Just in case anything is still stuck
-        CTS.Cancel();
+        throw;
       }
+    }
+    catch
+    {
+      // We have to abort the connection for HTTP/1.1 or the stream
+      // for HTTP2 because we don't know if we sent or finished the whole
+      // request or not.
+      try { Request.HttpContext.Abort(); } catch { }
+      try { Response.HttpContext.Abort(); } catch { }
+
+      // Just in case anything is still stuck
+      CTS.Cancel();
+
+      throw;
     }
     finally
     {
@@ -471,6 +500,10 @@ public class LambdaConnection
         startOfNextLine = endOfLine + 1;
       }
 
+      // Add identifying headers
+      incomingResponse.Headers.Append("x-lambda-dispatch-version", _gitHash);
+      incomingResponse.Headers.Append("x-lambda-dispatch-build-time", _buildTime);
+
       // Flush any remaining bytes in the buffer
       if (startOfNextLine < totalBytesRead)
       {
@@ -485,19 +518,22 @@ public class LambdaConnection
       // We do what an AWS ALB does which is to send a 502 status code
       // and close the connection
       _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, incomingRequest.Path);
-      // Clear the headers
-      incomingResponse.Headers.Clear();
-      // Set the status code
-      incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
+      try
+      {// Clear the headers
+        incomingResponse.Headers.Clear();
+        // Set the status code
+        incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
+      }
+      catch { }
       // Close the response from the extension
-      Request.HttpContext.Abort();
-      // Close the request to the extension
-      Response.HttpContext.Abort();
+      try { Request.HttpContext.Abort(); } catch { }
       // Close the response to the client
-      await incomingResponse.CompleteAsync();
-      // Close the request from the client, if not closed already
-      incomingRequest.HttpContext.Abort();
-      return;
+      try { await incomingResponse.CompleteAsync(); }
+      catch
+      {
+        try { incomingResponse.HttpContext.Abort(); } catch { }
+      }
+      throw;
     }
     finally
     {

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Timeouts;
 using System.Globalization;
+using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 
@@ -14,12 +15,14 @@ namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 public class ChunkedController : ControllerBase
 {
   private readonly ILogger<ChunkedController> logger;
+  private readonly IMetricsLogger metricsLogger;
   private readonly Dispatcher dispatcher;
 
-  public ChunkedController(Dispatcher dispatcher, ILogger<ChunkedController> logger)
+  public ChunkedController(Dispatcher dispatcher, IMetricsLogger metricsLogger, ILogger<ChunkedController> logger)
   {
     this.dispatcher = dispatcher;
     this.logger = logger;
+    this.metricsLogger = metricsLogger;
   }
 
   [HttpGet]
@@ -38,10 +41,10 @@ public class ChunkedController : ControllerBase
 
   [HttpGet]
   [Route("close/{lambdaId}")]
-  public IActionResult CloseInstance(string lambdaId)
+  public async Task<IActionResult> CloseInstance(string lambdaId)
   {
     logger.LogInformation("Router.ChunkedController.CloseInstance - Closing LambdaId: {lambdaId}", lambdaId);
-    dispatcher.CloseInstance(lambdaId);
+    await dispatcher.CloseInstance(lambdaId, lambdaInitiated: true);
 
     return Ok();
   }
@@ -115,7 +118,7 @@ public class ChunkedController : ControllerBase
           try
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
-            logger.LogWarning("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing", lambdaId, channelId);
+            logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing", lambdaId, channelId);
             // Only in this case can we close the response because it hasn't been started
             // Have to write the response body first since the Lambda
             // is blocking on reading the Response before they will stop sending the Request
@@ -125,7 +128,7 @@ public class ChunkedController : ControllerBase
             await Response.WriteAsync($"No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing");
             await Response.CompleteAsync();
             try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
-            logger.LogWarning("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closed", lambdaId, channelId);
+            logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closed", lambdaId, channelId);
           }
           catch (Exception ex)
           {
@@ -138,7 +141,7 @@ public class ChunkedController : ControllerBase
           try
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
-            logger.LogInformation("Router.ChunkedController.Post - LambdaInstance found for X-Lambda-Id header: {lambdaId} but it is already closed", lambdaId);
+            logger.LogDebug("Router.ChunkedController.Post - LambdaInstance found for X-Lambda-Id header: {lambdaId} but it is already closed", lambdaId);
 
             // LambdaInstanceManager.AddConnectionForLambda has already closed the request/response
 
@@ -170,6 +173,7 @@ public class ChunkedController : ControllerBase
           throw;
         }
       }
+
     }
   }
 }

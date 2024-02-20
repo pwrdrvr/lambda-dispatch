@@ -9,6 +9,7 @@ using App.Metrics.Formatters;
 using App.Metrics.Formatters.Ascii;
 using App.Metrics.Gauge;
 using App.Metrics.Histogram;
+using App.Metrics.Meter;
 using App.Metrics.Reporting;
 using App.Metrics.ReservoirSampling.Uniform;
 using App.Metrics.Scheduling;
@@ -64,7 +65,7 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
 
     foreach (var gauge in metricsData.Contexts.SelectMany(context => context.Gauges))
     {
-      await sw.WriteLineAsync($"{gauge.Name}: {gauge.Value} {gauge.Unit}");
+      await sw.WriteLineAsync($"{gauge.Name}: {Math.Round(gauge.Value, 1)} {gauge.Unit}");
     }
 
     foreach (var counter in metricsData.Contexts.SelectMany(context => context.Counters))
@@ -80,6 +81,11 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
     foreach (var timer in metricsData.Contexts.SelectMany(context => context.Timers))
     {
       await sw.WriteLineAsync($"{timer.Name}: {timer.Value.Histogram.Count} count {Math.Round(timer.Value.Histogram.LastValue, 1)} last {Math.Round(timer.Value.Histogram.Mean, 1)} mean {Math.Round(timer.Value.Histogram.Min, 1)} min {Math.Round(timer.Value.Histogram.Max, 1)} max {timer.Unit}");
+    }
+
+    foreach (var meter in metricsData.Contexts.SelectMany(context => context.Meters))
+    {
+      await sw.WriteLineAsync($"{meter.Name}: {meter.Value.Count} count {Math.Round(meter.Value.MeanRate, 1)} mean rate {Math.Round(meter.Value.OneMinuteRate, 1)} 1min ewma {Math.Round(meter.Value.FiveMinuteRate, 1)} 5min ewma {Math.Round(meter.Value.FifteenMinuteRate, 1)} 15min ewma {meter.Unit}");
     }
 
     // Sort the metric text and write it to the output stream
@@ -131,12 +137,18 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly TimerOptions IncomingRequestTimer = new()
+  public static readonly HistogramOptions IncomingRequestDuration = new()
   {
-    Name = "IncomingRequestTimer",
+    Name = "IncomingRequestDuration",
     MeasurementUnit = Unit.Custom("ms"),
-    DurationUnit = TimeUnit.Milliseconds,
-    RateUnit = TimeUnit.Milliseconds,
+    Reservoir = () => new DefaultAlgorithmRReservoir(),
+  };
+
+  public static readonly HistogramOptions IncomingRequestDurationAfterDispatch = new()
+  {
+    Name = "IncomingRequestDurationAfterDispatch",
+    MeasurementUnit = Unit.Custom("ms"),
+    Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
   public static readonly TimerOptions LambdaRequestTimer = new()
@@ -198,6 +210,18 @@ public static class MetricsRegistry
     MeasurementUnit = Unit.Items,
   };
 
+  public static readonly GaugeOptions IncomingRequestRPS = new()
+  {
+    Name = "IncomingRequestRPS",
+    MeasurementUnit = Unit.Requests,
+  };
+
+  public static readonly GaugeOptions IncomingRequestDurationEWMA = new()
+  {
+    Name = "IncomingRequestDurationEWMA",
+    MeasurementUnit = Unit.Custom("ms"),
+  };
+
   public static readonly GaugeOptions LambdaInstanceStoppingCount = new()
   {
     Name = "LambdaInstanceStoppingCount",
@@ -234,6 +258,13 @@ public static class MetricsRegistry
     Name = "LambdaInstanceRunningRequests",
     MeasurementUnit = Unit.Requests,
     Reservoir = () => new DefaultAlgorithmRReservoir(),
+  };
+
+  public static readonly MeterOptions IncomingRequestsMeter = new()
+  {
+    Name = "IncomingRequests",
+    MeasurementUnit = Unit.Requests,
+    RateUnit = TimeUnit.Seconds,
   };
 
   public static async Task PrintMetrics()

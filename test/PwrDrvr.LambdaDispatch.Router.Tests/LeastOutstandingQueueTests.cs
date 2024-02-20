@@ -67,7 +67,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
@@ -108,7 +108,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
@@ -147,7 +147,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
@@ -193,7 +193,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
 
       var instance = new Mock<ILambdaInstance>();
-      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1");
+      var connection = new Mock<LambdaConnection>(request.Object, response.Object, instance.Object, "channel-1", false);
 
       var id = "instance-1";
       instance.Setup(i => i.Id).Returns(id);
