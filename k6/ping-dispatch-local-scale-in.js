@@ -10,6 +10,8 @@ export const options = {
       startRate: 20,
       timeUnit: "1s",
       stages: [
+        { target: 1000, duration: "10s" },
+        { target: 1000, duration: "30s" },
         { target: 10000, duration: "10s" },
         { target: 10000, duration: "10s" },
         { target: 1000, duration: "10s" },

@@ -260,7 +260,6 @@ public class Dispatcher : IBackgroundDispatcher
     // since we can have more connections than we are allowed to use
     // Check if we are allowed (race condition, sure) to use this connection
     // Let's try to dispatch if there is a pending request in the queue
-    // Get the pending request
     if (_pendingRequestCount > 0 && addConnectionResult.CanUseNow)
     {
       if (TryGetPendingRequestAndDispatch(addConnectionResult.Connection))
