@@ -107,8 +107,10 @@ public class Dispatcher : IBackgroundDispatcher
       _logger.LogDebug("Dispatching incoming request immediately to LambdaId: {Id}", lambdaConnection.Instance.Id);
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ImmediateDispatchCount);
-      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
-      _metricsLogger.PutMetric("DispatchDelay", 0, Unit.Milliseconds);
+      // Recording 0 dispatch delays skews the stats about
+      // requests that actually encounted a delay
+      // MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
+      // _metricsLogger.PutMetric("DispatchDelay", 0, Unit.Milliseconds);
 
       Interlocked.Increment(ref _runningRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
