@@ -328,11 +328,18 @@ public class Dispatcher : IBackgroundDispatcher
           // and a response has been completed
           // We get woken up here when a connection is added to the LOQ, so let's check
           var anyDispatched = false;
-          while (_lambdaInstanceManager.TryGetConnection(out connection, tentative: true)
+          while (((_newConnections.TryTake(out connection) && connection != null)
+                  || _lambdaInstanceManager.TryGetConnection(out connection, tentative: true))
                   && TryGetPendingRequestAndDispatch(connection))
           {
             anyDispatched = true;
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+
+            // Make sure we do not starve the LOQ for foreground dispatches
+            if (_newConnections.TryTake(out connection) && connection != null)
+            {
+              _lambdaInstanceManager.ReenqueueUnusedConnection(connection, connection.Instance.Id);
+            }
           }
 
           if (anyDispatched)
