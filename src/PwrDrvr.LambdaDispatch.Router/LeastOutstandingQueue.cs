@@ -4,24 +4,26 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
-public interface ILeastOutstandingItem
+public interface ILeastOutstandingQueue
 {
-  int OutstandingRequestCount { get; }
+  int MaxConcurrentCount { get; }
 
-  string Id { get; }
+  bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
 
-  LambdaConnection? TryGetConnection();
+  bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out ILambdaInstance? instance);
+
+  void AddInstance(ILambdaInstance instance);
+
+  bool ReinstateFullInstance(ILambdaInstance instance);
 }
 
 /// <summary>
 /// Gives approximate least outstanding requests for items that may
 /// have changes in outstanding requests asynchronously in the background
 /// </summary>
-public class LeastOutstandingQueue : IDisposable
+public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
 {
   private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
-
-  public int MaxConcurrentCount { get => maxConcurrentCount; }
 
   private readonly int maxConcurrentCount;
 
@@ -32,14 +34,23 @@ public class LeastOutstandingQueue : IDisposable
   // Token to cancel the background tasks
   private readonly CancellationTokenSource cancellationTokenSource = new();
 
+  public int MaxConcurrentCount { get => maxConcurrentCount; }
+
   public void Dispose()
   {
     cancellationTokenSource.Cancel();
     GC.SuppressFinalize(this);
   }
 
-  public LeastOutstandingQueue(int maxConcurrentCount)
+  public LeastOutstandingQueue(IConfig config)
   {
+    if (config == null)
+    {
+      throw new ArgumentNullException(nameof(config));
+    }
+
+    maxConcurrentCount = config.MaxConcurrentCount;
+
     if (maxConcurrentCount <= 0)
     {
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be greater than 0");
@@ -49,8 +60,6 @@ public class LeastOutstandingQueue : IDisposable
     {
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be less than 100");
     }
-
-    this.maxConcurrentCount = maxConcurrentCount;
 
     availableInstances = InitQueues(maxConcurrentCount);
 

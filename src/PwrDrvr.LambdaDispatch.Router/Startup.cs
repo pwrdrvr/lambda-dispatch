@@ -35,6 +35,7 @@ public class Startup
         services.AddHealthChecks();
         services.AddControllers();
 
+        services.AddSingleton<ILeastOutstandingQueue, LeastOutstandingQueue>();
         services.AddSingleton<ILambdaInstanceManager, LambdaInstanceManager>();
         services.AddSingleton<Dispatcher>();
         services.AddSingleton<IShutdownSignal>(_shutdownSignal);

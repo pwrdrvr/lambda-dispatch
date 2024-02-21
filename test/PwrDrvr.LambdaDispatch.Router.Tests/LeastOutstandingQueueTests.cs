@@ -16,15 +16,20 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     [Test]
     public void Constructor_ShouldRejectTooSmallMaxConcurrentCount()
     {
-      Assert.Throws<ArgumentOutOfRangeException>(() => new LeastOutstandingQueue(0));
-      Assert.Throws<ArgumentOutOfRangeException>(() => new LeastOutstandingQueue(-1));
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(0);
+      Assert.Throws<ArgumentOutOfRangeException>(() => new LeastOutstandingQueue(config.Object));
+      config.Setup(c => c.MaxConcurrentCount).Returns(-1);
+      Assert.Throws<ArgumentOutOfRangeException>(() => new LeastOutstandingQueue(config.Object));
     }
 
     [Test]
     public void Constructor_ShouldAcceptMaxConcurrentCount()
     {
       var maxConcurrentCount = 10;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(config.Object);
 
       Assert.That(queue.MaxConcurrentCount, Is.EqualTo(maxConcurrentCount));
     }
@@ -33,7 +38,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     public void AddInstance_ShouldRejectNullInstance()
     {
       var maxConcurrentCount = 10;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(config.Object);
 
       Assert.Throws<ArgumentNullException>(() => queue.AddInstance(null));
     }
@@ -42,7 +49,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     public void AddInstance_ShouldNotReturnInvlaidInstanceFromQueue()
     {
       var maxConcurrentCount = 10;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(config.Object);
       var lambdaClient = new Mock<IAmazonLambda>();
       var dispatcher = new Mock<IBackgroundDispatcher>();
 
@@ -59,8 +68,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     public void TryGetLeastOutstandingConnection_ShouldReturnConnection()
     {
       var maxConcurrentCount = 10;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
 
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
       request.Setup(i => i.HttpContext).Returns(requestContext.Object);
@@ -76,6 +86,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       var connectionObject = connection.Object;
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
+
+      using var queue = new LeastOutstandingQueue(config.Object);
 
       // Add the instance
       queue.AddInstance(instance.Object);
@@ -101,7 +113,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     public void TryGetLeastOutstandingConnection_WorksWithMaxConcurrentOne()
     {
       var maxConcurrentCount = 1;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(config.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -141,7 +155,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     public void TryGetLeastOutstandingConnection_NoAvailableInstance()
     {
       var maxConcurrentCount = 1;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(config.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -188,7 +204,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     public void TryGetLeastOutstandingConnection_ShouldMarkNoAvailableAsFull()
     {
       var maxConcurrentCount = 10;
-      using var queue = new LeastOutstandingQueue(maxConcurrentCount);
+      var config = new Mock<IConfig>();
+      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+      using var queue = new LeastOutstandingQueue(config.Object);
 
       var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
       var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();

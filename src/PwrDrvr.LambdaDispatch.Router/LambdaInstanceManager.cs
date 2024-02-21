@@ -43,7 +43,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly CapacityManager _capacityManager;
 
-  private readonly LeastOutstandingQueue _leastOutstandingQueue;
+  private readonly ILeastOutstandingQueue _leastOutstandingQueue;
 
   private IBackgroundDispatcher? _dispatcher;
 
@@ -99,12 +99,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// </summary>
   private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
-  public LambdaInstanceManager(IConfig config, IMetricsLogger metricsLogger)
+  public LambdaInstanceManager(ILeastOutstandingQueue queue, IConfig config, IMetricsLogger metricsLogger)
   {
     _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
     _channelCount = config.ChannelCount;
-    _leastOutstandingQueue = new(_maxConcurrentCount);
+    _leastOutstandingQueue = queue;
     _functionName = config.FunctionNameOnly;
     _functionNameQualifier = config.FunctionNameQualifier;
     _metricsLogger = metricsLogger;
@@ -117,6 +117,20 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   public void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher)
   {
     _dispatcher = dispatcher;
+  }
+
+  /// <summary>
+  /// Method for TEST only - yeah that stinks
+  /// </summary>
+  /// <param name="instance"></param>
+  /// <returns></returns>
+  public bool TryAddInstance(ILambdaInstance instance)
+  {
+    lock (_instanceCountLock)
+    {
+      _startingInstanceCount++;
+    }
+    return _instances.TryAdd(instance.Id, instance);
   }
 
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
