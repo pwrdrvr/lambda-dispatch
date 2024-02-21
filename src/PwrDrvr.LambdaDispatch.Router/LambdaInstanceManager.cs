@@ -408,14 +408,14 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             if (deferredScaleInNewDesiredInstanceCount.Value == _desiredInstanceCount)
             {
               // Nothing to do, just go around
-              _logger.LogInformation("ManageCapacity - Skipping performing deferred scale in: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
-                _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
+              _logger.LogInformation("ManageCapacity - Skipping performing deferred scale in: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {}, _startingInstanceCount {}, _stoppedInstanceCount {}",
+                _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount, _stoppingInstanceCount);
               deferredScaleInNewDesiredInstanceCount = null;
               continue;
             }
 
-            _logger.LogInformation("ManageCapacity - Performing deferred scale in: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {_runningInstanceCount}, _startingInstanceCount {_startingInstanceCount}",
-              _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount);
+            _logger.LogInformation("ManageCapacity - Performing deferred scale in: _desiredInstanceCount {_desiredInstanceCount} -> {deferredScaleInNewDesiredInstanceCount.Value}, _runningInstanceCount {}, _startingInstanceCount {}, _stoppedInstanceCount {}",
+              _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount, _stoppingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
             _metricsLogger.PutMetric("LambdaDesiredCount", _desiredInstanceCount, Unit.Count);
             MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
