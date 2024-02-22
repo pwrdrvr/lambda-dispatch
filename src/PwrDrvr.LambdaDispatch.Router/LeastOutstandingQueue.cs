@@ -168,6 +168,13 @@ public class LeastOutstandingQueue : IDisposable, ILambdaInstanceQueue
       //
       foreach (var instance in availableInstances[i])
       {
+        // We have to skip !Open instances because they will log errors
+        if (!instance.IsOpen)
+        {
+          // The instance is not open for requests, so we'll drop it on the floor and move on
+          continue;
+        }
+
         // Get a connection from the instance
         if (!instance.TryGetConnection(out var dequeuedConnection, tentative))
         {
