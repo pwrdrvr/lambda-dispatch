@@ -475,13 +475,6 @@ public class LambdaInstance : ILambdaInstance
     // as this is the same as getting a connection from an instance that is not closing
     // If we can't get a connection we just try another instance
 
-    // We allow using instances that are Closing but not yet Closed
-    if (State == LambdaInstanceState.Closed || State == LambdaInstanceState.Closing)
-    {
-      _logger.LogWarning("Connection requested from Lambda Instance that is closed or closing, LambdaId: {LambdaId}", Id);
-      return false;
-    }
-
     if (!IsOpen)
     {
       _logger.LogWarning("Connection requested from Lambda Instance that is not open, LambdaId: {LambdaId}", Id);
