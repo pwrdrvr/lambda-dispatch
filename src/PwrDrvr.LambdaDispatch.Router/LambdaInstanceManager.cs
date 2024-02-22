@@ -43,7 +43,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly CapacityManager _capacityManager;
 
-  private readonly ILeastOutstandingQueue _leastOutstandingQueue;
+  private readonly ILambdaInstanceQueue _leastOutstandingQueue;
 
   private IBackgroundDispatcher? _dispatcher;
 
@@ -99,7 +99,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// </summary>
   private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
-  public LambdaInstanceManager(ILeastOutstandingQueue queue, IConfig config, IMetricsLogger metricsLogger)
+  public LambdaInstanceManager(ILambdaInstanceQueue queue, IConfig config, IMetricsLogger metricsLogger)
   {
     _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
@@ -136,7 +136,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
   {
     // Return an available instance or start a new one if none are available
-    var gotConnection = _leastOutstandingQueue.TryGetLeastOustandingConnection(out var dequeuedConnection, tentative);
+    var gotConnection = _leastOutstandingQueue.TryGetConnection(out var dequeuedConnection, tentative);
     connection = dequeuedConnection;
 
     return gotConnection;
@@ -445,7 +445,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           while (scaleInCount-- > 0)
           {
             // Get the least outstanding instance
-            if (_leastOutstandingQueue.TryRemoveLeastOutstandingInstance(out var leastBusyInstance))
+            if (_leastOutstandingQueue.TryRemoveInstance(out var leastBusyInstance))
             {
               // Remove it from the collection
               _instances.TryRemove(leastBusyInstance.Id, out var _);
