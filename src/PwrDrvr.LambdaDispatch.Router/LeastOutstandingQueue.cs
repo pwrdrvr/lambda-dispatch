@@ -181,46 +181,13 @@ public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
       //
       // We may loop through and move many items if they are not usable
       //
-      while (availableInstances[i].TryDequeue(out var instance))
+      foreach (var instance in availableInstances[i])
       {
-        // We got an instance with, what we think, is the least outstanding requests
-        // But, the instance may actually be closed or full due to disconnects
-        // So we'll check that here
-        if (!instance.IsOpen)
-        {
-          // The instance is not open, so we'll drop it on the floor and move on
-          continue;
-        }
-        if (instance.AvailableConnectionCount <= 0)
-        {
-          // The instance is full, so we'll put it in the full instances
-          fullInstances.TryAdd(instance.Id, instance);
-          continue;
-        }
-
-        // Note: this is the only time we own this instance
-        // Once we put it back in a queue it's mutable by other threads
-
         // Get a connection from the instance
         if (!instance.TryGetConnection(out var dequeuedConnection, tentative))
         {
-          // The instance is full due to disconnects
-          // so we'll put it in the full instances
-          // We'll have to try to get a different instance
-          fullInstances.TryAdd(instance.Id, instance);
+          // The instance can't help us
           continue;
-        }
-
-        if (instance.AvailableConnectionCount <= 0 || instance.OutstandingRequestCount >= maxConcurrentCount)
-        {
-          // This instance is full now (the outstanding request count was incremented on dequeue)
-          fullInstances.TryAdd(instance.Id, instance);
-        }
-        else
-        {
-          // The instance is not going to be full after we dispatch to it
-          // So we can put it back in the queue
-          availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
         }
 
         // We got a connection
@@ -235,48 +202,19 @@ public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
     foreach (var lambdaId in fullInstances.Keys)
     {
       // Get the instance
-      if (!fullInstances.TryRemove(lambdaId, out var instance))
+      if (!fullInstances.TryGetValue(lambdaId, out var instance))
       {
         // The instance is gone, so move on
         continue;
       }
 
-      if (!instance.IsOpen)
-      {
-        // The instance is not open so drop it on the floor and move on
-        continue;
-      }
-
-      if (instance.AvailableConnectionCount <= 0)
-      {
-        // The instance is full, so we'll put it back in the full instances
-        fullInstances.TryAdd(instance.Id, instance);
-        continue;
-      }
-
-      // Note: this is the only time we own this instance
-      // Once we put it back in a queue it's mutable by other threads
-      // Get a connection from the instance
       if (!instance.TryGetConnection(out var dequeuedConnection, tentative))
       {
-        // The instance is actually full so put it back
-        fullInstances.TryAdd(instance.Id, instance);
         continue;
       }
 
       // We got a connection
       connection = dequeuedConnection;
-
-      if (instance.AvailableConnectionCount <= 0 || instance.OutstandingRequestCount >= maxConcurrentCount)
-      {
-        // The instance is full, so we'll put it back in the full instances
-        fullInstances.TryAdd(instance.Id, instance);
-      }
-      else
-      {
-        // The instance has available connections, so put it in the correct queue
-        availableInstances[GetFloorQueueIndex(instance.OutstandingRequestCount)].Enqueue(instance);
-      }
 
       return true;
     }
