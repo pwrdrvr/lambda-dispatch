@@ -118,7 +118,7 @@ public class DispatcherTests
     var mockResponse = new Mock<HttpResponse>();
     var maxConcurrentCount = 1;
     var channelId = "channelId";
-    var mockQueue = new Mock<ILeastOutstandingQueue>();
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     mockConfig.SetupGet(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
     var mockMetricsLogger = new Mock<IMetricsLogger>();

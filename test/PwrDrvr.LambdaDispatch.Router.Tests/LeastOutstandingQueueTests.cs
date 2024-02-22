@@ -24,17 +24,6 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     }
 
     [Test]
-    public void Constructor_ShouldAcceptMaxConcurrentCount()
-    {
-      var maxConcurrentCount = 10;
-      var config = new Mock<IConfig>();
-      config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
-      using var queue = new LeastOutstandingQueue(config.Object);
-
-      Assert.That(queue.MaxConcurrentCount, Is.EqualTo(maxConcurrentCount));
-    }
-
-    [Test]
     public void AddInstance_ShouldRejectNullInstance()
     {
       var maxConcurrentCount = 10;
@@ -58,7 +47,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object, dispatcher.Object);
       queue.AddInstance(instance);
 
-      var result = queue.TryGetLeastOustandingConnection(out var connection);
+      var result = queue.TryGetConnection(out var connection);
 
       Assert.That(result, Is.False);
       Assert.That(connection, Is.Null);
@@ -92,7 +81,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // Add the instance
       queue.AddInstance(instance.Object);
 
-      var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+      var result = queue.TryGetConnection(out var dequeuedConnection);
 
       Assert.IsTrue(result);
       Assert.IsNotNull(dequeuedConnection);
@@ -102,7 +91,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.AvailableConnectionCount).Returns(0);
       // TryGetConnection should not be called
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Throws<Exception>();
-      result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
+      result = queue.TryGetConnection(out dequeuedConnection);
 
       Assert.That(result, Is.False);
       Assert.IsNull(dequeuedConnection);
@@ -137,7 +126,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // Add the instance
       queue.AddInstance(instance.Object);
 
-      var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+      var result = queue.TryGetConnection(out var dequeuedConnection);
 
       Assert.That(result, Is.True);
       Assert.That(dequeuedConnection, Is.Not.Null);
@@ -145,7 +134,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // Getting another instance should fail
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(false);
-      result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
+      result = queue.TryGetConnection(out dequeuedConnection);
 
       Assert.That(result, Is.False);
       Assert.That(dequeuedConnection, Is.Null);
@@ -179,7 +168,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // Add the instance
       queue.AddInstance(instance.Object);
 
-      var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+      var result = queue.TryGetConnection(out var dequeuedConnection);
       Assert.Multiple(() =>
       {
         Assert.That(result, Is.False);
@@ -192,7 +181,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // We should find the instance in the full list and move it to the available list
       Assert.That(queue.ReinstateFullInstance(instance.Object), Is.True);
 
-      result = queue.TryGetLeastOustandingConnection(out dequeuedConnection);
+      result = queue.TryGetConnection(out dequeuedConnection);
       Assert.Multiple(() =>
       {
         Assert.That(result, Is.True);
@@ -228,7 +217,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       // Add the instance
       queue.AddInstance(instance.Object);
 
-      var result = queue.TryGetLeastOustandingConnection(out var dequeuedConnection);
+      var result = queue.TryGetConnection(out var dequeuedConnection);
       Assert.Multiple(() =>
       {
         Assert.That(result, Is.True);

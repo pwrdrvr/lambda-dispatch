@@ -4,24 +4,11 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
-public interface ILeastOutstandingQueue
-{
-  int MaxConcurrentCount { get; }
-
-  bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
-
-  bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out ILambdaInstance? instance);
-
-  void AddInstance(ILambdaInstance instance);
-
-  bool ReinstateFullInstance(ILambdaInstance instance);
-}
-
 /// <summary>
 /// Gives approximate least outstanding requests for items that may
 /// have changes in outstanding requests asynchronously in the background
 /// </summary>
-public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
+public class LeastOutstandingQueue : IDisposable, ILambdaInstanceQueue
 {
   private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
 
@@ -33,8 +20,6 @@ public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
 
   // Token to cancel the background tasks
   private readonly CancellationTokenSource cancellationTokenSource = new();
-
-  public int MaxConcurrentCount { get => maxConcurrentCount; }
 
   public void Dispose()
   {
@@ -120,7 +105,7 @@ public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
   /// </summary>
   /// <param name="instance"></param>
   /// <returns></returns>
-  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out ILambdaInstance? instance)
+  public bool TryRemoveInstance([NotNullWhen(true)] out ILambdaInstance? instance)
   {
     instance = null;
 
@@ -170,7 +155,7 @@ public class LeastOutstandingQueue : IDisposable, ILeastOutstandingQueue
   /// Note: this will perform some limited rebalancing of instances if wrong counts are encountered
   /// </summary>
   /// <returns></returns>
-  public bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
+  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
   {
     connection = null;
 

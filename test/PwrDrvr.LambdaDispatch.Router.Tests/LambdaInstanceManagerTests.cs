@@ -24,7 +24,7 @@ public class LambdaInstanceManagerTests
     var request = new Mock<HttpRequest>();
     request.Setup(i => i.HttpContext).Returns(requestContext.Object);
     var response = new Mock<HttpResponse>();
-    var mockQueue = new Mock<ILeastOutstandingQueue>();
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
 
@@ -63,7 +63,7 @@ public class LambdaInstanceManagerTests
     mockInstance.Setup(i => i.Id).Returns(lambdaId);
     mockInstance.Object.OnOpen += (instance) => { };
     var mockConnection = new Mock<LambdaConnection>(request.Object, response.Object, mockInstance.Object, "channel-1", false);
-    var mockQueue = new Mock<ILeastOutstandingQueue>();
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
 
@@ -109,7 +109,7 @@ public class LambdaInstanceManagerTests
     mockInstance.Setup(i => i.Id).Returns(lambdaId);
     mockInstance.Object.OnOpen += (instance) => { };
     var mockConnection = new Mock<LambdaConnection>(request.Object, response.Object, mockInstance.Object, "channel-1", false);
-    var mockQueue = new Mock<ILeastOutstandingQueue>();
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
 
@@ -155,7 +155,7 @@ public class LambdaInstanceManagerTests
     mockInstance.Setup(i => i.Id).Returns(lambdaId);
     mockInstance.Object.OnOpen += (instance) => { };
     var mockConnection = new Mock<LambdaConnection>(request.Object, response.Object, mockInstance.Object, "channel-1", false);
-    var mockQueue = new Mock<ILeastOutstandingQueue>();
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
 
@@ -201,7 +201,7 @@ public class LambdaInstanceManagerTests
     mockInstance.Setup(i => i.Id).Returns(lambdaId);
     mockInstance.Object.OnOpen += (instance) => { };
     var mockConnection = new Mock<LambdaConnection>(request.Object, response.Object, mockInstance.Object, "channel-1", false);
-    var mockQueue = new Mock<ILeastOutstandingQueue>();
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
 
