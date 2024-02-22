@@ -19,6 +19,13 @@ public class RoundRobinLambdaInstanceQueue() : ILambdaInstanceQueue
     var approximateCount = _queue.Count;
     while (approximateCount-- >= 0 && _queue.TryDequeue(out ILambdaInstance? instance))
     {
+      // We have to skip !Open instances because they will log errors
+      if (!instance.IsOpen)
+      {
+        // The instance is not open for requests, so we'll drop it on the floor and move on
+        continue;
+      }
+
       _queue.Enqueue(instance);
 
       if (instance.TryGetConnection(out connection, tentative))
