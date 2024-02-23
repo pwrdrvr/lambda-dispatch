@@ -308,6 +308,8 @@ public class Dispatcher : IBackgroundDispatcher
 
     while (true)
     {
+      var anyDispatched = false;
+
       try
       {
         // This blocks until a connection is available
@@ -320,6 +322,7 @@ public class Dispatcher : IBackgroundDispatcher
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
             swLastCapacityMessage.Restart();
+            anyDispatched = true;
           }
         }
         else
@@ -327,7 +330,6 @@ public class Dispatcher : IBackgroundDispatcher
           // The LOQ may have a connection if ChannelCount > MaxConcurrentCount
           // and a response has been completed
           // We get woken up here when a connection is added to the LOQ, so let's check
-          var anyDispatched = false;
           while (((_newConnections.TryTake(out connection) && connection != null)
                   || _lambdaInstanceManager.TryGetConnection(out connection, tentative: true))
                   && TryGetPendingRequestAndDispatch(connection))
@@ -341,19 +343,6 @@ public class Dispatcher : IBackgroundDispatcher
               _lambdaInstanceManager.ReenqueueUnusedConnection(connection, connection.Instance.Id);
             }
           }
-
-          if (anyDispatched)
-          {
-            // We dispatched some requests, so we should check the capacity
-            swLastCapacityMessage.Restart();
-          }
-          else if (swLastCapacityMessage.Elapsed > capacityMessageInterval)
-          {
-            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
-            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
-            _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
-            swLastCapacityMessage.Restart();
-          }
         }
       }
       catch (OperationCanceledException)
@@ -364,6 +353,21 @@ public class Dispatcher : IBackgroundDispatcher
       catch (Exception ex)
       {
         _logger.LogError(ex, "BackgroundPendingRequestDispatcher - Exception");
+      }
+      finally
+      {
+        if (anyDispatched)
+        {
+          // We dispatched some requests, so we should check the capacity
+          swLastCapacityMessage.Restart();
+        }
+        else if (swLastCapacityMessage.Elapsed > capacityMessageInterval)
+        {
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+          swLastCapacityMessage.Restart();
+        }
       }
     }
   }
