@@ -273,7 +273,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         int? ewmaScalerDesiredInstanceCount = null;
         if (requestsPerSecondEWMA > 0 && requestDurationEWMA > 0)
         {
-          ewmaScalerDesiredInstanceCount = _capacityManager.EwmaDesiredInstanceCount(requestsPerSecondEWMA, requestDurationEWMA);
+          ewmaScalerDesiredInstanceCount = _capacityManager.EwmaDesiredInstanceCount(requestsPerSecondEWMA, requestDurationEWMA, _desiredInstanceCount);
         }
 
         // Switch to the EWMA scaler we've got activity
