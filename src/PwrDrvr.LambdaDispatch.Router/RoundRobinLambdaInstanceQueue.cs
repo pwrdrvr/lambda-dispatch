@@ -39,7 +39,17 @@ public class RoundRobinLambdaInstanceQueue() : ILambdaInstanceQueue
 
   public bool TryRemoveInstance([NotNullWhen(true)] out ILambdaInstance? instance)
   {
-    return _queue.TryDequeue(out instance);
+    while (_queue.TryDequeue(out instance))
+    {
+      // Remove all the non-open instances
+      // Return an instance only if it is open
+      if (instance.IsOpen)
+      {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   public bool ReinstateFullInstance(ILambdaInstance instance)

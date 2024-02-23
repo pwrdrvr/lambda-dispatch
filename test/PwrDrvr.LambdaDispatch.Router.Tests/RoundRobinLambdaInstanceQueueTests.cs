@@ -18,10 +18,18 @@ public class RoundRobinLambdaInstanceQueueTests
   [Test]
   public void AddInstance_ShouldAddInstanceToQueue()
   {
+    _mockInstance.SetupGet(i => i.IsOpen).Returns(true);
     _queue.AddInstance(_mockInstance.Object);
 
     Assert.That(_queue.TryRemoveInstance(out ILambdaInstance? instance), Is.True);
     Assert.That(instance, Is.EqualTo(_mockInstance.Object));
+    _mockInstance.Verify(i => i.IsOpen, Times.Once);
+
+    Assert.That(_queue.TryRemoveInstance(out instance), Is.False);
+
+    _mockInstance.SetupGet(i => i.IsOpen).Returns(false);
+    _queue.AddInstance(_mockInstance.Object);
+    Assert.That(_queue.TryRemoveInstance(out instance), Is.False);
   }
 
   [Test]
@@ -33,6 +41,7 @@ public class RoundRobinLambdaInstanceQueueTests
   [Test]
   public void TryGetConnection_ShouldReturnTrueIfInstanceHasConnection()
   {
+    _mockInstance.Setup(i => i.IsOpen).Returns(true);
     _mockInstance.Setup(i => i.TryGetConnection(out It.Ref<LambdaConnection?>.IsAny, It.IsAny<bool>())).Returns(true);
     _queue.AddInstance(_mockInstance.Object);
 
@@ -58,7 +67,9 @@ public class RoundRobinLambdaInstanceQueueTests
     _mockInstanceWithoutConnection = new Mock<ILambdaInstance>();
     _mockInstanceWithConnection = new Mock<ILambdaInstance>();
 
+    _mockInstanceWithoutConnection.Setup(i => i.IsOpen).Returns(true);
     _mockInstanceWithoutConnection.Setup(i => i.TryGetConnection(out It.Ref<LambdaConnection?>.IsAny, It.IsAny<bool>())).Returns(false);
+    _mockInstanceWithConnection.Setup(i => i.IsOpen).Returns(true);
     _mockInstanceWithConnection.Setup(i => i.TryGetConnection(out It.Ref<LambdaConnection?>.IsAny, It.IsAny<bool>())).Returns(true);
 
     for (int i = 0; i < 9; i++)
@@ -82,9 +93,12 @@ public class RoundRobinLambdaInstanceQueueTests
     var mockInstance3 = new Mock<ILambdaInstance>();
 
     var callCount = 0;
+    mockInstance1.Setup(i => i.IsOpen).Returns(true);
     mockInstance1.Setup(i => i.TryGetConnection(out It.Ref<LambdaConnection?>.IsAny, It.IsAny<bool>()))
         .Returns(() => callCount++ == 0 ? false : true);
+    mockInstance2.Setup(i => i.IsOpen).Returns(true);
     mockInstance2.Setup(i => i.TryGetConnection(out It.Ref<LambdaConnection?>.IsAny, It.IsAny<bool>())).Returns(false);
+    mockInstance3.Setup(i => i.IsOpen).Returns(true);
     mockInstance3.Setup(i => i.TryGetConnection(out It.Ref<LambdaConnection?>.IsAny, It.IsAny<bool>())).Returns(true);
 
     _queue.AddInstance(mockInstance1.Object);
