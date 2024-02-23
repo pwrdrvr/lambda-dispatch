@@ -5,11 +5,11 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 public class RoundRobinLambdaInstanceQueue() : ILambdaInstanceQueue
 {
-  private readonly BlockingCollection<ILambdaInstance> _queue = new();
+  private readonly ConcurrentQueue<ILambdaInstance> _queue = new();
 
   public void AddInstance(ILambdaInstance instance)
   {
-    _queue.Add(instance);
+    _queue.Enqueue(instance);
   }
 
   public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
@@ -17,7 +17,7 @@ public class RoundRobinLambdaInstanceQueue() : ILambdaInstanceQueue
     connection = null;
 
     var approximateCount = _queue.Count;
-    while (approximateCount-- >= 0 && _queue.TryTake(out ILambdaInstance? instance, 10))
+    while (approximateCount-- >= 0 && _queue.TryDequeue(out ILambdaInstance? instance))
     {
       // We have to skip !Open instances because they will log errors
       if (!instance.IsOpen)
@@ -26,7 +26,7 @@ public class RoundRobinLambdaInstanceQueue() : ILambdaInstanceQueue
         continue;
       }
 
-      _queue.Add(instance);
+      _queue.Enqueue(instance);
 
       if (instance.TryGetConnection(out connection, tentative))
       {
@@ -39,7 +39,7 @@ public class RoundRobinLambdaInstanceQueue() : ILambdaInstanceQueue
 
   public bool TryRemoveInstance([NotNullWhen(true)] out ILambdaInstance? instance)
   {
-    return _queue.TryTake(out instance);
+    return _queue.TryDequeue(out instance);
   }
 
   public bool ReinstateFullInstance(ILambdaInstance instance)
