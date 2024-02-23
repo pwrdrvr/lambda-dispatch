@@ -11,7 +11,10 @@ export const options = {
       timeUnit: "1s",
       stages: [
         // { target: 1, duration: "10s" },
-        { target: 10, duration: "10s" },
+        { target: 10, duration: "0s" },
+        { target: 100, duration: "1s" },
+        { target: 1000, duration: "1s" },
+        { target: 1000, duration: "1s" },
         { target: 10000, duration: "60s" },
         { target: 10000, duration: "5m" },
         // { target: 2000, duration: "60s" },
