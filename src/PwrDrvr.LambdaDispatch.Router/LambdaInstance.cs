@@ -538,16 +538,21 @@ public class LambdaInstance : ILambdaInstance
   {
     connection.Response.OnCompleted(Task () =>
     {
+      var wakeupDispatcher = false;
       lock (requestCountLock)
       {
         outstandingRequestCount--;
 
         // If we went from busy to non-busy, wakeup the background dispatcher
-        if (outstandingRequestCount == MaxConcurrentCount - 1
-            && AvailableConnectionCount > 0)
+        if (AvailableConnectionCount > 0)
         {
-          dispatcher.WakeupBackgroundDispatcher(null);
+          wakeupDispatcher = true;
         }
+      }
+
+      if (wakeupDispatcher)
+      {
+        dispatcher.WakeupBackgroundDispatcher(null);
       }
 
       return Task.CompletedTask;

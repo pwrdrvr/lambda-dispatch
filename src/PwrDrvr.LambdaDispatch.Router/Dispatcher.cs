@@ -290,10 +290,7 @@ public class Dispatcher : IBackgroundDispatcher
   {
     // Yes, it is a race condition, but it doesn't matter because the
     // background dispatcher will check it shortly after
-    if (_pendingRequestCount != 0)
-    {
-      _newConnections.Add(lambdaConnection);
-    }
+    _newConnections.Add(lambdaConnection);
   }
 
   /// <summary>
