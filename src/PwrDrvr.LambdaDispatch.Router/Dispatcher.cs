@@ -29,10 +29,10 @@ public class Dispatcher : IBackgroundDispatcher
 
   private readonly IMetricsLogger _metricsLogger;
 
-  private readonly WeightedAverage _incomingRequestsWeightedAverage = new(15);
+  private readonly WeightedAverage _incomingRequestsWeightedAverage = new(5);
 
   // NOTE: Microseconds since this can only store longs
-  private readonly WeightedAverage _incomingRequestDurationAverage = new(15, mean: true);
+  private readonly WeightedAverage _incomingRequestDurationAverage = new(5, mean: true);
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
