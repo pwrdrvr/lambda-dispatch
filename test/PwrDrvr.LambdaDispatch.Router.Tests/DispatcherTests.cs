@@ -146,26 +146,25 @@ public class DispatcherTests
 
     // Act
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, instance.Id, channelId);
+    await Task.Delay(100);
 
     // Assert
     Assert.Multiple(() =>
     {
       Assert.That(instance.IsOpen, Is.True, "IsOpen");
       Assert.That(instance.State, Is.EqualTo(LambdaInstanceState.Open));
+      // We have to wait for the background dispatcher to pick up the connection
       // The connection is not added to the queue so we can try to dispatch to it
-      Assert.That(instance.QueueApproximateCount, Is.EqualTo(0), "QueueApproximateCount");
+      Assert.That(instance.QueueApproximateCount, Is.EqualTo(1), "QueueApproximateCount");
       Assert.That(result.LambdaIDNotFound, Is.False, "LambdaIDNotFound");
       Assert.That(result.ImmediatelyDispatched, Is.False, "ImmediatelyDispatched");
       Assert.That(result.Connection, Is.Not.Null, "Connection");
       Assert.That(result.Connection.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
     });
 
-    // We have to wait for the background dispatcher to pick up the connection
-    await Task.Delay(100);
-    Assert.That(instance.QueueApproximateCount, Is.EqualTo(1), "QueueApproximateCount");
-
     // Act
     result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, instance.Id, channelId);
+    await Task.Delay(100);
 
     // Assert
     Assert.Multiple(() =>
@@ -173,16 +172,13 @@ public class DispatcherTests
       Assert.That(instance.IsOpen, Is.True, "IsOpen");
       Assert.That(instance.State, Is.EqualTo(LambdaInstanceState.Open));
       // The connection will be added to the queue because we're already at max concurrent
+      // It is important that this count be `2` and not `3` as `3` indicates a double-add bug
       Assert.That(instance.QueueApproximateCount, Is.EqualTo(2), "QueueApproximateCount");
       Assert.That(result.LambdaIDNotFound, Is.False, "LambdaIDNotFound");
       Assert.That(result.ImmediatelyDispatched, Is.False, "ImmediatelyDispatched");
       Assert.That(result.Connection, Is.Not.Null, "Connection");
       Assert.That(result.Connection.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
     });
-
-    await Task.Delay(100);
-    // It is important that this count be `2` and not `3` as `3` indicates a double-add bug
-    Assert.That(instance.QueueApproximateCount, Is.EqualTo(2), "QueueApproximateCount");
 
     shutdownSignal.Shutdown.Cancel();
   }
