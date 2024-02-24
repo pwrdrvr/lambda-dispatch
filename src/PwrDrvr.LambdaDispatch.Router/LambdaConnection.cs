@@ -32,6 +32,8 @@ public class LambdaConnection
 
   private readonly ILogger<LambdaConnection> _logger = LoggerInstance.CreateLogger<LambdaConnection>();
 
+  private volatile int _runRequestCalled = 0;
+
   /// <summary>
   /// The state of the connection
   /// </summary>
@@ -226,6 +228,12 @@ public class LambdaConnection
   {
     try
     {
+      // Check if the connection has already been used
+      if (Interlocked.CompareExchange(ref _runRequestCalled, 1, 0) == 1)
+      {
+        throw new InvalidOperationException("RunRequest can only be called once");
+      }
+
       // Check if state is wrong
       if (State != LambdaConnectionState.Open)
       {
