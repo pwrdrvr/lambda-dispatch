@@ -35,8 +35,9 @@ public class Startup
         services.AddHealthChecks();
         services.AddControllers();
 
-        services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue>();
-        // services.AddSingleton<ILambdaInstanceQueue, LeastOutstandingQueue>();
+        // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue>();
+        // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue2>();
+        services.AddSingleton<ILambdaInstanceQueue, LeastOutstandingQueue>();
         services.AddSingleton<ILambdaInstanceManager, LambdaInstanceManager>();
         services.AddSingleton<Dispatcher>();
         services.AddSingleton<IShutdownSignal>(_shutdownSignal);
