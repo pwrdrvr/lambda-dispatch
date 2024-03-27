@@ -31,24 +31,31 @@ public class CapacityManager(int maxConcurrentCount, int instanceCountMultiplier
     var requiredRunningCount
       = (double)cleanRunningRequests / _targetConcurrentRequestsPerInstance;
 
-    // We want to be able to dispatch a portion of the pending requests
-    // For pending requests, the dispacher will chew up all the connections, not just the target ones
-    // Thus we scale based on the total connections for pending not the target
-    // If we really start building a queue the EWMA scaler will kick in
-    // Also as these shift over to running they will cause further scale up if they stick around
-    var pendingDispatchCount
-      = (double)cleanPendingRequests / _maxConcurrentCount * .5;
+    var pendingDispatchCount = (double)cleanPendingRequests / _maxConcurrentCount / 2;
 
-    return (int)Math.Ceiling(requiredRunningCount + pendingDispatchCount);
+    var targetCount = (int)Math.Ceiling(requiredRunningCount + pendingDispatchCount);
+
+    // Make sure we have 20% more capacity
+    if (targetCount < (requiredRunningCount + pendingDispatchCount) * 1.2)
+    {
+      targetCount = (int)Math.Ceiling((requiredRunningCount + pendingDispatchCount) * 1.2);
+    }
+
+    return targetCount;
   }
 
-  public int EwmaDesiredInstanceCount(double requestsPerSecondEWMA, double requestDurationEWMA)
+  public int EwmaDesiredInstanceCount(double requestsPerSecondEWMA, double requestDurationEWMA, int currentDesiredInstanceCount)
   {
     double requestsPerSecondPerLambda
       = 1000 / Math.Max(2, requestDurationEWMA) * _targetConcurrentRequestsPerInstance;
 
     var ewmaScalerDesiredInstanceCount
-      = (int)Math.Ceiling(requestsPerSecondEWMA / requestsPerSecondPerLambda);
+      = (int)Math.Ceiling(requestsPerSecondEWMA / requestsPerSecondPerLambda * 1.2);
+
+    if (ewmaScalerDesiredInstanceCount == currentDesiredInstanceCount - 1)
+    {
+      ewmaScalerDesiredInstanceCount = currentDesiredInstanceCount;
+    }
 
     return ewmaScalerDesiredInstanceCount;
   }

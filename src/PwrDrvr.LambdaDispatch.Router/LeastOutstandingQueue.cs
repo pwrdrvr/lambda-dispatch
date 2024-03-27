@@ -4,24 +4,13 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
-public interface ILeastOutstandingItem
-{
-  int OutstandingRequestCount { get; }
-
-  string Id { get; }
-
-  LambdaConnection? TryGetConnection();
-}
-
 /// <summary>
 /// Gives approximate least outstanding requests for items that may
 /// have changes in outstanding requests asynchronously in the background
 /// </summary>
-public class LeastOutstandingQueue : IDisposable
+public class LeastOutstandingQueue : IDisposable, ILambdaInstanceQueue
 {
   private readonly ILogger<LeastOutstandingQueue> _logger = LoggerInstance.CreateLogger<LeastOutstandingQueue>();
-
-  public int MaxConcurrentCount { get => maxConcurrentCount; }
 
   private readonly int maxConcurrentCount;
 
@@ -38,8 +27,15 @@ public class LeastOutstandingQueue : IDisposable
     GC.SuppressFinalize(this);
   }
 
-  public LeastOutstandingQueue(int maxConcurrentCount)
+  public LeastOutstandingQueue(IConfig config)
   {
+    if (config == null)
+    {
+      throw new ArgumentNullException(nameof(config));
+    }
+
+    maxConcurrentCount = config.MaxConcurrentCount;
+
     if (maxConcurrentCount <= 0)
     {
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be greater than 0");
@@ -49,8 +45,6 @@ public class LeastOutstandingQueue : IDisposable
     {
       throw new ArgumentOutOfRangeException(nameof(maxConcurrentCount), "Max concurrent count must be less than 100");
     }
-
-    this.maxConcurrentCount = maxConcurrentCount;
 
     availableInstances = InitQueues(maxConcurrentCount);
 
@@ -111,7 +105,7 @@ public class LeastOutstandingQueue : IDisposable
   /// </summary>
   /// <param name="instance"></param>
   /// <returns></returns>
-  public bool TryRemoveLeastOutstandingInstance([NotNullWhen(true)] out ILambdaInstance? instance)
+  public bool TryRemoveInstance([NotNullWhen(true)] out ILambdaInstance? instance)
   {
     instance = null;
 
@@ -161,7 +155,7 @@ public class LeastOutstandingQueue : IDisposable
   /// Note: this will perform some limited rebalancing of instances if wrong counts are encountered
   /// </summary>
   /// <returns></returns>
-  public bool TryGetLeastOustandingConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
+  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
   {
     connection = null;
 

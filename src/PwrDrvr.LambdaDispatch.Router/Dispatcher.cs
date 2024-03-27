@@ -29,10 +29,10 @@ public class Dispatcher : IBackgroundDispatcher
 
   private readonly IMetricsLogger _metricsLogger;
 
-  private readonly WeightedAverage _incomingRequestsWeightedAverage = new(15);
+  private readonly WeightedAverage _incomingRequestsWeightedAverage = new(5);
 
   // NOTE: Microseconds since this can only store longs
-  private readonly WeightedAverage _incomingRequestDurationAverage = new(15, mean: true);
+  private readonly WeightedAverage _incomingRequestDurationAverage = new(5, mean: true);
 
   // Requests that are waiting to be dispatched to a Lambda
   private volatile int _pendingRequestCount = 0;
@@ -107,14 +107,16 @@ public class Dispatcher : IBackgroundDispatcher
       _logger.LogDebug("Dispatching incoming request immediately to LambdaId: {Id}", lambdaConnection.Instance.Id);
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ImmediateDispatchCount);
-      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
-      _metricsLogger.PutMetric("DispatchDelay", 0, Unit.Milliseconds);
+      // Recording 0 dispatch delays skews the stats about
+      // requests that actually encounted a delay
+      // MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
+      // _metricsLogger.PutMetric("DispatchDelay", 0, Unit.Milliseconds);
 
-      Interlocked.Increment(ref _runningRequestCount);
+      var runningRequestCount = Interlocked.Increment(ref _runningRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
       // Tell the scaler we're running more requests now
-      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
       try
       {
@@ -158,7 +160,7 @@ public class Dispatcher : IBackgroundDispatcher
         _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(sw.Elapsed.TotalMilliseconds, 1), Unit.Milliseconds);
 
         // Tell the scaler about the lowered request count
-        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+        // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
       }
       return;
     }
@@ -169,11 +171,11 @@ public class Dispatcher : IBackgroundDispatcher
     // Add the request to the pending queue
     var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
     _pendingRequests.Add(pendingRequest);
-    Interlocked.Increment(ref _pendingRequestCount);
+    var pendingRequestCount = Interlocked.Increment(ref _pendingRequestCount);
     MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
 
     // Update number of instances that we want
-    _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+    _lambdaInstanceManager.UpdateDesiredCapacity(pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
     // Wait for the request to be dispatched or to timeout
     // TODO: Get this timeout from the config
@@ -216,16 +218,13 @@ public class Dispatcher : IBackgroundDispatcher
   // Add a new connection for a lambda, dispatch to it immediately if a request is waiting
   public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId)
   {
-    DispatcherAddConnectionResult result = new();
-
     _logger.LogDebug("Adding Connection for Lambda {lambdaID} to the Dispatcher", lambdaId);
 
     // Validate that the Lambda ID is valid
     if (string.IsNullOrWhiteSpace(lambdaId))
     {
       _logger.LogError("Lambda ID is blank");
-      result.LambdaIDNotFound = true;
-      return result;
+      return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
     }
 
 #if TEST_RUNNERS
@@ -238,65 +237,48 @@ public class Dispatcher : IBackgroundDispatcher
     if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId, out var instance))
     {
       _logger.LogDebug("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-      result.LambdaIDNotFound = true;
-      return result;
+      return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
     }
+
+    // Register the connection with the lambda
+    var addConnectionResult = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch);
+
+    if (addConnectionResult.WasRejected || addConnectionResult.Connection == null)
+    {
+      _logger.LogDebug("Failed adding connection - Lambda not known or closed, LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+      return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
+    }
+
+    // Tell the scaler about the number of running instances
+    // if (addConnectionResult.Connection.FirstConnectionForInstance)
+    // {
+    //   _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+    // }
 
     // We have a valid connection
     // But, the instance may be at it's outstanding request limit
     // since we can have more connections than we are allowed to use
     // Check if we are allowed (race condition, sure) to use this connection
     // Let's try to dispatch if there is a pending request in the queue
-    // Get the pending request
-    if (_pendingRequestCount > 0
-        // This connection may be hidden
-        && instance.OutstandingRequestCount < instance.MaxConcurrentCount)
+    if (_pendingRequestCount > 0 && addConnectionResult.CanUseNow)
     {
-      // Register the connection with the lambda
-      var connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch);
-
-      // If the connection returned is null then the Response has already been disposed
-      // This will be null if the Lambda was actually gone when we went to add it to the instance manager
-      if (connection == null)
-      {
-        // AddConnectionForLambda returns null if the connection is added but
-        // not suppoed to be used due to being at MaxConcurrentCount
-        _logger.LogDebug("Failed adding connection to LambdaId (happens with hidden connections) {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
-        return result;
-      }
-
-      if (TryGetPendingRequestAndDispatch(connection))
+      if (TryGetPendingRequestAndDispatch(addConnectionResult.Connection))
       {
         MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
-        result.ImmediatelyDispatched = true;
-        result.Connection = connection;
-        return result;
+        return new DispatcherAddConnectionResult { ImmediatelyDispatched = true, Connection = addConnectionResult.Connection };
       }
 
       // Have to return here, else connection gets added twice below
-      result.ImmediatelyDispatched = false;
-      result.Connection = connection;
-      return result;
+      return new DispatcherAddConnectionResult { ImmediatelyDispatched = false, Connection = addConnectionResult.Connection };
     }
 
-    // Register the connection but keep it private until the background dispatcher handles it
-    result.Connection = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId,
-      dispatchMode: AddConnectionDispatchMode.TentativeDispatch);
-
-    if (result.Connection != null)
+    // Pass the connection through the background dispatcher
+    if (addConnectionResult.CanUseNow)
     {
-      // Pass the connection through the background dispatcher
-      _newConnections.Add(result.Connection);
+      _newConnections.Add(addConnectionResult.Connection);
     }
 
-    // Tell the scaler about the number of running instances
-    // Is this needed?
-    if (result.Connection != null && result.Connection.FirstConnectionForInstance)
-    {
-      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
-    }
-
-    return result;
+    return new DispatcherAddConnectionResult { ImmediatelyDispatched = false, Connection = addConnectionResult.Connection };
   }
 
   /// <summary>
@@ -308,7 +290,7 @@ public class Dispatcher : IBackgroundDispatcher
   {
     // Yes, it is a race condition, but it doesn't matter because the
     // background dispatcher will check it shortly after
-    if (_pendingRequestCount != 0)
+    if (_pendingRequestCount > 0)
     {
       _newConnections.Add(lambdaConnection);
     }
@@ -326,6 +308,8 @@ public class Dispatcher : IBackgroundDispatcher
 
     while (true)
     {
+      var anyDispatched = false;
+
       try
       {
         // This blocks until a connection is available
@@ -338,6 +322,7 @@ public class Dispatcher : IBackgroundDispatcher
           {
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
             swLastCapacityMessage.Restart();
+            anyDispatched = true;
           }
         }
         else
@@ -345,25 +330,18 @@ public class Dispatcher : IBackgroundDispatcher
           // The LOQ may have a connection if ChannelCount > MaxConcurrentCount
           // and a response has been completed
           // We get woken up here when a connection is added to the LOQ, so let's check
-          var anyDispatched = false;
-          while (_lambdaInstanceManager.TryGetConnection(out connection, tentative: true)
+          while (((_newConnections.TryTake(out connection) && connection != null)
+                  || _lambdaInstanceManager.TryGetConnection(out connection, tentative: true))
                   && TryGetPendingRequestAndDispatch(connection))
           {
             anyDispatched = true;
             MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
-          }
 
-          if (anyDispatched)
-          {
-            // We dispatched some requests, so we should check the capacity
-            swLastCapacityMessage.Restart();
-          }
-          else if (swLastCapacityMessage.Elapsed > capacityMessageInterval)
-          {
-            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
-            MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
-            _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
-            swLastCapacityMessage.Restart();
+            // Make sure we do not starve the LOQ for foreground dispatches
+            if (_newConnections.TryTake(out connection) && connection != null)
+            {
+              _lambdaInstanceManager.ReenqueueUnusedConnection(connection, connection.Instance.Id);
+            }
           }
         }
       }
@@ -375,6 +353,21 @@ public class Dispatcher : IBackgroundDispatcher
       catch (Exception ex)
       {
         _logger.LogError(ex, "BackgroundPendingRequestDispatcher - Exception");
+      }
+      finally
+      {
+        if (anyDispatched)
+        {
+          // We dispatched some requests, so we should check the capacity
+          swLastCapacityMessage.Restart();
+        }
+        else if (swLastCapacityMessage.Elapsed > capacityMessageInterval)
+        {
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
+          _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+          swLastCapacityMessage.Restart();
+        }
       }
     }
   }
@@ -401,7 +394,7 @@ public class Dispatcher : IBackgroundDispatcher
         // The pending request at front of queue was canceled, we're removing it
         Interlocked.Decrement(ref _pendingRequestCount);
         MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
-        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+        // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
         // Try to find another request
         continue;
@@ -453,14 +446,14 @@ public class Dispatcher : IBackgroundDispatcher
 
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
 
-      Interlocked.Decrement(ref _pendingRequestCount);
+      var pendingRequestCount = Interlocked.Decrement(ref _pendingRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
 
-      Interlocked.Increment(ref _runningRequestCount);
+      var runningRequestCount = Interlocked.Increment(ref _runningRequestCount);
       MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
 
       // Update number of instances that we want
-      _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+      _lambdaInstanceManager.UpdateDesiredCapacity(pendingRequestCount, runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
       // Do not await this, let it loop around
       _ = lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ContinueWith(async Task (task) =>
@@ -480,7 +473,7 @@ public class Dispatcher : IBackgroundDispatcher
         _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
 
         // Update number of instances that we want
-        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+        // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
         // Handle the exception
         if (task.IsFaulted)

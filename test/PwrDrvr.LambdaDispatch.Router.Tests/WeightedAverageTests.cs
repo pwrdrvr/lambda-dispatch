@@ -19,17 +19,17 @@ public class WeightedAverageTests
   {
     var weightedAverage = new WeightedAverage(5);
     weightedAverage.Add(50);
-    Thread.Sleep(120);
+    Thread.Sleep(150);
     var ewma0 = weightedAverage.EWMA;
-    Assert.That(ewma0, Is.GreaterThan(0));
+    Assert.That(ewma0, Is.GreaterThan(3));
 
     weightedAverage.Add(50);
-    Thread.Sleep(120);
+    Thread.Sleep(150);
     var ewma1 = weightedAverage.EWMA;
-    Assert.That(ewma1, Is.GreaterThan(0));
+    Assert.That(ewma1, Is.GreaterThan(3));
 
     weightedAverage.Add(200);
-    Thread.Sleep(120);
+    Thread.Sleep(150);
     var ewma2 = weightedAverage.EWMA;
 
     Assert.That(ewma2, Is.GreaterThan(ewma1));

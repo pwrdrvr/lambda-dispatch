@@ -218,6 +218,10 @@ pub async fn run(
                   // On first request this will release the ping task to start
                   // We have to hold the pinger up else it will exit before connections to the router are established
                   // We also count re-establishing a channel as an action since it can allow a request to flow in
+                  if last_active.load(Ordering::Acquire) == 0 {
+                    log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
+                      lambda_id.clone(), channel_id.clone(), channel_number, requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+                  }
                   last_active.store(time::current_time_millis(), Ordering::Release);
 
                   // Read until we get all the request headers so we can construct our app request
