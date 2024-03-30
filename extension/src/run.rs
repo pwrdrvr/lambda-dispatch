@@ -408,9 +408,11 @@ pub async fn run(
                       && compressable_content_type;
 
                   // If we're going to gzip the response, add the content-encoding header
-                  let content_encoding = format!("content-encoding: {}\r\n", "gzip");
-                  let content_encoding_bytes = content_encoding.as_bytes();
-                  header_buffer.extend(content_encoding_bytes);
+                  if app_res_will_compress {
+                      let content_encoding = format!("content-encoding: {}\r\n", "gzip");
+                      let content_encoding_bytes = content_encoding.as_bytes();
+                      header_buffer.extend(content_encoding_bytes);
+                  }
 
                   // Send the headers to the caller
                   for header in app_res_parts.headers.iter() {
