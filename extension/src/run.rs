@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::SystemTime;
 use std::{pin::Pin, sync::Arc};
@@ -24,6 +25,8 @@ use crate::ping;
 use crate::time;
 
 use tokio_rustls::client::TlsStream;
+
+use flate2::write::GzEncoder;
 
 // Define a Stream trait that both TlsStream and TcpStream implement
 pub trait Stream: AsyncRead + AsyncWrite + Send {}
@@ -228,6 +231,13 @@ pub async fn run(
                   let (app_req_builder, is_goaway, left_over_buf)
                       = app_request::read_until_req_headers(&mut res_stream, lambda_id.clone(), channel_id.clone()).await?;
 
+                  // Check if the request has an Accept-Encoding header with gzip
+                  // If it does, we *can* gzip the response
+                  let accepts_gzip = app_req_builder.headers_ref().unwrap()
+                    .get("accept-encoding")
+                    .map(|v| v.to_str().unwrap_or_default().contains("gzip"))
+                    .unwrap_or_default();
+
                   if is_goaway {
                       if !goaway_received.load(std::sync::atomic::Ordering::Acquire) {
                         log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
@@ -339,7 +349,7 @@ pub async fn run(
                   // Send the request
                   //
                   let app_res = app_sender.send_request(app_req).await?;
-                  let (app_parts, mut app_res_stream) = app_res.into_parts();
+                  let (app_res_parts, mut app_res_stream) = app_res.into_parts();
 
                   //
                   // Relay the response
@@ -348,8 +358,8 @@ pub async fn run(
                   let mut header_buffer = Vec::with_capacity(32 * 1024);
 
                   // Write the status line
-                  let status_code = app_parts.status.as_u16();
-                  let reason = app_parts.status.canonical_reason();
+                  let status_code = app_res_parts.status.as_u16();
+                  let reason = app_res_parts.status.canonical_reason();
                   let status_line = match reason {
                       Some(r) => format!("HTTP/1.1 {} {}\r\n", status_code, r),
                       None => format!("HTTP/1.1 {}\r\n", status_code),
@@ -365,8 +375,45 @@ pub async fn run(
                   let channel_id_header_bytes = channel_id_header.as_bytes();
                   header_buffer.extend(channel_id_header_bytes);
 
+                  // Check if we have a Content-Encoding response header
+                  // If we do, we should not gzip the response
+                  let app_res_compressed = !app_res_parts.headers.get("content-encoding").is_none();
+
+                  // Check if we have a Content-Length response header
+                  // If we do, and if it's small (e.g. < 1 KB), we should not gzip the response
+                  let app_res_content_length = app_res_parts.headers.get(hyper::header::CONTENT_LENGTH)
+                    .and_then(|val| val.to_str().ok())
+                    .and_then(|s| s.parse::<i32>().ok())
+                    .unwrap_or(-1);
+
+                  let app_res_content_type = if let Some(content_type) = app_res_parts.headers.get("content-type") {
+                      content_type.to_str().unwrap()
+                  } else {
+                      ""
+                  };
+          
+                  let compressable_content_type = app_res_content_type.starts_with("text/")
+                      || app_res_content_type.starts_with("application/json")
+                      || app_res_content_type.starts_with("application/javascript")
+                      || app_res_content_type.starts_with("image/svg+xml")
+                      || app_res_content_type.starts_with("application/xhtml+xml")
+                      || app_res_content_type.starts_with("application/x-javascript")
+                      || app_res_content_type.starts_with("application/xml");
+
+                  let app_res_will_compress = accepts_gzip
+                      && !app_res_compressed
+                      // If it's a chunked response we'll compress it
+                      // But if it's non-chunked we'll only compress it if it's not small
+                      && (app_res_content_length == -1 || app_res_content_length > 1024)
+                      && compressable_content_type;
+
+                  // If we're going to gzip the response, add the content-encoding header
+                  let content_encoding = format!("content-encoding: {}\r\n", "gzip");
+                  let content_encoding_bytes = content_encoding.as_bytes();
+                  header_buffer.extend(content_encoding_bytes);
+
                   // Send the headers to the caller
-                  for header in app_parts.headers.iter() {
+                  for header in app_res_parts.headers.iter() {
                       let header_name = header.0.as_str();
                       let header_value = header.1.to_str().unwrap();
 
@@ -375,6 +422,11 @@ pub async fn run(
                         continue;
                       }
                       if header_name == "keep-alive" {
+                        continue;
+                      }
+
+                      // Need to skip content-length if we're going to gzip the response
+                      if header_name == "content-length" && app_res_will_compress {
                         continue;
                       }
 
@@ -398,6 +450,11 @@ pub async fn run(
                   // End the headers
                   header_buffer.extend(b"\r\n");
                   tx.send(Ok(Frame::data(header_buffer.into()))).await?;
+
+                  let mut encoder: Option<GzEncoder<Vec<u8>>> = None;
+                  if app_res_will_compress {
+                    encoder = Some(GzEncoder::new(Vec::new(), flate2::Compression::default()));
+                  }
 
                   // Rip the bytes back to the caller
                   let channel_id_clone = channel_id.clone();
@@ -427,13 +484,27 @@ pub async fn run(
 
                       bytes_read += chunk_len;
 
-                      tx.send(Ok(chunk.unwrap())).await?;
+                      // TODO: This is where we can gzip
+                      if let Some(ref mut encoder) = encoder {
+                        let chunk_data = chunk.as_ref().unwrap().data_ref().unwrap();
+                        encoder.write_all(chunk_data)?;
+                        encoder.flush()?;
+                        let compressed_chunk = encoder.get_mut();
+                        tx.send(Ok(Frame::data(compressed_chunk.clone().into()))).await?;
+                        compressed_chunk.clear();
+                      } else {
+                        tx.send(Ok(chunk.unwrap())).await?;
+                      }
                   }
                   if app_error_reading {
                     log::debug!("LambdaId: {}, ChannelId: {} - Error reading from app_res_stream, dropping tx", lambda_id.clone(), channel_id_clone.clone());
                   }
 
                   let close_router_tx_task = tokio::task::spawn(async move {
+                    if let Some(encoder) = encoder.take() {
+                      let compressed_chunk = encoder.finish().unwrap();
+                      tx.send(Ok(Frame::data(compressed_chunk.into()))).await.unwrap();
+                    }
                     let _ = tx.flush().await;
                     let _ = tx.close().await;
                   });
