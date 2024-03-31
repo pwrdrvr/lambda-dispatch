@@ -80,7 +80,7 @@ impl LambdaService {
   ) -> std::result::Result<messages::WaiterResponse, lambda_runtime::Error> {
       // extract some useful info from the request
       let lambda_id = event.payload.id;
-      let channel_count = event.payload.number_of_channels;
+      let channel_count: u8 = event.payload.number_of_channels;
       let dispatcher_url = event.payload.dispatcher_url;
     
       // prepare the response
@@ -95,7 +95,7 @@ impl LambdaService {
         );
         return Ok(resp);
       }
-    
+
       // If the sent_time is more than a second old, just return
       // This is mostly needed locally where requests get stuck in the queue
       let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
@@ -123,42 +123,105 @@ impl LambdaService {
         let force_deadline_secs: u64 = force_deadline_secs.parse().unwrap();
         deadline_ms = current_time_millis() + force_deadline_secs * 1000;
       }
-    
-      // run until we get a GoAway
-      self.run(
+
+      // run until we get a GoAway or deadline is about to be reached
+      let mut lambda_request = LambdaRequest::new(
+        self.domain.clone(),
+        self.compression,
         lambda_id.clone(),
         channel_count,
         dispatcher_url.parse().unwrap(),
         deadline_ms,
-      )
-      .await?;
+      );
+      lambda_request.start().await?;
     
       Ok(resp)
   }
+}
 
-  pub async fn run(
-    &self,
+// Tower.Service is the interface required by lambda_runtime::run
+impl Service<LambdaEvent<messages::WaiterRequest>> for LambdaService {
+  type Response = messages::WaiterResponse;
+  type Error = lambda_runtime::Error;
+  type Future = Pin<Box<dyn Future<Output = std::result::Result<Self::Response, Self::Error>> + Send>>;
+
+  fn poll_ready(&mut self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<std::result::Result<(), Self::Error>> {
+      core::task::Poll::Ready(Ok(()))
+  }
+
+  fn call(&mut self, event: LambdaEvent<messages::WaiterRequest>) -> Self::Future {
+      let adapter = self.clone();
+      Box::pin(async move { adapter.fetch_response(event).await })
+  }
+}
+
+
+#[derive(Clone)]
+pub struct LambdaRequest {
+    domain: Uri,
+    compression: bool,
     lambda_id: String,
-    channel_count: i32,
-    router_url: Uri,
+    channel_count: u8,
+    dispatcher_url: Uri,
+    cancel_token: tokio_util::sync::CancellationToken,
     deadline_ms: u64,
+    goaway_received: Arc<AtomicBool>,
+    last_active: Arc<AtomicU64>,
+    rng: rand::rngs::StdRng,
+    requests_in_flight: Arc<AtomicUsize>,
+}
+
+
+//
+// LambdaRequest handles connecting back to the router, picking up requests,
+// sending ping requests to the router, and sending the requests to the contained app
+// When an invoke completes this is torn down completely
+//
+
+impl LambdaRequest {
+    pub fn new(
+        domain: Uri,
+        compression: bool,
+        lambda_id: String,
+        channel_count: u8,
+        dispatcher_url: Uri,
+        deadline_ms: u64,
+    ) -> Self {
+        LambdaRequest {
+            domain,
+            compression,
+            lambda_id,
+            channel_count,
+            dispatcher_url,
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            deadline_ms,
+            goaway_received: Arc::new(AtomicBool::new(false)),
+            last_active: Arc::new(AtomicU64::new(0)),
+            rng: rand::rngs::StdRng::from_entropy(),
+            requests_in_flight: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+  /// Executes a task with a specified deadline.
+  ///
+  /// # Parameters
+  ///
+  /// * `deadline_ms`: A timestamp in milliseconds since the Unix epoch
+  ///   representing when the Lambda function needs to finish execution.
+  pub async fn start(
+    &mut self,
   ) -> anyhow::Result<()> {
     let start_time = time::current_time_millis();
-    let requests_in_flight = Arc::new(AtomicUsize::new(0));
-    let cancel_token = tokio_util::sync::CancellationToken::new();
     let count = Arc::new(AtomicUsize::new(0));
-    let mut rng = rand::rngs::StdRng::from_entropy();
-    let goaway_received = Arc::new(AtomicBool::new(false));
-    let last_active = Arc::new(AtomicU64::new(0));
-  
-    let scheme = router_url.scheme().unwrap().to_string();
+
+    let scheme = self.dispatcher_url.scheme().unwrap().to_string();
     let use_https = scheme == "https";
-    let host = router_url.host().expect("uri has no host").to_string();
-    let port = router_url.port_u16().unwrap_or(80);
+    let host = self.dispatcher_url.host().expect("uri has no host").to_string();
+    let port = self.dispatcher_url.port_u16().unwrap_or(80);
     let addr = format!("{}:{}", host, port);
-    let authority = router_url.authority().unwrap().clone();
+    let authority = self.dispatcher_url.authority().unwrap().clone();
   
-    // Setup the connection
+    // Setup the connection to the router
     let tcp_stream = TcpStream::connect(addr).await?;
     tcp_stream.set_nodelay(true)?;
   
@@ -176,7 +239,7 @@ impl LambdaService {
     // Advertise http2
     config.alpn_protocols = vec![b"h2".to_vec()];
     let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-    let domain_host = router_url.host().ok_or_else(|| "Host not found").unwrap();
+    let domain_host = self.dispatcher_url.host().ok_or_else(|| "Host not found").unwrap();
     let domain = rustls_pki_types::ServerName::try_from(domain_host)?;
   
     let stream: Box<dyn Stream + Unpin>;
@@ -193,7 +256,7 @@ impl LambdaService {
       .await
       .unwrap();
   
-    let lambda_id_clone = lambda_id.clone();
+    let lambda_id_clone = self.lambda_id.clone();
     tokio::task::spawn(async move {
       if let Err(err) = conn.await {
         log::error!(
@@ -210,35 +273,35 @@ impl LambdaService {
     let scheme_clone = scheme.clone();
     let host_clone = host.clone();
     let ping_task = tokio::task::spawn(ping::send_ping_requests(
-      Arc::clone(&last_active),
-      Arc::clone(&goaway_received),
+      Arc::clone(&self.last_active),
+      Arc::clone(&self.goaway_received),
       authority.to_string(),
       sender.clone(),
-      lambda_id.clone(),
+      self.lambda_id.clone(),
       Arc::clone(&count),
       scheme_clone,
       host_clone,
       port,
-      deadline_ms,
-      cancel_token.clone(),
-      Arc::clone(&requests_in_flight),
+      self.deadline_ms,
+      self.cancel_token.clone(),
+      Arc::clone(&self.requests_in_flight),
     ));
   
     // Startup the request channels
-    let futures = (0..channel_count)
+    let futures = (0..self.channel_count)
         .map(|channel_number| {
             let app_url = app_url.clone();
             let compression_enabled = self.compression.clone();
-            let last_active = Arc::clone(&last_active);
-            let goaway_received = Arc::clone(&goaway_received);
+            let last_active = Arc::clone(&self.last_active);
+            let goaway_received = Arc::clone(&self.goaway_received);
             let authority = authority.clone();
             let mut sender = sender.clone();
             let count = Arc::clone(&count);
   
-            let lambda_id = lambda_id.clone();
+            let lambda_id = self.lambda_id.clone();
             let channel_id = format!(
                 "{}",
-                uuid::Builder::from_random_bytes(rng.gen())
+                uuid::Builder::from_random_bytes(self.rng.gen())
                     .into_uuid()
                     .to_string()
             );
@@ -249,7 +312,7 @@ impl LambdaService {
             .parse()
             .unwrap();
   
-            let requests_in_flight = Arc::clone(&requests_in_flight);
+            let requests_in_flight = Arc::clone(&self.requests_in_flight);
   
             tokio::spawn(async move {
                 let compression_enabled = compression_enabled.clone();
@@ -653,14 +716,14 @@ impl LambdaService {
                   // All tasks completed successfully
                 }
                 Err(_) => {
-                  panic!("LambdaId: {} - run - Error in futures::future::try_join_all", lambda_id.clone());
+                  panic!("LambdaId: {} - run - Error in futures::future::try_join_all", self.lambda_id.clone());
                 }
             }
         }
     }
   
     // Wait for the ping loop to exit
-    cancel_token.cancel();
+    self.cancel_token.cancel();
     ping_task.await?;
   
     // Print final stats
@@ -671,7 +734,7 @@ impl LambdaService {
     );
     log::info!(
       "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {} - Returning from run",
-      lambda_id,
+      self.lambda_id,
       count.load(Ordering::Acquire),
       elapsed,
       rps
@@ -680,21 +743,3 @@ impl LambdaService {
     Ok(())
   }
 }
-
-// Tower.Service is the interface required by lambda_runtime::run
-impl Service<LambdaEvent<messages::WaiterRequest>> for LambdaService {
-  type Response = messages::WaiterResponse;
-  type Error = lambda_runtime::Error;
-  type Future = Pin<Box<dyn Future<Output = std::result::Result<Self::Response, Self::Error>> + Send>>;
-
-  fn poll_ready(&mut self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<std::result::Result<(), Self::Error>> {
-      core::task::Poll::Ready(Ok(()))
-  }
-
-  fn call(&mut self, event: LambdaEvent<messages::WaiterRequest>) -> Self::Future {
-      let adapter = self.clone();
-      Box::pin(async move { adapter.fetch_response(event).await })
-  }
-}
-
-

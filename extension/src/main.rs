@@ -5,13 +5,11 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use env_logger;
-use lambda_runtime::LambdaEvent;
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 
 use crate::options::{Options, Runtime};
 use crate::run::LambdaService;
-use crate::time::current_time_millis;
 
 mod app_request;
 mod app_start;
