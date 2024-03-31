@@ -1,5 +1,3 @@
-use std::env;
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Runtime {
   #[default]
@@ -19,6 +17,18 @@ impl From<&str> for Runtime {
   }
 }
 
+pub trait EnvVarProvider {
+  fn get_var(&self, var: &str) -> Result<String, std::env::VarError>;
+}
+
+pub struct RealEnvVarProvider;
+
+impl EnvVarProvider for RealEnvVarProvider {
+  fn get_var(&self, var: &str) -> Result<String, std::env::VarError> {
+    std::env::var(var)
+  }
+}
+
 pub struct Options {
   pub port: u16,
   pub async_init: bool,
@@ -26,26 +36,132 @@ pub struct Options {
   pub runtime: Runtime,
 }
 
-impl Default for Options {
-  fn default() -> Self {
+impl Options {
+  fn from_env<P: EnvVarProvider>(provider: P) -> Self {
     Options {
-      port: env::var("LAMBDA_DISPATCH_PORT")
+      port: provider
+        .get_var("LAMBDA_DISPATCH_PORT")
         .unwrap_or_else(|_| "3001".to_string())
         .parse()
         .unwrap_or(3001),
-      async_init: env::var("LAMBDA_DISPATCH_ASYNC_INIT")
+      async_init: provider
+        .get_var("LAMBDA_DISPATCH_ASYNC_INIT")
         .unwrap_or_else(|_| "false".to_string())
         .parse()
         .unwrap_or(false),
-      compression: env::var("LAMBDA_DISPATCH_ENABLE_COMPRESSION")
+      compression: provider
+        .get_var("LAMBDA_DISPATCH_ENABLE_COMPRESSION")
         .unwrap_or_else(|_| "true".to_string())
         .parse()
         .unwrap_or(true),
-      runtime: env::var("LAMBDA_DISPATCH_RUNTIME")
+      runtime: provider
+        .get_var("LAMBDA_DISPATCH_RUNTIME")
         .unwrap_or_else(|_| "current_thread".to_string())
         .as_str()
         .into(),
       // LAMBDA_DISPATCH_FORCE_DEADLINE,
     }
+  }
+}
+
+impl Default for Options {
+  fn default() -> Self {
+    Self::from_env(RealEnvVarProvider)
+  }
+}
+
+#[cfg(test)]
+use std::collections::HashMap;
+
+#[cfg(test)]
+pub struct MockEnvVarProvider {
+  vars: HashMap<String, String>,
+}
+
+#[cfg(test)]
+impl EnvVarProvider for MockEnvVarProvider {
+  fn get_var(&self, var: &str) -> Result<String, std::env::VarError> {
+    self
+      .vars
+      .get(var)
+      .cloned()
+      .ok_or(std::env::VarError::NotPresent)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_constructor() {
+    let options = Options {
+      port: 9000,
+      async_init: true,
+      compression: false,
+      runtime: Runtime::MultiThread,
+      ..Default::default()
+    };
+
+    assert_eq!(options.port, 9000);
+    assert_eq!(options.async_init, true);
+    assert_eq!(options.compression, false);
+    assert_eq!(options.runtime, Runtime::MultiThread);
+  }
+
+  #[test]
+  fn test_options_default() {
+    let mock_provider = MockEnvVarProvider {
+      vars: [
+        ("LAMBDA_DISPATCH_PORT".to_string(), "4000".to_string()),
+        ("LAMBDA_DISPATCH_ASYNC_INIT".to_string(), "true".to_string()),
+        (
+          "LAMBDA_DISPATCH_ENABLE_COMPRESSION".to_string(),
+          "false".to_string(),
+        ),
+        (
+          "LAMBDA_DISPATCH_RUNTIME".to_string(),
+          "test_runtime".to_string(),
+        ),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
+    };
+
+    let options = Options::from_env(mock_provider);
+
+    assert_eq!(options.port, 4000);
+    assert_eq!(options.async_init, true);
+    assert_eq!(options.compression, false);
+    assert_eq!(options.runtime, Runtime::CurrentThread);
+  }
+
+  #[test]
+  fn test_options_invalid_values() {
+    let mock_provider = MockEnvVarProvider {
+      vars: [
+        ("LAMBDA_DISPATCH_PORT".to_string(), "invalid".to_string()),
+        (
+          "LAMBDA_DISPATCH_ASYNC_INIT".to_string(),
+          "invalid".to_string(),
+        ),
+        (
+          "LAMBDA_DISPATCH_ENABLE_COMPRESSION".to_string(),
+          "invalid".to_string(),
+        ),
+        ("LAMBDA_DISPATCH_RUNTIME".to_string(), "invalid".to_string()),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
+    };
+
+    let options = Options::from_env(mock_provider);
+
+    assert_eq!(options.port, 3001); // Default value
+    assert_eq!(options.async_init, false); // Default value
+    assert_eq!(options.compression, true); // Default value
+    assert_eq!(options.runtime, Runtime::CurrentThread); // Default value
   }
 }
