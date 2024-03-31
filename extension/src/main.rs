@@ -10,6 +10,7 @@ use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 
 use crate::options::{Options, Runtime};
+use crate::run::LambdaService;
 use crate::time::current_time_millis;
 
 mod app_request;
@@ -138,9 +139,10 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
   // we process
   app_start::health_check_contained_app(Arc::new(AtomicBool::new(false)), &options).await;
 
-  let func = lambda_runtime::service_fn(move |req| my_handler(req, &options));
+  let svc = LambdaService::new(options);
+
   tokio::select! {
-      lambda_result = lambda_runtime::run(func) => {
+      lambda_result = lambda_runtime::run(svc) => {
           match lambda_result {
               Ok(_) => {}
               Err(e) => {
@@ -170,67 +172,4 @@ async fn my_extension(
     }
   }
   Ok(())
-}
-
-pub(crate) async fn my_handler(
-  event: LambdaEvent<messages::WaiterRequest>,
-  options: &Options,
-) -> std::result::Result<messages::WaiterResponse, lambda_runtime::Error> {
-  // extract some useful info from the request
-  let lambda_id = event.payload.id;
-  let channel_count = event.payload.number_of_channels;
-  let dispatcher_url = event.payload.dispatcher_url;
-
-  // prepare the response
-  let resp = messages::WaiterResponse {
-    id: lambda_id.to_string(),
-  };
-
-  if event.payload.init_only {
-    log::info!(
-      "LambdaId: {} - Returning from init-only request",
-      lambda_id.clone()
-    );
-    return Ok(resp);
-  }
-
-  // If the sent_time is more than a second old, just return
-  // This is mostly needed locally where requests get stuck in the queue
-  let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
-  if sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap() {
-    log::info!(
-      "LambdaId: {} - Returning from stale request",
-      lambda_id.clone()
-    );
-    return Ok(resp);
-  }
-
-  log::info!(
-    "LambdaId: {}, Timeout: {}s - Invoked",
-    lambda_id,
-    (event.context.deadline - current_time_millis()) / 1000
-  );
-  let mut deadline_ms = event.context.deadline;
-  if (deadline_ms - current_time_millis()) > 15 * 60 * 1000 {
-    log::warn!("Deadline is greater than 15 minutes, trimming to 1 minute");
-    deadline_ms = current_time_millis() + 60 * 1000;
-  }
-  // check if env var is set to force deadline for testing
-  if let Ok(force_deadline_secs) = std::env::var("LAMBDA_DISPATCH_FORCE_DEADLINE") {
-    log::warn!("Forcing deadline to {} seconds", force_deadline_secs);
-    let force_deadline_secs: u64 = force_deadline_secs.parse().unwrap();
-    deadline_ms = current_time_millis() + force_deadline_secs * 1000;
-  }
-
-  // run until we get a GoAway
-  run::run(
-    lambda_id.clone(),
-    channel_count,
-    dispatcher_url.parse().unwrap(),
-    deadline_ms,
-    options,
-  )
-  .await?;
-
-  Ok(resp)
 }

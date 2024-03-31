@@ -33,6 +33,7 @@ lambda_runtime = "0.9.0"
 lambda-extension = "0.9.0"
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"] }
+tower = "0.4.13"
 
 # rustls
 rustls = { version = "0.22.1" }
