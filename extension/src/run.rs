@@ -23,6 +23,7 @@ use crate::cert::AcceptAnyServerCert;
 use crate::counter_drop::DecrementOnDrop;
 use crate::ping;
 use crate::time;
+use crate::options::Options;
 
 use tokio_rustls::client::TlsStream;
 
@@ -40,6 +41,7 @@ pub async fn run(
   channel_count: i32,
   router_url: Uri,
   deadline_ms: u64,
+  options: &Options,
 ) -> anyhow::Result<()> {
   let start_time = time::current_time_millis();
   let requests_in_flight = Arc::new(AtomicUsize::new(0));
@@ -102,6 +104,9 @@ pub async fn run(
     }
   });
 
+  let app_url: Uri = format!("http://127.0.0.1:{}", options.port).parse().unwrap();
+  let compression_enabled = options.compression;
+
   // Send the ping requests in background
   let scheme_clone = scheme.clone();
   let host_clone = host.clone();
@@ -123,6 +128,8 @@ pub async fn run(
   // Startup the request channels
   let futures = (0..channel_count)
       .map(|channel_number| {
+          let app_url = app_url.clone();
+          let compression_enabled = compression_enabled.clone();
           let last_active = Arc::clone(&last_active);
           let goaway_received = Arc::clone(&goaway_received);
           let authority = authority.clone();
@@ -146,8 +153,8 @@ pub async fn run(
           let requests_in_flight = Arc::clone(&requests_in_flight);
 
           tokio::spawn(async move {
-              // TODO: Load app_url from config
-              let app_url: Uri = "http://127.0.0.1:3001".parse().unwrap();
+              let compression_enabled = compression_enabled.clone();
+              let app_url = app_url.clone();
               let app_host = app_url.host().expect("uri has no host");
               let app_port = app_url.port_u16().unwrap_or(80);
               let app_addr = format!("{}:{}", app_host, app_port);
@@ -392,7 +399,8 @@ pub async fn run(
                       ""
                   };
           
-                  let compressable_content_type = app_res_content_type.starts_with("text/")
+                  let compressable_content_type =
+                      app_res_content_type.starts_with("text/")
                       || app_res_content_type.starts_with("application/json")
                       || app_res_content_type.starts_with("application/javascript")
                       || app_res_content_type.starts_with("image/svg+xml")
@@ -400,7 +408,9 @@ pub async fn run(
                       || app_res_content_type.starts_with("application/x-javascript")
                       || app_res_content_type.starts_with("application/xml");
 
-                  let app_res_will_compress = accepts_gzip
+                  let app_res_will_compress =
+                      compression_enabled
+                      && accepts_gzip
                       && !app_res_compressed
                       // If it's a chunked response we'll compress it
                       // But if it's non-chunked we'll only compress it if it's not small

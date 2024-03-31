@@ -17,7 +17,7 @@ BUILD_TIME=$(date) GIT_HASH=$(git rev-parse --short HEAD) LAMBDA_DISPATCH_MaxWor
 
 # extension
 
-LAMBDA_DISPATCH_RUNTIME=current_thread LAMBDA_DISPATCH_FORCE_DEADLINE=60 AWS_LAMBDA_FUNCTION_VERSION=\$LATEST AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512 AWS_LAMBDA_FUNCTION_NAME=dogs AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token cargo run --release --bin extension 2>&1 | tee extension.log
+LAMBDA_DISPATCH_PORT=3001 LAMBDA_DISPATCH_RUNTIME=current_thread LAMBDA_DISPATCH_FORCE_DEADLINE=60 AWS_LAMBDA_FUNCTION_VERSION=\$LATEST AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512 AWS_LAMBDA_FUNCTION_NAME=dogs AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token cargo run --release --bin extension 2>&1 | tee extension.log
 
 # d-router
 
