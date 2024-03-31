@@ -6,8 +6,12 @@ use hyper::{body::Bytes, Request, Uri};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
 
-pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>) {
-  let app_url: Uri = "http://127.0.0.1:3001/health".parse().unwrap();
+use crate::options::Options;
+
+pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>, options: &Options) {
+  let app_url: Uri = format!("http://127.0.0.1:{}/health", options.port)
+    .parse()
+    .unwrap();
   let app_host = app_url.host().expect("uri has no host");
   let app_port = app_url.port_u16().unwrap_or(80);
   let app_addr = format!("{}:{}", app_host, app_port);

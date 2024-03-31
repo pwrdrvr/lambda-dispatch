@@ -89,7 +89,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable 'extension'",
+      "name": "Rust Extension",
       "cargo": {
         "args": [
           "build",
@@ -104,6 +104,7 @@
       "args": [],
       "cwd": "${workspaceFolder}",
       "env": {
+        "LAMBDA_DISPATCH_PORT": "3001",
         "AWS_LAMBDA_FUNCTION_NAME": "extension",
         "AWS_LAMBDA_FUNCTION_MEMORY_SIZE": "512",
         "AWS_LAMBDA_FUNCTION_VERSION": "$LATEST",

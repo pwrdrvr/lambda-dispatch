@@ -7,16 +7,25 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  dotnet-tests:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Tests
+      - name: Run DotNet Tests
         run: |
           dotnet test
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Rust Tests
+        run: |
+          cargo test
 
   build-router-arm64:
     env:

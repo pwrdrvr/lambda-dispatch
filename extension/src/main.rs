@@ -9,6 +9,7 @@ use lambda_runtime::LambdaEvent;
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 
+use crate::options::{Options, Runtime};
 use crate::time::current_time_millis;
 
 mod app_request;
@@ -16,6 +17,7 @@ mod app_start;
 mod cert;
 mod counter_drop;
 mod messages;
+mod options;
 mod ping;
 mod run;
 mod threads;
@@ -44,15 +46,15 @@ fn main() -> anyhow::Result<()> {
     .without_time()
     .init();
 
+  let options = Options::default();
+
   // If LAMBDA_DISPATCH_RUNTIME=default_multi_thread, use a multi-threaded runtime, let tokio decide how many threads
   // If LAMBDA_DISPATCH_RUNTIME=multi_thread, use a multi-threaded runtime,
   //   but use 2 threads or whatever is set in TOKIO_WORKER_THREADS
   // If LAMBDA_DISPATCH_RUNTIME=current_thread, use a single-threaded runtime
   // If LAMBDA_DISPATCH_RUNTIME is not set, use a single-threaded runtime
-  // Get the var
-  let runtime_var = std::env::var("LAMBDA_DISPATCH_RUNTIME");
-  match runtime_var {
-    Ok(runtime) if runtime == "multi_thread" => {
+  match options.runtime {
+    Runtime::MultiThread => {
       log::info!("Using multi_thread runtime");
       // TOKIO_WORKER_THREADS is a standard var - we will
       // use it if it is set, otherwise we will default to 2
@@ -67,32 +69,32 @@ fn main() -> anyhow::Result<()> {
         .worker_threads(worker_threads)
         .build()
         .unwrap();
-      runtime.block_on(async_main())?;
+      runtime.block_on(async_main(&options))?;
     }
-    Ok(runtime) if runtime == "default_multi_thread" => {
+    Runtime::DefaultMultiThread => {
       log::info!("Using default_multi_thread runtime");
       // Let tokio decide how many threads to use
       let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
-      runtime.block_on(async_main())?;
+      runtime.block_on(async_main(&options))?;
     }
     // Default or `current_thread` runtime
-    _ => {
+    Runtime::CurrentThread => {
       log::info!("Using current_thread runtime");
       let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-      runtime.block_on(async_main())?;
+      runtime.block_on(async_main(&options))?;
     }
   }
 
   Ok(())
 }
 
-async fn async_main() -> anyhow::Result<()> {
+async fn async_main(options: &Options) -> anyhow::Result<()> {
   let mut term_signal = signal(SignalKind::terminate())?;
 
   let thread_count = threads::get_threads();
@@ -131,9 +133,12 @@ async fn async_main() -> anyhow::Result<()> {
   });
 
   // Wait for the contained app to be ready
-  app_start::health_check_contained_app(Arc::new(AtomicBool::new(false))).await;
+  // TODO: This is where we need to bail out of waiting for the app to be ready
+  // TODO: If we bail out here then we need to send another init request on the first request
+  // we process
+  app_start::health_check_contained_app(Arc::new(AtomicBool::new(false)), &options).await;
 
-  let func = lambda_runtime::service_fn(my_handler);
+  let func = lambda_runtime::service_fn(move |req| my_handler(req, &options));
   tokio::select! {
       lambda_result = lambda_runtime::run(func) => {
           match lambda_result {
@@ -169,6 +174,7 @@ async fn my_extension(
 
 pub(crate) async fn my_handler(
   event: LambdaEvent<messages::WaiterRequest>,
+  options: &Options,
 ) -> std::result::Result<messages::WaiterResponse, lambda_runtime::Error> {
   // extract some useful info from the request
   let lambda_id = event.payload.id;
@@ -222,6 +228,7 @@ pub(crate) async fn my_handler(
     channel_count,
     dispatcher_url.parse().unwrap(),
     deadline_ms,
+    options,
   )
   .await?;
 
