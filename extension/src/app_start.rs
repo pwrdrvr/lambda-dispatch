@@ -85,7 +85,7 @@ pub async fn health_check_contained_app(
       log::debug!("Health check failed: {:?}\nHeaders:", parts.status);
       // Print all the headers received and the body
       for header in parts.headers.iter() {
-        log::info!("  {}: {}", header.0, header.1.to_str().unwrap());
+        log::debug!("  {}: {}", header.0, header.1.to_str().unwrap());
       }
     }
   }
