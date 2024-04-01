@@ -68,10 +68,7 @@ impl LambdaService {
     };
 
     if event.payload.init_only {
-      log::info!(
-        "LambdaId: {} - Returning from init-only request",
-        lambda_id.clone()
-      );
+      log::info!("LambdaId: {} - Returning from init-only request", lambda_id);
       return Ok(resp);
     }
 
@@ -79,10 +76,7 @@ impl LambdaService {
     // This is mostly needed locally where requests get stuck in the queue
     let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
     if sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap() {
-      log::info!(
-        "LambdaId: {} - Returning from stale request",
-        lambda_id.clone()
-      );
+      log::info!("LambdaId: {} - Returning from stale request", lambda_id);
       return Ok(resp);
     }
 
@@ -107,7 +101,7 @@ impl LambdaService {
     let mut lambda_request = LambdaRequest::new(
       self.domain.clone(),
       self.compression,
-      lambda_id.clone(),
+      lambda_id,
       channel_count,
       dispatcher_url.parse().unwrap(),
       deadline_ms,
