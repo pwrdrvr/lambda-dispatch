@@ -129,7 +129,7 @@ impl LambdaRequest {
       if let Err(err) = conn.await {
         log::error!(
           "LambdaId: {} - Router HTTP2 connection failed: {:?}",
-          lambda_id_clone.clone(),
+          lambda_id_clone,
           err
         );
       }
@@ -177,18 +177,18 @@ impl LambdaRequest {
           let mut router_channel = RouterChannel::new(
             Arc::clone(&count),
             compression_enabled,
-            lambda_id.clone(),
+            lambda_id,
             Arc::clone(&goaway_received),
             Arc::clone(&last_active),
-            rng.clone(),
+            rng,
             Arc::clone(&requests_in_flight),
-            scheme.clone(),
-            host.clone(),
-            port.clone(),
-            app_url.clone(),
-            channel_number.clone(),
-            sender.clone(),
-            dispatcher_authority.clone(),
+            scheme,
+            host,
+            port,
+            app_url,
+            channel_number,
+            sender,
+            dispatcher_authority,
           );
 
           return router_channel.start().await;
@@ -203,7 +203,7 @@ impl LambdaRequest {
                   // All tasks completed successfully
                 }
                 Err(_) => {
-                  panic!("LambdaId: {} - run - Error in futures::future::try_join_all", self.lambda_id.clone());
+                  panic!("LambdaId: {} - run - Error in futures::future::try_join_all", self.lambda_id);
                 }
             }
         }

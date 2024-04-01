@@ -78,11 +78,7 @@ impl RouterChannel {
 
     let channel_url = format!(
       "{}://{}:{}/api/chunked/request/{}/{}",
-      router_schema,
-      router_host,
-      router_port,
-      lambda_id.clone(),
-      channel_id.clone()
+      router_schema, router_host, router_port, lambda_id, channel_id
     )
     .parse()
     .unwrap();
@@ -90,11 +86,11 @@ impl RouterChannel {
     RouterChannel {
       count,
       compression,
-      lambda_id: lambda_id.clone(),
+      lambda_id,
       goaway_received,
       last_active,
       requests_in_flight,
-      channel_id: channel_id.clone(),
+      channel_id,
       channel_url,
       app_url,
       channel_number,
@@ -120,8 +116,8 @@ impl RouterChannel {
       if let Err(err) = app_conn.await {
         log::error!(
           "LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}",
-          lambda_id_clone.clone(),
-          channel_id_clone.clone(),
+          lambda_id_clone,
+          channel_id_clone,
           err
         );
       }
@@ -155,29 +151,29 @@ impl RouterChannel {
 
       log::debug!(
         "LambdaId: {}, ChannelId: {} - sending request",
-        self.lambda_id.clone(),
-        self.channel_id.clone()
+        self.lambda_id,
+        self.channel_id
       );
       while futures::future::poll_fn(|ctx| self.sender.poll_ready(ctx))
         .await
         .is_err()
       {
         // This gets hit when the router connection faults
-        panic!("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.lambda_id.clone(), self.channel_id.clone());
+        panic!("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.lambda_id, self.channel_id);
       }
 
       let res = self.sender.send_request(req).await?;
       log::debug!(
         "LambdaId: {}, ChannelId: {} - got response: {:?}",
-        self.lambda_id.clone(),
-        self.channel_id.clone(),
+        self.lambda_id,
+        self.channel_id,
         res
       );
       let (parts, mut res_stream) = res.into_parts();
       log::debug!(
         "LambdaId: {}, ChannelId: {} - split response",
-        self.lambda_id.clone(),
-        self.channel_id.clone(),
+        self.lambda_id,
+        self.channel_id,
       );
 
       // If the router returned a 409 when we opened the channel
@@ -188,7 +184,7 @@ impl RouterChannel {
           .load(std::sync::atomic::Ordering::Acquire)
         {
           log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
-                  self.lambda_id.clone(), self.channel_id.clone(), self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+                  self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
             .goaway_received
             .store(true, std::sync::atomic::Ordering::Release);
@@ -202,7 +198,7 @@ impl RouterChannel {
       // We also count re-establishing a channel as an action since it can allow a request to flow in
       if self.last_active.load(Ordering::Acquire) == 0 {
         log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
-                self.lambda_id.clone(), self.channel_id.clone(), self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+                self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
       }
       self
         .last_active
@@ -231,7 +227,7 @@ impl RouterChannel {
           .load(std::sync::atomic::Ordering::Acquire)
         {
           log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
-                    self.lambda_id.clone(), self.channel_id.clone(), self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+                    self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
             .goaway_received
             .store(true, std::sync::atomic::Ordering::Release);
@@ -261,7 +257,7 @@ impl RouterChannel {
       {
         // This gets hit when the app connection faults
         panic!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
-                  self.lambda_id.clone(), self.channel_id.clone(), self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+                  self.lambda_id, self.channel_id, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
       }
 
       // Relay the request body to the contained app
@@ -281,8 +277,8 @@ impl RouterChannel {
           bytes_sent += left_over_buf.len();
           log::debug!(
             "LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
-            lambda_id_clone.clone(),
-            channel_id_clone.clone(),
+            lambda_id_clone,
+            channel_id_clone,
             left_over_buf.len()
           );
           app_req_tx
@@ -302,8 +298,8 @@ impl RouterChannel {
         {
           if chunk.is_err() {
             log::error!("LambadId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
-                          lambda_id_clone.clone(),
-                          channel_id_clone.clone(),
+                          lambda_id_clone,
+                          channel_id_clone,
                           requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
                           bytes_sent,
                           chunk.err());
@@ -316,8 +312,8 @@ impl RouterChannel {
           if chunk_len == 0 {
             log::debug!(
               "LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed",
-              lambda_id_clone.clone(),
-              channel_id_clone.clone(),
+              lambda_id_clone,
+              channel_id_clone,
               bytes_sent,
               chunk_len
             );
@@ -327,8 +323,8 @@ impl RouterChannel {
             Ok(_) => {}
             Err(err) => {
               log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
-                            lambda_id_clone.clone(),
-                            channel_id_clone.clone(),
+                            lambda_id_clone,
+                            channel_id_clone,
                             requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
                             bytes_sent,
                             chunk_len,
@@ -341,7 +337,7 @@ impl RouterChannel {
 
         // Close the post body stream
         if router_error_reading {
-          log::info!("LambdaId: {}, ChannelId: {}, BytesSent: {} - Error reading from res_stream, dropping app_req_tx", lambda_id_clone.clone(), channel_id_clone.clone(), bytes_sent);
+          log::info!("LambdaId: {}, ChannelId: {}, BytesSent: {} - Error reading from res_stream, dropping app_req_tx", lambda_id_clone, channel_id_clone, bytes_sent);
           return;
         }
 
@@ -373,7 +369,7 @@ impl RouterChannel {
       header_buffer.extend(status_line_bytes);
 
       // Add two static headers for X-Lambda-Id and X-Channel-Id
-      let lambda_id_header = format!("X-Lambda-Id: {}\r\n", self.lambda_id.clone());
+      let lambda_id_header = format!("X-Lambda-Id: {}\r\n", self.lambda_id);
       let lambda_id_header_bytes = lambda_id_header.as_bytes();
       header_buffer.extend(lambda_id_header_bytes);
       let channel_id_header = format!("X-Channel-Id: {}\r\n", self.channel_id);
@@ -474,8 +470,8 @@ impl RouterChannel {
       {
         if chunk.is_err() {
           log::info!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
-            self.lambda_id.clone(),
-            channel_id_clone.clone(),
+            self.lambda_id,
+            self.channel_id,
             self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
             bytes_read,
             chunk.err());
@@ -506,8 +502,8 @@ impl RouterChannel {
       if app_error_reading {
         log::debug!(
           "LambdaId: {}, ChannelId: {} - Error reading from app_res_stream, dropping tx",
-          self.lambda_id.clone(),
-          channel_id_clone.clone()
+          self.lambda_id,
+          self.channel_id
         );
       }
 
@@ -534,7 +530,7 @@ impl RouterChannel {
                       // All tasks completed successfully
                   }
                   Err(_) => {
-                      panic!("LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", self.lambda_id.clone(), channel_id_clone.clone());
+                      panic!("LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", self.lambda_id, channel_id_clone);
                   }
               }
           }
