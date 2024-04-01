@@ -169,6 +169,7 @@ pub struct LambdaRequest {
   last_active: Arc<AtomicU64>,
   rng: rand::rngs::StdRng,
   requests_in_flight: Arc<AtomicUsize>,
+  count: Arc<AtomicUsize>,
 }
 
 //
@@ -187,6 +188,7 @@ impl LambdaRequest {
     deadline_ms: u64,
   ) -> Self {
     LambdaRequest {
+      count: Arc::new(AtomicUsize::new(0)),
       domain,
       compression,
       lambda_id,
@@ -209,8 +211,6 @@ impl LambdaRequest {
   ///   representing when the Lambda function needs to finish execution.
   pub async fn start(&mut self) -> anyhow::Result<()> {
     let start_time = time::current_time_millis();
-    let count = Arc::new(AtomicUsize::new(0));
-
     let scheme = self.dispatcher_url.scheme().unwrap().to_string();
     let use_https = scheme == "https";
     let host = self
@@ -283,7 +283,7 @@ impl LambdaRequest {
       dispatcher_authority.to_string(),
       sender.clone(),
       self.lambda_id.clone(),
-      Arc::clone(&count),
+      Arc::clone(&self.count),
       scheme_clone,
       host_clone,
       port,
@@ -301,14 +301,11 @@ impl LambdaRequest {
         let goaway_received = Arc::clone(&self.goaway_received);
         let dispatcher_authority = dispatcher_authority.clone();
         let sender = sender.clone();
-        let count = Arc::clone(&count);
+        let count = Arc::clone(&self.count);
         let rng = self.rng.clone();
-        let deadline_ms = self.deadline_ms;
-        let dispatcher_url = self.dispatcher_url.clone();
         let scheme = scheme.clone();
         let host = host.clone();
         let port = port;
-        let cancel_token = self.cancel_token.clone();
         let lambda_id = self.lambda_id.clone();
         let requests_in_flight = Arc::clone(&self.requests_in_flight);
 
@@ -320,14 +317,8 @@ impl LambdaRequest {
 
           let mut router_channel = RouterChannel::new(
             Arc::clone(&count),
-            app_url.clone(),
             compression_enabled,
             lambda_id.clone(),
-            channel_number.clone(),
-            dispatcher_url.clone(),
-            // authority.clone(),
-            cancel_token.clone(),
-            deadline_ms,
             Arc::clone(&goaway_received),
             Arc::clone(&last_active),
             rng.clone(),
@@ -367,12 +358,12 @@ impl LambdaRequest {
     let elapsed = time::current_time_millis() - start_time;
     let rps = format!(
       "{:.1}",
-      count.load(Ordering::Acquire) as f64 / (elapsed as f64 / 1000.0)
+      self.count.load(Ordering::Acquire) as f64 / (elapsed as f64 / 1000.0)
     );
     log::info!(
       "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {} - Returning from run",
       self.lambda_id,
-      count.load(Ordering::Acquire),
+      self.count.load(Ordering::Acquire),
       elapsed,
       rps
     );
@@ -384,16 +375,10 @@ impl LambdaRequest {
 #[derive(Clone)]
 pub struct RouterChannel {
   count: Arc<AtomicUsize>,
-  domain: Uri,
   compression: bool,
   lambda_id: String,
-  channel_count: u8,
-  dispatcher_url: Uri,
-  cancel_token: tokio_util::sync::CancellationToken,
-  deadline_ms: u64,
   goaway_received: Arc<AtomicBool>,
   last_active: Arc<AtomicU64>,
-  rng: rand::rngs::StdRng,
   requests_in_flight: Arc<AtomicUsize>,
   channel_url: Uri,
   channel_id: String,
@@ -408,13 +393,8 @@ pub struct RouterChannel {
 impl RouterChannel {
   pub fn new(
     count: Arc<AtomicUsize>,
-    domain: Uri,
     compression: bool,
     lambda_id: String,
-    channel_count: u8,
-    dispatcher_url: Uri,
-    cancel_token: tokio_util::sync::CancellationToken,
-    deadline_ms: u64,
     goaway_received: Arc<AtomicBool>,
     last_active: Arc<AtomicU64>,
     mut rng: rand::rngs::StdRng,
@@ -436,30 +416,26 @@ impl RouterChannel {
         .to_string()
     );
 
+    let channel_url = format!(
+      "{}://{}:{}/api/chunked/request/{}/{}",
+      router_schema,
+      router_host,
+      router_port,
+      lambda_id.clone(),
+      channel_id.clone()
+    )
+    .parse()
+    .unwrap();
+
     RouterChannel {
       count,
-      domain,
       compression,
       lambda_id: lambda_id.clone(),
-      channel_count,
-      dispatcher_url,
-      cancel_token,
-      deadline_ms,
       goaway_received,
-      last_active: Arc::new(AtomicU64::new(0)),
-      rng: rand::rngs::StdRng::from_entropy(),
-      requests_in_flight: Arc::new(AtomicUsize::new(0)),
+      last_active,
+      requests_in_flight,
       channel_id: channel_id.clone(),
-      channel_url: format!(
-        "{}://{}:{}/api/chunked/request/{}/{}",
-        router_schema,
-        router_host,
-        router_port,
-        lambda_id.clone(),
-        channel_id.clone()
-      )
-      .parse()
-      .unwrap(),
+      channel_url,
       app_url,
       channel_number,
       sender,
