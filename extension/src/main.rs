@@ -146,14 +146,21 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
       std::time::Duration::from_millis(9800),
       app_start::health_check_contained_app(Arc::clone(&goaway_received), &healthcheck_url),
     )
-    .await
-    .unwrap_or_default();
+    .await;
 
-    if result == false {
-      goaway_received.store(true, Ordering::SeqCst);
+    match result {
+      Ok(success) => {
+        if success == false {
+          log::info!("Health check - returned false before timeout, deferring init to handler");
+          goaway_received.store(true, Ordering::SeqCst);
+        }
+        success
+      }
+      Err(_) => {
+        log::info!("Health check - not ready before timeout, deferring init to handler");
+        false
+      }
     }
-
-    result
   } else {
     // Wait until init finishes OR the 10 second init gets canceled and re-run as a regular request
     app_start::health_check_contained_app(Arc::new(AtomicBool::new(false)), &healthcheck_url).await
