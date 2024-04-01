@@ -6,22 +6,25 @@ use hyper::{body::Bytes, Request, Uri};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
 
-use crate::options::Options;
+pub async fn health_check_contained_app(
+  goaway_received: Arc<AtomicBool>,
+  healthcheck_url: &Uri,
+) -> bool {
+  let healthcheck_host = healthcheck_url.host().expect("uri has no host");
+  let healthcheck_port = healthcheck_url.port_u16().unwrap_or(80);
+  let healthcheck_addr = format!("{}:{}", healthcheck_host, healthcheck_port);
 
-pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>, options: &Options) {
-  let app_url: Uri = format!("http://127.0.0.1:{}/health", options.port)
-    .parse()
-    .unwrap();
-  let app_host = app_url.host().expect("uri has no host");
-  let app_port = app_url.port_u16().unwrap_or(80);
-  let app_addr = format!("{}:{}", app_host, app_port);
+  log::info!(
+    "Health check contained app at: {}",
+    healthcheck_url.to_string()
+  );
 
   while goaway_received.load(std::sync::atomic::Ordering::Acquire) == false {
     // Delay 10 ms
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     // Create http connection
-    let tcp_stream = match TcpStream::connect(app_addr.clone()).await {
+    let tcp_stream = match TcpStream::connect(healthcheck_addr.clone()).await {
       Err(err) => {
         log::debug!("Failed to connect to contained app: {:?}", err);
         continue;
@@ -59,7 +62,7 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>, option
       .await
       .is_err()
     {
-      // This gets hit when the connection for faults
+      // This gets hit when the connection faults
       continue;
     }
 
@@ -75,8 +78,9 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>, option
     };
     let (parts, _) = res.into_parts();
     if parts.status == hyper::StatusCode::OK {
-      log::info!("Health check success");
-      break;
+      log::info!("Health check complete - success");
+
+      return true;
     } else {
       log::debug!("Health check failed: {:?}\nHeaders:", parts.status);
       // Print all the headers received and the body
@@ -86,5 +90,6 @@ pub async fn health_check_contained_app(goaway_received: Arc<AtomicBool>, option
     }
   }
 
-  log::info!("Health check complete");
+  log::info!("Health check complete - failed");
+  return false;
 }

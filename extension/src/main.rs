@@ -1,12 +1,14 @@
 #![warn(rust_2018_idioms)]
 
 use std::process;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use env_logger;
+use hyper::Uri;
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::timeout;
 
 use crate::lambda_service::LambdaService;
 use crate::options::{Options, Runtime};
@@ -133,13 +135,36 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
     }
   });
 
-  // Wait for the contained app to be ready
-  // TODO: This is where we need to bail out of waiting for the app to be ready
-  // TODO: If we bail out here then we need to send another init request on the first request
-  // we process
-  app_start::health_check_contained_app(Arc::new(AtomicBool::new(false)), &options).await;
+  let healthcheck_url: Uri = format!("http://127.0.0.1:{}/health", options.port)
+    .parse()
+    .unwrap();
 
-  let svc = LambdaService::new(options);
+  // Wait for the contained app to be ready
+  let initialized = if options.async_init {
+    let goaway_received = Arc::new(AtomicBool::new(false));
+    let result = timeout(
+      std::time::Duration::from_millis(9800),
+      app_start::health_check_contained_app(Arc::clone(&goaway_received), &healthcheck_url),
+    )
+    .await
+    .unwrap_or_default();
+
+    if result == false {
+      goaway_received.store(true, Ordering::SeqCst);
+    }
+
+    result
+  } else {
+    // Wait until init finishes OR the 10 second init gets canceled and re-run as a regular request
+    app_start::health_check_contained_app(Arc::new(AtomicBool::new(false)), &healthcheck_url).await
+  };
+
+  let svc = LambdaService::new(
+    options.compression,
+    Arc::new(AtomicBool::new(initialized)),
+    options.port,
+    healthcheck_url,
+  );
 
   tokio::select! {
       lambda_result = lambda_runtime::run(svc) => {
