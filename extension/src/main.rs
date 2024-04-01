@@ -8,17 +8,19 @@ use env_logger;
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 
+use crate::lambda_service::LambdaService;
 use crate::options::{Options, Runtime};
-use crate::run::LambdaService;
 
 mod app_request;
 mod app_start;
 mod cert;
 mod counter_drop;
+mod lambda_request;
+mod lambda_service;
 mod messages;
 mod options;
 mod ping;
-mod run;
+mod router_channel;
 mod threads;
 mod time;
 
