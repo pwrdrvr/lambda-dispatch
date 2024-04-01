@@ -171,6 +171,7 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
     Arc::new(AtomicBool::new(initialized)),
     options.port,
     healthcheck_url,
+    options.local_env,
   );
 
   tokio::select! {
