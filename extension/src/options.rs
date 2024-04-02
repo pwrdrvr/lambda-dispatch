@@ -34,6 +34,7 @@ pub struct Options {
   pub async_init: bool,
   pub compression: bool,
   pub runtime: Runtime,
+  pub local_env: bool,
 }
 
 impl Options {
@@ -59,7 +60,7 @@ impl Options {
         .unwrap_or_else(|_| "current_thread".to_string())
         .as_str()
         .into(),
-      // LAMBDA_DISPATCH_FORCE_DEADLINE,
+      local_env: provider.get_var("LAMBDA_DISPATCH_FORCE_DEADLINE").is_ok(),
     }
   }
 }
@@ -100,6 +101,7 @@ mod tests {
       async_init: true,
       compression: false,
       runtime: Runtime::MultiThread,
+      local_env: true,
       ..Default::default()
     };
 
@@ -107,6 +109,7 @@ mod tests {
     assert_eq!(options.async_init, true);
     assert_eq!(options.compression, false);
     assert_eq!(options.runtime, Runtime::MultiThread);
+    assert_eq!(options.local_env, true);
   }
 
   #[test]
@@ -123,6 +126,10 @@ mod tests {
           "LAMBDA_DISPATCH_RUNTIME".to_string(),
           "test_runtime".to_string(),
         ),
+        (
+          "LAMBDA_DISPATCH_FORCE_DEADLINE".to_string(),
+          "60".to_string(),
+        ),
       ]
       .iter()
       .cloned()
@@ -135,6 +142,7 @@ mod tests {
     assert_eq!(options.async_init, true);
     assert_eq!(options.compression, false);
     assert_eq!(options.runtime, Runtime::CurrentThread);
+    assert_eq!(options.local_env, true);
   }
 
   #[test]
@@ -151,6 +159,10 @@ mod tests {
           "invalid".to_string(),
         ),
         ("LAMBDA_DISPATCH_RUNTIME".to_string(), "invalid".to_string()),
+        (
+          "LAMBDA_DISPATCH_FORCE_DEADLINE".to_string(),
+          "invalid".to_string(),
+        ),
       ]
       .iter()
       .cloned()
@@ -163,5 +175,6 @@ mod tests {
     assert_eq!(options.async_init, false); // Default value
     assert_eq!(options.compression, true); // Default value
     assert_eq!(options.runtime, Runtime::CurrentThread); // Default value
+    assert_eq!(options.local_env, true); // Default value
   }
 }

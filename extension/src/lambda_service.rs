@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{pin::Pin, sync::Arc};
 
 use futures::Future;
@@ -9,9 +9,8 @@ use tokio::net::TcpStream;
 use tower::Service;
 
 use crate::lambda_request::LambdaRequest;
-use crate::messages;
-use crate::options::Options;
 use crate::time::current_time_millis;
+use crate::{app_start, messages};
 
 use tokio_rustls::client::TlsStream;
 
@@ -22,31 +21,33 @@ impl Stream for TcpStream {}
 
 #[derive(Clone)]
 pub struct LambdaService {
-  healthcheck_url: Uri,
-  async_init: bool,
-  ready_at_init: Arc<AtomicBool>,
+  initialized: Arc<AtomicBool>,
   domain: Uri,
   compression: bool,
+  healthcheck_url: Uri,
+  local_env: bool,
 }
 
 impl LambdaService {
-  pub fn new(options: &Options) -> Self {
+  pub fn new(
+    compression: bool,
+    initialized: Arc<AtomicBool>,
+    port: u16,
+    healthcheck_url: Uri,
+    local_env: bool,
+  ) -> Self {
     let schema = "http";
 
-    let healthcheck_url = format!("{}://{}:{}{}", schema, "127.0.0.1", options.port, "/health")
-      .parse()
-      .unwrap();
-
-    let domain = format!("{}://{}:{}", schema, "127.0.0.1", options.port)
+    let domain = format!("{}://{}:{}", schema, "127.0.0.1", port)
       .parse()
       .unwrap();
 
     LambdaService {
-      async_init: options.async_init,
-      ready_at_init: Arc::new(AtomicBool::new(false)),
-      compression: options.compression,
+      initialized,
+      compression,
       domain,
       healthcheck_url,
+      local_env,
     }
   }
 
@@ -57,6 +58,19 @@ impl LambdaService {
     &self,
     event: LambdaEvent<messages::WaiterRequest>,
   ) -> std::result::Result<messages::WaiterResponse, lambda_runtime::Error> {
+    log::info!("LambdaId: {} - Received request", event.payload.id);
+
+    if !self.initialized.load(Ordering::SeqCst) {
+      self.initialized.store(
+        app_start::health_check_contained_app(
+          Arc::new(AtomicBool::new(false)),
+          &self.healthcheck_url,
+        )
+        .await,
+        Ordering::SeqCst,
+      );
+    }
+
     // extract some useful info from the request
     let lambda_id = event.payload.id;
     let channel_count: u8 = event.payload.number_of_channels;
@@ -72,10 +86,14 @@ impl LambdaService {
       return Ok(resp);
     }
 
-    // If the sent_time is more than a second old, just return
+    // If the sent_time is more than 5 seconds old, just return
     // This is mostly needed locally where requests get stuck in the queue
+    // Do not do this in a deployed env because an app that takes > 5 seconds to start
+    // will get much longer initial request times
     let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
-    if sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap() {
+    if self.local_env
+      && sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
+    {
       log::info!("LambdaId: {} - Returning from stale request", lambda_id);
       return Ok(resp);
     }
