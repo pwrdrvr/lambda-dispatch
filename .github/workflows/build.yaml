@@ -51,23 +51,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Router
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileRouter
-          build-args: BUILD_ARCH=linux-arm64
-          platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests-router
-          rm /tmp/digests-router/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-router/${digest#sha256:}"
-
       - name: Configure AWS Credentials
         if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
@@ -82,6 +65,23 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Build Router
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./DockerfileRouter
+          build-args: BUILD_ARCH=linux-arm64
+          platforms: linux/arm64
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests-router
+          rm /tmp/digests-router/* || true
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
         if: github.event.pull_request.head.repo.fork == false
@@ -116,23 +116,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Router
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileRouter
-          build-args: BUILD_ARCH=linux-x64
-          platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests-router
-          rm /tmp/digests-router/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-router/${digest#sha256:}"
-
       - name: Configure AWS Credentials
         if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
@@ -147,6 +130,23 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Build Router
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./DockerfileRouter
+          build-args: BUILD_ARCH=linux-x64
+          platforms: linux/amd64
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests-router
+          rm /tmp/digests-router/* || true
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
         if: github.event.pull_request.head.repo.fork == false
@@ -228,25 +228,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Lambda
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileExtension
-          # push: true
-          # tags: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension:latest
-          build-args: BUILD_ARCH=linux-arm64
-          platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          rm /tmp/digests/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
       - name: Configure AWS Credentials
         if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
@@ -261,6 +242,25 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Build Lambda
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./DockerfileExtension
+          # push: true
+          # tags: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension:latest
+          build-args: BUILD_ARCH=linux-arm64
+          platforms: linux/arm64
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          rm /tmp/digests/* || true
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         if: github.event.pull_request.head.repo.fork == false
@@ -295,25 +295,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileExtension
-          build-args: |
-            ARCH=x86_64
-            TARGET_PLATFORM=linux/amd64
-          platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          rm /tmp/digests/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
       - name: Configure AWS Credentials
         if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
@@ -328,6 +309,25 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Build
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./DockerfileExtension
+          build-args: |
+            ARCH=x86_64
+            TARGET_PLATFORM=linux/amd64
+          platforms: linux/amd64
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          rm /tmp/digests/* || true
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         if: github.event.pull_request.head.repo.fork == false
