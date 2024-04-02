@@ -52,6 +52,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
+        if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -59,6 +60,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
+        if: github.event.pull_request.head.repo.fork == false
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -72,7 +74,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -82,6 +84,7 @@ jobs:
           touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
+        if: github.event.pull_request.head.repo.fork == false
         uses: actions/upload-artifact@v3
         with:
           name: digests-router
@@ -114,6 +117,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
+        if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -121,6 +125,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
+        if: github.event.pull_request.head.repo.fork == false
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -134,7 +139,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-x64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -144,6 +149,7 @@ jobs:
           touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
+        if: github.event.pull_request.head.repo.fork == false
         uses: actions/upload-artifact@v3
         with:
           name: digests-router
@@ -152,6 +158,7 @@ jobs:
           retention-days: 1
 
   merge-router:
+    if: github.event.pull_request.head.repo.fork == false
     env:
       REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
@@ -222,6 +229,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
+        if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -229,6 +237,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
+        if: github.event.pull_request.head.repo.fork == false
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -244,7 +253,7 @@ jobs:
           # tags: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension:latest
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -254,6 +263,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
+        if: github.event.pull_request.head.repo.fork == false
         uses: actions/upload-artifact@v3
         with:
           name: digests-extension
@@ -286,6 +296,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
+        if: github.event.pull_request.head.repo.fork == false
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -293,12 +304,13 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
+        if: github.event.pull_request.head.repo.fork == false
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
 
-      - name: Build and push by digest
+      - name: Build
         id: build
         uses: docker/build-push-action@v5
         with:
@@ -308,7 +320,7 @@ jobs:
             ARCH=x86_64
             TARGET_PLATFORM=linux/amd64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -318,6 +330,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
+        if: github.event.pull_request.head.repo.fork == false
         uses: actions/upload-artifact@v3
         with:
           name: digests-extension
@@ -326,6 +339,7 @@ jobs:
           retention-days: 1
 
   merge-extension:
+    if: github.event.pull_request.head.repo.fork == false
     env:
       REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
@@ -388,17 +402,6 @@ jobs:
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-session-name: lambda-dispatch-ghpublic-build
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
-          aws-region: us-east-1
-      - name: Login to ECR Public
-        id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
       - name: Compute PR Suffix
         id: prSuffix
         run: |
@@ -417,11 +420,25 @@ jobs:
       - name: Swap in tagged image name in the Dockerfile
         run: |
           sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.prSuffix.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
+
+      - name: Configure AWS Credentials
+        if: github.event.pull_request.head.repo.fork == false
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-1
+      - name: Login to ECR Public
+        if: github.event.pull_request.head.repo.fork == false
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./DockerfileLambdaDemoApp
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event.pull_request.head.repo.fork == false }}
           tags: "${{ env.REGISTRY_IMAGE }}:${{ steps.prSuffix.outputs.imageTag }}"
