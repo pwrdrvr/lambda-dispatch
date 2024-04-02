@@ -69,12 +69,9 @@ impl RouterChannel {
     >,
     dispatcher_authority: hyper::http::uri::Authority,
   ) -> Self {
-    let channel_id = format!(
-      "{}",
-      uuid::Builder::from_random_bytes(rng.gen())
-        .into_uuid()
-        .to_string()
-    );
+    let channel_id = uuid::Builder::from_random_bytes(rng.gen())
+      .into_uuid()
+      .to_string();
 
     let channel_url = format!(
       "{}://{}:{}/api/chunked/request/{}/{}",
@@ -141,8 +138,8 @@ impl RouterChannel {
         // with request/headers and then be binary after that - it should not be parsed
         // by anything other than us
         .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
-        .header("X-Lambda-Id", self.lambda_id.to_string())
-        .header("X-Channel-Id", self.channel_id.to_string())
+        .header("X-Lambda-Id", &self.lambda_id)
+        .header("X-Channel-Id", &self.channel_id)
         .body(boxed_body)?;
 
       //
@@ -154,7 +151,7 @@ impl RouterChannel {
         self.lambda_id,
         self.channel_id
       );
-      while futures::future::poll_fn(|ctx| self.sender.poll_ready(ctx))
+      if futures::future::poll_fn(|ctx| self.sender.poll_ready(ctx))
         .await
         .is_err()
       {
@@ -205,12 +202,9 @@ impl RouterChannel {
         .store(time::current_time_millis(), Ordering::Release);
 
       // Read until we get all the request headers so we can construct our app request
-      let (app_req_builder, is_goaway, left_over_buf) = app_request::read_until_req_headers(
-        &mut res_stream,
-        self.lambda_id.clone(),
-        self.channel_id.clone(),
-      )
-      .await?;
+      let (app_req_builder, is_goaway, left_over_buf) =
+        app_request::read_until_req_headers(&mut res_stream, &self.lambda_id, &self.channel_id)
+          .await?;
 
       // Check if the request has an Accept-Encoding header with gzip
       // If it does, we *can* gzip the response
@@ -251,7 +245,7 @@ impl RouterChannel {
       let (mut app_req_tx, app_req_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
       let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
 
-      while futures::future::poll_fn(|ctx| app_sender.poll_ready(ctx))
+      if futures::future::poll_fn(|ctx| app_sender.poll_ready(ctx))
         .await
         .is_err()
       {
@@ -273,7 +267,7 @@ impl RouterChannel {
         let mut bytes_sent = 0;
 
         // Send any overflow body bytes to the contained app
-        if left_over_buf.len() > 0 {
+        if !left_over_buf.is_empty() {
           bytes_sent += left_over_buf.len();
           log::debug!(
             "LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
@@ -378,7 +372,7 @@ impl RouterChannel {
 
       // Check if we have a Content-Encoding response header
       // If we do, we should not gzip the response
-      let app_res_compressed = !app_res_parts.headers.get("content-encoding").is_none();
+      let app_res_compressed = app_res_parts.headers.get("content-encoding").is_some();
 
       // Check if we have a Content-Length response header
       // If we do, and if it's small (e.g. < 1 KB), we should not gzip the response
@@ -518,13 +512,9 @@ impl RouterChannel {
         let _ = tx.close().await;
       });
 
-      let mut futures = Vec::new();
-      futures.push(relay_task);
-      futures.push(close_router_tx_task);
-
       // Wait for both to finish
       tokio::select! {
-          result = futures::future::try_join_all(futures) => {
+          result = futures::future::try_join_all([relay_task, close_router_tx_task]) => {
               match result {
                   Ok(_) => {
                       // All tasks completed successfully

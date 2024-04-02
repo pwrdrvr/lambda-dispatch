@@ -16,8 +16,8 @@ impl Stream for TcpStream {}
 
 pub async fn read_until_req_headers(
   res_stream: &mut Incoming,
-  lambda_id: String,
-  channel_id: String,
+  lambda_id: &str,
+  channel_id: &str,
 ) -> anyhow::Result<(hyper::http::request::Builder, bool, Vec<u8>)> {
   let mut buf = Vec::<u8>::with_capacity(32 * 1024);
 
@@ -53,8 +53,8 @@ pub async fn read_until_req_headers(
         let mut app_req_bld = Request::builder()
           .uri(app_url)
           .method(req.method.unwrap())
-          .header("X-Lambda-Id", lambda_id.to_string())
-          .header("X-Channel-Id", channel_id.to_string());
+          .header("X-Lambda-Id", lambda_id)
+          .header("X-Channel-Id", channel_id);
 
         // Write the headers to the request
         let app_req_headers = app_req_bld.headers_mut().unwrap();

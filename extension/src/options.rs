@@ -6,9 +6,12 @@ pub enum Runtime {
   CurrentThread,
 }
 
-impl From<&str> for Runtime {
-  fn from(value: &str) -> Self {
-    match value.to_lowercase().as_str() {
+impl<T> From<T> for Runtime
+where
+  T: AsRef<str>,
+{
+  fn from(value: T) -> Self {
+    match value.as_ref().to_lowercase().as_ref() {
       "default_multi_thread" => Runtime::DefaultMultiThread,
       "multi_thread" => Runtime::MultiThread,
       "current_thread" => Runtime::CurrentThread,
@@ -42,24 +45,23 @@ impl Options {
     Options {
       port: provider
         .get_var("LAMBDA_DISPATCH_PORT")
-        .unwrap_or_else(|_| "3001".to_string())
-        .parse()
+        .ok()
+        .and_then(|v| v.parse().ok())
         .unwrap_or(3001),
       async_init: provider
         .get_var("LAMBDA_DISPATCH_ASYNC_INIT")
-        .unwrap_or_else(|_| "false".to_string())
-        .parse()
+        .ok()
+        .and_then(|v| v.parse().ok())
         .unwrap_or(false),
       compression: provider
         .get_var("LAMBDA_DISPATCH_ENABLE_COMPRESSION")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse()
+        .ok()
+        .and_then(|v| v.parse().ok())
         .unwrap_or(true),
       runtime: provider
         .get_var("LAMBDA_DISPATCH_RUNTIME")
-        .unwrap_or_else(|_| "current_thread".to_string())
-        .as_str()
-        .into(),
+        .ok()
+        .map_or(Runtime::CurrentThread, |v| v.into()),
       local_env: provider.get_var("LAMBDA_DISPATCH_FORCE_DEADLINE").is_ok(),
     }
   }

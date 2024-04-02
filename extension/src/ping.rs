@@ -34,10 +34,9 @@ pub async fn send_ping_requests(
   requests_in_flight: Arc<AtomicUsize>,
 ) {
   let start_time = time::current_time_millis();
-  let mut last_ping_time = start_time.clone();
+  let mut last_ping_time = start_time;
 
-  while goaway_received.load(std::sync::atomic::Ordering::Acquire) == false
-    && cancel_token.is_cancelled() == false
+  while !goaway_received.load(std::sync::atomic::Ordering::Acquire) && !cancel_token.is_cancelled()
   {
     let last_active_grace_period_ms = 250;
     let close_before_deadline_ms = 15000;
@@ -49,7 +48,6 @@ pub async fn send_ping_requests(
     };
 
     // Compute stats for log messages
-    let lambda_id = lambda_id.clone();
     let count = count.load(Ordering::Acquire);
     let requests_in_flight = requests_in_flight.load(Ordering::Acquire);
     let elapsed = time::current_time_millis() - start_time;
@@ -96,11 +94,11 @@ pub async fn send_ping_requests(
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
         .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", lambda_id.to_string())
+        .header("X-Lambda-Id", &lambda_id)
         .body(boxed_close_body)
         .unwrap();
 
-      while futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
+      if futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
         .await
         .is_err()
       {
@@ -153,11 +151,11 @@ pub async fn send_ping_requests(
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
         .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", lambda_id.to_string())
+        .header("X-Lambda-Id", &lambda_id)
         .body(boxed_ping_body)
         .unwrap();
 
-      while futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
+      if futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
         .await
         .is_err()
       {
