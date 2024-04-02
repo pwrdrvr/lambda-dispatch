@@ -138,8 +138,8 @@ impl RouterChannel {
         // with request/headers and then be binary after that - it should not be parsed
         // by anything other than us
         .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
-        .header("X-Lambda-Id", self.lambda_id.to_string())
-        .header("X-Channel-Id", self.channel_id.to_string())
+        .header("X-Lambda-Id", &self.lambda_id)
+        .header("X-Channel-Id", &self.channel_id)
         .body(boxed_body)?;
 
       //
