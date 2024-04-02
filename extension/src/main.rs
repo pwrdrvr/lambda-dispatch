@@ -143,7 +143,7 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
   let initialized = if options.async_init {
     let goaway_received = Arc::new(AtomicBool::new(false));
     let result = timeout(
-      std::time::Duration::from_millis(9800),
+      std::time::Duration::from_millis(9500),
       app_start::health_check_contained_app(Arc::clone(&goaway_received), &healthcheck_url),
     )
     .await;
