@@ -74,7 +74,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
 
       - name: Export digest
         run: |
@@ -139,7 +139,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-x64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
 
       - name: Export digest
         run: |
@@ -249,11 +249,9 @@ jobs:
         with:
           context: .
           file: ./DockerfileExtension
-          # push: true
-          # tags: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension:latest
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
 
       - name: Export digest
         run: |
@@ -320,7 +318,7 @@ jobs:
             ARCH=x86_64
             TARGET_PLATFORM=linux/amd64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
 
       - name: Export digest
         run: |
