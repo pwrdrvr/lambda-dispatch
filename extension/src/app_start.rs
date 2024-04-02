@@ -87,7 +87,7 @@ pub async fn health_check_contained_app(
   let mut sender = None;
   let mut conn = None;
 
-  while goaway_received.load(std::sync::atomic::Ordering::Acquire) == false {
+  while !goaway_received.load(std::sync::atomic::Ordering::Acquire) {
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     if sender.is_none() || conn.is_none() {

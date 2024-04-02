@@ -103,11 +103,7 @@ impl LambdaRequest {
     // Advertise http2
     config.alpn_protocols = vec![b"h2".to_vec()];
     let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-    let domain_host = self
-      .dispatcher_url
-      .host()
-      .ok_or_else(|| "Host not found")
-      .unwrap();
+    let domain_host = self.dispatcher_url.host().ok_or("Host not found").unwrap();
     let domain = rustls_pki_types::ServerName::try_from(domain_host)?;
 
     let stream: Box<dyn Stream + Unpin>;
@@ -159,7 +155,7 @@ impl LambdaRequest {
     let futures = (0..self.channel_count)
       .map(|channel_number| {
         let app_url = app_url.clone();
-        let compression_enabled = self.compression.clone();
+        let compression_enabled = self.compression;
         let last_active = Arc::clone(&self.last_active);
         let goaway_received = Arc::clone(&self.goaway_received);
         let dispatcher_authority = dispatcher_authority.clone();
@@ -168,7 +164,6 @@ impl LambdaRequest {
         let rng = self.rng.clone();
         let scheme = scheme.clone();
         let host = host.clone();
-        let port = port;
         let lambda_id = self.lambda_id.clone();
         let requests_in_flight = Arc::clone(&self.requests_in_flight);
 
@@ -191,7 +186,7 @@ impl LambdaRequest {
             dispatcher_authority,
           );
 
-          return router_channel.start().await;
+          router_channel.start().await
         })
       })
       .collect::<Vec<_>>();
