@@ -61,7 +61,10 @@ pub async fn send_ping_requests(
       && requests_in_flight == 0)
       || time::current_time_millis() + close_before_deadline_ms > deadline_ms
     {
-      if last_active_ago_ms > 1 * last_active_grace_period_ms {
+      if last_active != 0
+        && last_active_ago_ms > last_active_grace_period_ms
+        && requests_in_flight == 0
+      {
         log::info!(
           "LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Last Active",
           lambda_id,
