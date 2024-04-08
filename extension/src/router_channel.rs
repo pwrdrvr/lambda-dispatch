@@ -454,7 +454,7 @@ impl RouterChannel {
       let mut encoder: Option<GzEncoder<Writer<BytesMut>>> = None;
       if app_res_will_compress {
         encoder = Some(GzEncoder::new(
-          BytesMut::with_capacity(app_res_content_length as usize).writer(),
+          BytesMut::new().writer(),
           flate2::Compression::default(),
         ));
       }
