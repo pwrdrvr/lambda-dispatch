@@ -15,15 +15,14 @@ use hyper::{
   Request,
 };
 
+use crate::prelude::*;
 use crate::time;
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
   authority: String,
-  mut sender: SendRequest<BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>>,
+  mut sender: SendRequest<BoxBody<Bytes, Error>>,
   lambda_id: String,
   count: Arc<AtomicUsize>,
   scheme: String,

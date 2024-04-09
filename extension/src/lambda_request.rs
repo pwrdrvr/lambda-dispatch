@@ -9,6 +9,7 @@ use tokio::net::TcpStream;
 
 use crate::cert::AcceptAnyServerCert;
 use crate::ping;
+use crate::prelude::*;
 use crate::router_channel::RouterChannel;
 use crate::time::current_time_millis;
 
@@ -19,7 +20,10 @@ pub trait Stream: AsyncRead + AsyncWrite + Send {}
 impl Stream for TlsStream<TcpStream> {}
 impl Stream for TcpStream {}
 
-#[derive(Clone)]
+/// A `LambdaRequest` handles connecting back to the router, picking up requests, sending ping
+/// requests to the router, and sending the requests to the contained app When an invoke completes
+/// this is torn down completely
+#[derive(Debug, Clone)]
 pub struct LambdaRequest {
   domain: Uri,
   compression: bool,
@@ -34,14 +38,13 @@ pub struct LambdaRequest {
   requests_in_flight: Arc<AtomicUsize>,
   count: Arc<AtomicUsize>,
 }
-
-//
-// LambdaRequest handles connecting back to the router, picking up requests,
-// sending ping requests to the router, and sending the requests to the contained app
-// When an invoke completes this is torn down completely
-//
-
 impl LambdaRequest {
+  /// Create a new `LambdaRequest` task with a specified deadline.
+  ///
+  /// # Parameters
+  ///
+  /// * `deadline_ms`: A timestamp in milliseconds since the Unix epoch representing when the
+  /// Lambda function needs to finish execution.
   pub fn new(
     domain: Uri,
     compression: bool,
@@ -67,12 +70,7 @@ impl LambdaRequest {
   }
 
   /// Executes a task with a specified deadline.
-  ///
-  /// # Parameters
-  ///
-  /// * `deadline_ms`: A timestamp in milliseconds since the Unix epoch
-  ///   representing when the Lambda function needs to finish execution.
-  pub async fn start(&mut self) -> anyhow::Result<()> {
+  pub async fn start(&mut self) -> Result<(), Error> {
     let start_time = current_time_millis();
     let scheme = self.dispatcher_url.scheme().unwrap().to_string();
     let use_https = scheme == "https";

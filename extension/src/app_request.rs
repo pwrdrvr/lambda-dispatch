@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::str::FromStr;
 
+use crate::prelude::*;
 use hyper::body::Body;
 use hyper::header::HeaderName;
 use hyper::{body::Incoming, Request};
@@ -18,7 +19,7 @@ pub async fn read_until_req_headers(
   res_stream: &mut Incoming,
   lambda_id: &str,
   channel_id: &str,
-) -> anyhow::Result<(hyper::http::request::Builder, bool, Vec<u8>)> {
+) -> Result<(hyper::http::request::Builder, bool, Vec<u8>)> {
   let mut buf = Vec::<u8>::with_capacity(32 * 1024);
 
   while let Some(chunk) =

@@ -9,8 +9,12 @@ use tokio::net::TcpStream;
 use tower::Service;
 
 use crate::lambda_request::LambdaRequest;
+use crate::prelude::*;
 use crate::time::current_time_millis;
-use crate::{app_start, messages};
+use crate::{
+  app_start,
+  messages::{WaiterRequest, WaiterResponse},
+};
 
 use tokio_rustls::client::TlsStream;
 
@@ -56,8 +60,8 @@ impl LambdaService {
   //
   async fn fetch_response(
     &self,
-    event: LambdaEvent<messages::WaiterRequest>,
-  ) -> std::result::Result<messages::WaiterResponse, lambda_runtime::Error> {
+    event: LambdaEvent<WaiterRequest>,
+  ) -> Result<WaiterResponse, Error> {
     log::info!("LambdaId: {} - Received request", event.payload.id);
 
     if !self.initialized.load(Ordering::SeqCst) {
@@ -77,7 +81,7 @@ impl LambdaService {
     let dispatcher_url = event.payload.dispatcher_url;
 
     // prepare the response
-    let resp = messages::WaiterResponse {
+    let resp = WaiterResponse {
       id: lambda_id.to_string(),
     };
 
@@ -90,7 +94,8 @@ impl LambdaService {
     // This is mostly needed locally where requests get stuck in the queue
     // Do not do this in a deployed env because an app that takes > 5 seconds to start
     // will get much longer initial request times
-    let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
+    let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time)
+      .context("unable to parse sent_time in lambda event payload")?;
     if self.local_env
       && sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
     {
@@ -131,20 +136,19 @@ impl LambdaService {
 }
 
 // Tower.Service is the interface required by lambda_runtime::run
-impl Service<LambdaEvent<messages::WaiterRequest>> for LambdaService {
-  type Response = messages::WaiterResponse;
-  type Error = lambda_runtime::Error;
-  type Future =
-    Pin<Box<dyn Future<Output = std::result::Result<Self::Response, Self::Error>> + Send>>;
+impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
+  type Response = WaiterResponse;
+  type Error = Error;
+  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
   fn poll_ready(
     &mut self,
     _cx: &mut core::task::Context<'_>,
-  ) -> core::task::Poll<std::result::Result<(), Self::Error>> {
+  ) -> core::task::Poll<Result<(), Self::Error>> {
     core::task::Poll::Ready(Ok(()))
   }
 
-  fn call(&mut self, event: LambdaEvent<messages::WaiterRequest>) -> Self::Future {
+  fn call(&mut self, event: LambdaEvent<WaiterRequest>) -> Self::Future {
     let adapter = self.clone();
     Box::pin(async move { adapter.fetch_response(event).await })
   }

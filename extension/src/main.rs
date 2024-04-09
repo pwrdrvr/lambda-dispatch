@@ -12,6 +12,7 @@ use tokio::time::timeout;
 
 use crate::lambda_service::LambdaService;
 use crate::options::{Options, Runtime};
+use crate::prelude::*;
 
 mod app_request;
 mod app_start;
@@ -22,11 +23,12 @@ mod lambda_service;
 mod messages;
 mod options;
 mod ping;
+pub mod prelude;
 mod router_channel;
 mod threads;
 mod time;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
   env_logger::Builder::new()
     .format(|buf, record| {
       writeln!(
@@ -97,7 +99,7 @@ fn main() -> anyhow::Result<()> {
   Ok(())
 }
 
-async fn async_main(options: &Options) -> anyhow::Result<()> {
+async fn async_main(options: &Options) -> Result<()> {
   let mut term_signal = signal(SignalKind::terminate())?;
 
   let thread_count = threads::get_threads();
@@ -137,7 +139,7 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
 
   let healthcheck_url: Uri = format!("http://127.0.0.1:{}/health", options.port)
     .parse()
-    .unwrap();
+    .expect("healthcheck url with port should always be valid");
 
   // Wait for the contained app to be ready
   let initialized = if options.async_init {

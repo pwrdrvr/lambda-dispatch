@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::SystemTime;
@@ -5,11 +6,11 @@ use std::{pin::Pin, sync::Arc};
 
 use futures::channel::mpsc;
 use futures::SinkExt;
-use http_body_util::{BodyExt, StreamBody};
+use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use httpdate::fmt_http_date;
-use hyper::body::Body;
 use hyper::{
-  body::{Bytes, Frame, Incoming},
+  body::{Body, Bytes, Frame, Incoming},
+  client::conn::{http1, http2},
   Request, Uri,
 };
 use hyper_util::rt::TokioIo;
@@ -30,8 +31,6 @@ pub trait Stream: AsyncRead + AsyncWrite + Send {}
 impl Stream for TlsStream<TcpStream> {}
 impl Stream for TcpStream {}
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
 #[derive(Clone)]
 pub struct RouterChannel {
   count: Arc<AtomicUsize>,
@@ -44,9 +43,7 @@ pub struct RouterChannel {
   channel_id: String,
   app_url: Uri,
   channel_number: u8,
-  sender: hyper::client::conn::http2::SendRequest<
-    http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>,
-  >,
+  sender: http2::SendRequest<BoxBody<Bytes, Error>>,
   dispatcher_authority: hyper::http::uri::Authority,
 }
 
@@ -64,9 +61,7 @@ impl RouterChannel {
     router_port: u16,
     app_url: Uri,
     channel_number: u8,
-    sender: hyper::client::conn::http2::SendRequest<
-      http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>,
-    >,
+    sender: http2::SendRequest<BoxBody<Bytes, Error>>,
     dispatcher_authority: hyper::http::uri::Authority,
   ) -> Self {
     let channel_id = uuid::Builder::from_random_bytes(rng.gen())
@@ -96,7 +91,7 @@ impl RouterChannel {
     }
   }
 
-  pub async fn start(&mut self) -> anyhow::Result<()> {
+  pub async fn start(&mut self) -> Result<()> {
     let app_host = self.app_url.host().expect("uri has no host");
     let app_port = self.app_url.port_u16().unwrap_or(80);
     let app_addr = format!("{}:{}", app_host, app_port);
@@ -529,6 +524,6 @@ impl RouterChannel {
       self.count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 
-    Ok::<(), anyhow::Error>(())
+    Ok(())
   }
 }
