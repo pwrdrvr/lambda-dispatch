@@ -37,6 +37,15 @@ pub async fn send_ping_requests(
   let start_time = time::current_time_millis();
   let mut last_ping_time = start_time;
 
+  let ping_url = format!(
+    "{}://{}:{}/api/chunked/ping/{}",
+    scheme, host, port, lambda_id
+  );
+  let close_url = format!(
+    "{}://{}:{}/api/chunked/close/{}",
+    scheme, host, port, lambda_id
+  );
+
   while !goaway_received.load(std::sync::atomic::Ordering::Acquire) && !cancel_token.is_cancelled()
   {
     let last_active_grace_period_ms = 250;
@@ -84,10 +93,6 @@ pub async fn send_ping_requests(
       }
 
       // Send Close request to router
-      let close_url = format!(
-        "{}://{}:{}/api/chunked/close/{}",
-        scheme, host, port, lambda_id
-      );
       let (mut close_tx, close_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
       let boxed_close_body = BodyExt::boxed(StreamBody::new(close_recv));
       let close_req = Request::builder()
@@ -133,10 +138,6 @@ pub async fn send_ping_requests(
     if last_active > 0 && (time::current_time_millis() - last_ping_time) >= 5000 {
       last_ping_time = time::current_time_millis();
 
-      let ping_url = format!(
-        "{}://{}:{}/api/chunked/ping/{}",
-        scheme, host, port, lambda_id
-      );
       let (mut ping_tx, ping_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
       let boxed_ping_body = BodyExt::boxed(StreamBody::new(ping_recv));
       let ping_req = Request::builder()
