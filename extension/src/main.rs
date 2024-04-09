@@ -74,7 +74,7 @@ fn main() -> Result<()> {
         .worker_threads(worker_threads)
         .build()
         .unwrap();
-      runtime.block_on(async_main(&options))?;
+      runtime.block_on(async_main(options))?;
     }
     Runtime::DefaultMultiThread => {
       log::info!("Using default_multi_thread runtime");
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
         .enable_all()
         .build()
         .unwrap();
-      runtime.block_on(async_main(&options))?;
+      runtime.block_on(async_main(options))?;
     }
     // Default or `current_thread` runtime
     Runtime::CurrentThread => {
@@ -92,14 +92,14 @@ fn main() -> Result<()> {
         .enable_all()
         .build()
         .unwrap();
-      runtime.block_on(async_main(&options))?;
+      runtime.block_on(async_main(options))?;
     }
   }
 
   Ok(())
 }
 
-async fn async_main(options: &Options) -> Result<()> {
+async fn async_main(options: Options) -> Result<()> {
   let mut term_signal = signal(SignalKind::terminate())?;
 
   let thread_count = threads::get_threads();
@@ -169,11 +169,9 @@ async fn async_main(options: &Options) -> Result<()> {
   };
 
   let svc = LambdaService::new(
-    options.compression,
+    options,
     Arc::new(AtomicBool::new(initialized)),
-    options.port,
     healthcheck_url,
-    options.local_env,
   );
 
   tokio::select! {

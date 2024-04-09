@@ -9,6 +9,7 @@ use tokio::net::TcpStream;
 use tower::Service;
 
 use crate::lambda_request::LambdaRequest;
+use crate::options::Options;
 use crate::prelude::*;
 use crate::time::current_time_millis;
 use crate::{
@@ -25,33 +26,17 @@ impl Stream for TcpStream {}
 
 #[derive(Clone)]
 pub struct LambdaService {
+  options: Options,
   initialized: Arc<AtomicBool>,
-  domain: Uri,
-  compression: bool,
   healthcheck_url: Uri,
-  local_env: bool,
 }
 
 impl LambdaService {
-  pub fn new(
-    compression: bool,
-    initialized: Arc<AtomicBool>,
-    port: u16,
-    healthcheck_url: Uri,
-    local_env: bool,
-  ) -> Self {
-    let schema = "http";
-
-    let domain = format!("{}://{}:{}", schema, "127.0.0.1", port)
-      .parse()
-      .unwrap();
-
+  pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
     LambdaService {
+      options,
       initialized,
-      compression,
-      domain,
       healthcheck_url,
-      local_env,
     }
   }
 
@@ -63,6 +48,11 @@ impl LambdaService {
     event: LambdaEvent<WaiterRequest>,
   ) -> Result<WaiterResponse, Error> {
     log::info!("LambdaId: {} - Received request", event.payload.id);
+    let schema = "http";
+
+    let domain: Uri = format!("{}://{}:{}", schema, "127.0.0.1", self.options.port)
+      .parse()
+      .unwrap();
 
     if !self.initialized.load(Ordering::SeqCst) {
       self.initialized.store(
@@ -96,7 +86,7 @@ impl LambdaService {
     // will get much longer initial request times
     let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time)
       .context("unable to parse sent_time in lambda event payload")?;
-    if self.local_env
+    if self.options.local_env
       && sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
     {
       log::info!("LambdaId: {} - Returning from stale request", lambda_id);
@@ -114,16 +104,18 @@ impl LambdaService {
       deadline_ms = current_time_millis() + 60 * 1000;
     }
     // check if env var is set to force deadline for testing
-    if let Ok(force_deadline_secs) = std::env::var("LAMBDA_DISPATCH_FORCE_DEADLINE") {
-      log::warn!("Forcing deadline to {} seconds", force_deadline_secs);
-      let force_deadline_secs: u64 = force_deadline_secs.parse().unwrap();
-      deadline_ms = current_time_millis() + force_deadline_secs * 1000;
+    if let Some(force_deadline_secs) = self.options.force_deadline_secs {
+      log::warn!(
+        "Forcing deadline to {} seconds",
+        force_deadline_secs.as_secs()
+      );
+      deadline_ms = current_time_millis() + force_deadline_secs.as_millis() as u64;
     }
 
     // run until we get a GoAway or deadline is about to be reached
     let mut lambda_request = LambdaRequest::new(
-      self.domain.clone(),
-      self.compression,
+      domain,
+      self.options.compression,
       lambda_id,
       channel_count,
       dispatcher_url.parse().unwrap(),

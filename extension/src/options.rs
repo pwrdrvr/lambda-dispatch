@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use std::time::Duration;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Runtime {
   #[default]
@@ -33,16 +35,23 @@ impl EnvVarProvider for RealEnvVarProvider {
   }
 }
 
+#[derive(Clone, Copy)]
 pub struct Options {
   pub port: u16,
   pub async_init: bool,
   pub compression: bool,
   pub runtime: Runtime,
   pub local_env: bool,
+  pub force_deadline_secs: Option<Duration>,
 }
 
 impl Options {
   fn from_env<P: EnvVarProvider>(provider: P) -> Self {
+    let force_deadline_secs = provider
+      .get_var("LAMBDA_DISPATCH_FORCE_DEADLINE")
+      .ok()
+      .and_then(|d| d.parse::<u64>().map(Duration::from_secs).ok());
+
     Options {
       port: provider
         .get_var("LAMBDA_DISPATCH_PORT")
@@ -64,6 +73,7 @@ impl Options {
         .ok()
         .map_or(Runtime::CurrentThread, |v| v.into()),
       local_env: provider.get_var("LAMBDA_DISPATCH_FORCE_DEADLINE").is_ok(),
+      force_deadline_secs,
     }
   }
 }
@@ -109,10 +119,11 @@ mod tests {
     };
 
     assert_eq!(options.port, 9000);
-    assert_eq!(options.async_init, true);
-    assert_eq!(options.compression, false);
+    assert!(options.async_init);
+    assert!(!options.compression);
     assert_eq!(options.runtime, Runtime::MultiThread);
-    assert_eq!(options.local_env, true);
+    assert!(options.local_env);
+    assert_eq!(options.force_deadline_secs, None);
   }
 
   #[test]
@@ -134,18 +145,18 @@ mod tests {
           "60".to_string(),
         ),
       ]
-      .iter()
-      .cloned()
+      .into_iter()
       .collect(),
     };
 
     let options = Options::from_env(mock_provider);
 
     assert_eq!(options.port, 4000);
-    assert_eq!(options.async_init, true);
-    assert_eq!(options.compression, false);
+    assert!(options.async_init);
+    assert!(!options.compression);
     assert_eq!(options.runtime, Runtime::CurrentThread);
-    assert_eq!(options.local_env, true);
+    assert!(options.local_env);
+    assert_eq!(options.force_deadline_secs, Some(Duration::from_secs(60)));
   }
 
   #[test]
@@ -167,17 +178,17 @@ mod tests {
           "invalid".to_string(),
         ),
       ]
-      .iter()
-      .cloned()
+      .into_iter()
       .collect(),
     };
 
     let options = Options::from_env(mock_provider);
 
     assert_eq!(options.port, 3001); // Default value
-    assert_eq!(options.async_init, false); // Default value
-    assert_eq!(options.compression, true); // Default value
+    assert!(!options.async_init); // Default value
+    assert!(options.compression); // Default value
     assert_eq!(options.runtime, Runtime::CurrentThread); // Default value
-    assert_eq!(options.local_env, true); // Default value
+    assert!(options.local_env); // Default value
+    assert_eq!(options.force_deadline_secs, None);
   }
 }
