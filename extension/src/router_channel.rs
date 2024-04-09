@@ -100,7 +100,7 @@ impl RouterChannel {
     // This is HTTP/1.1 so we need 1 connection for each worker
     let app_tcp_stream = TcpStream::connect(app_addr).await?;
     let app_io = TokioIo::new(app_tcp_stream);
-    let (mut app_sender, app_conn) = hyper::client::conn::http1::handshake(app_io).await?;
+    let (mut app_sender, app_conn) = http1::handshake(app_io).await?;
     let lambda_id_clone = self.lambda_id.clone();
     let channel_id_clone = self.channel_id.clone();
 

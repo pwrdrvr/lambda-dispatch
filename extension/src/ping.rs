@@ -1,18 +1,20 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
-use std::{pin::Pin, sync::Arc};
+use std::{
+  sync::{
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    Arc,
+  },
+  time::{Duration, SystemTime},
+};
 
 use futures::channel::mpsc;
 use futures::SinkExt;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, StreamBody};
 use httpdate::fmt_http_date;
-use hyper::body::Body;
-use hyper::client::conn::http2::SendRequest;
-use hyper::StatusCode;
 use hyper::{
-  body::{Bytes, Frame, Incoming},
-  Request,
+  body::{Bytes, Frame},
+  client::conn::http2::SendRequest,
+  Request, StatusCode,
 };
 
 use crate::prelude::*;
