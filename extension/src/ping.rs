@@ -97,10 +97,7 @@ pub async fn send_ping_requests(
         .body(boxed_close_body)
         .unwrap();
 
-      if futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if sender.ready().await.is_err() {
         goaway_received.store(true, Ordering::Release);
 
         // This gets hit when the connection for HTTP/1.1 faults
@@ -112,14 +109,9 @@ pub async fn send_ping_requests(
       let res = sender.send_request(close_req).await;
       close_tx.close().await.unwrap();
       match res {
-        Ok(res) => {
-          let (_, mut res_stream) = res.into_parts();
-
+        Ok(mut res) => {
           // Rip through and discard so the response stream is closed
-          while let Some(_chunk) =
-            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
-          {
-          }
+          while res.frame().await.is_some() {}
         }
         Err(err) => {
           log::error!(
@@ -154,10 +146,7 @@ pub async fn send_ping_requests(
         .body(boxed_ping_body)
         .unwrap();
 
-      if futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if sender.ready().await.is_err() {
         // This gets hit when the connection faults
         panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id);
       }
@@ -169,10 +158,7 @@ pub async fn send_ping_requests(
           let (parts, mut res_stream) = res.into_parts();
 
           // Rip through and discard so the response stream is closed
-          while let Some(_chunk) =
-            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
-          {
-          }
+          while res_stream.frame().await.is_some() {}
 
           if parts.status == 409 {
             log::info!(

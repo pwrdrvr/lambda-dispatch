@@ -146,10 +146,7 @@ impl RouterChannel {
         self.lambda_id,
         self.channel_id
       );
-      if futures::future::poll_fn(|ctx| self.sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if self.sender.ready().await.is_err() {
         // This gets hit when the router connection faults
         panic!("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.lambda_id, self.channel_id);
       }
@@ -240,10 +237,7 @@ impl RouterChannel {
       let (mut app_req_tx, app_req_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
       let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
 
-      if futures::future::poll_fn(|ctx| app_sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if app_sender.ready().await.is_err() {
         // This gets hit when the app connection faults
         panic!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
                   self.lambda_id, self.channel_id, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
