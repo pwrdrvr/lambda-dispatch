@@ -18,6 +18,7 @@ mod app_request;
 mod app_start;
 mod cert;
 mod counter_drop;
+mod endpoint;
 mod lambda_request;
 mod lambda_service;
 mod messages;
@@ -152,7 +153,7 @@ async fn async_main(options: Options) -> Result<()> {
 
     match result {
       Ok(success) => {
-        if success == false {
+        if !success {
           log::info!("Health check - returned false before timeout, deferring init to handler");
           goaway_received.store(true, Ordering::SeqCst);
         }

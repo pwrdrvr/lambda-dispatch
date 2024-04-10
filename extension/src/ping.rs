@@ -1,4 +1,5 @@
 use std::{
+  borrow::Cow,
   sync::{
     atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     Arc,
@@ -6,10 +7,8 @@ use std::{
   time::{Duration, SystemTime},
 };
 
-use futures::channel::mpsc;
-use futures::SinkExt;
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, StreamBody};
+use futures::{channel::mpsc, SinkExt};
+use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use httpdate::fmt_http_date;
 use hyper::{
   body::{Bytes, Frame},
@@ -17,19 +16,17 @@ use hyper::{
   Request, StatusCode,
 };
 
+use crate::endpoint::Endpoint;
 use crate::prelude::*;
 use crate::time;
 
 pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
-  authority: String,
   mut sender: SendRequest<BoxBody<Bytes, Error>>,
   lambda_id: LambdaId,
   count: Arc<AtomicUsize>,
-  scheme: String,
-  host: String,
-  port: u16,
+  router_endpoint: Endpoint,
   deadline_ms: u64,
   cancel_token: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
@@ -37,13 +34,26 @@ pub async fn send_ping_requests(
   let start_time = time::current_time_millis();
   let mut last_ping_time = start_time;
 
+  let scheme = router_endpoint.scheme();
+  let host = router_endpoint.host();
+  let port = router_endpoint.port();
+
+  // Compute host header now in case we need to allocate
+  let host_header = router_endpoint.host_header();
+
   let ping_url = format!(
     "{}://{}:{}/api/chunked/ping/{}",
-    scheme, host, port, lambda_id
+    scheme.as_ref(),
+    host,
+    port,
+    lambda_id
   );
   let close_url = format!(
     "{}://{}:{}/api/chunked/close/{}",
-    scheme, host, port, lambda_id
+    scheme.as_ref(),
+    host,
+    port,
+    lambda_id
   );
 
   while !goaway_received.load(std::sync::atomic::Ordering::Acquire) && !cancel_token.is_cancelled()
@@ -99,10 +109,12 @@ pub async fn send_ping_requests(
         .uri(&close_url)
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-        .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", lambda_id.as_ref())
-        .body(boxed_close_body)
-        .unwrap();
+        .header("X-Lambda-Id", lambda_id.as_ref());
+      let close_req = match &host_header {
+        Cow::Borrowed(v) => close_req.header(hyper::header::HOST, *v),
+        Cow::Owned(v) => close_req.header(hyper::header::HOST, v),
+      };
+      let close_req = close_req.body(boxed_close_body).unwrap();
 
       if sender.ready().await.is_err() {
         goaway_received.store(true, Ordering::Release);
@@ -144,10 +156,12 @@ pub async fn send_ping_requests(
         .uri(&ping_url)
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-        .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", lambda_id.as_ref())
-        .body(boxed_ping_body)
-        .unwrap();
+        .header("X-Lambda-Id", lambda_id.as_ref());
+      let ping_req = match &host_header {
+        Cow::Borrowed(v) => ping_req.header(hyper::header::HOST, *v),
+        Cow::Owned(v) => ping_req.header(hyper::header::HOST, v),
+      };
+      let ping_req = ping_req.body(boxed_ping_body).unwrap();
 
       if sender.ready().await.is_err() {
         // This gets hit when the connection faults

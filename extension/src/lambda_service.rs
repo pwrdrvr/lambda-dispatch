@@ -8,6 +8,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tower::Service;
 
+use crate::endpoint::{Endpoint, Scheme};
 use crate::lambda_request::LambdaRequest;
 use crate::options::Options;
 use crate::prelude::*;
@@ -48,11 +49,8 @@ impl LambdaService {
     event: LambdaEvent<WaiterRequest>,
   ) -> Result<WaiterResponse, Error> {
     log::info!("LambdaId: {} - Received request", event.payload.id);
-    let schema = "http";
 
-    let domain: Uri = format!("{}://{}:{}", schema, "127.0.0.1", self.options.port)
-      .parse()
-      .unwrap();
+    let app_endpoint = Endpoint::new(Scheme::Http, "127.0.0.1", self.options.port);
 
     if !self.initialized.load(Ordering::SeqCst) {
       self.initialized.store(
@@ -68,7 +66,7 @@ impl LambdaService {
     // extract some useful info from the request
     let lambda_id: LambdaId = event.payload.id.into();
     let channel_count: u8 = event.payload.number_of_channels;
-    let dispatcher_url = event.payload.dispatcher_url;
+    let router_endpoint = event.payload.router_url.parse()?;
 
     // prepare the response
     let resp = WaiterResponse {
@@ -114,11 +112,11 @@ impl LambdaService {
 
     // run until we get a GoAway or deadline is about to be reached
     let mut lambda_request = LambdaRequest::new(
-      domain,
+      app_endpoint,
       self.options.compression,
       lambda_id,
       channel_count,
-      dispatcher_url.parse().unwrap(),
+      router_endpoint,
       deadline_ms,
     );
     lambda_request.start().await?;
