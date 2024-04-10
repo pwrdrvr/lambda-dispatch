@@ -12,21 +12,24 @@ use tokio::time::timeout;
 
 use crate::lambda_service::LambdaService;
 use crate::options::{Options, Runtime};
+use crate::prelude::*;
 
 mod app_request;
 mod app_start;
 mod cert;
 mod counter_drop;
+mod endpoint;
 mod lambda_request;
 mod lambda_service;
 mod messages;
 mod options;
 mod ping;
+pub mod prelude;
 mod router_channel;
 mod threads;
 mod time;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
   env_logger::Builder::new()
     .format(|buf, record| {
       writeln!(
@@ -72,7 +75,7 @@ fn main() -> anyhow::Result<()> {
         .worker_threads(worker_threads)
         .build()
         .unwrap();
-      runtime.block_on(async_main(&options))?;
+      runtime.block_on(async_main(options))?;
     }
     Runtime::DefaultMultiThread => {
       log::info!("Using default_multi_thread runtime");
@@ -81,7 +84,7 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()
         .unwrap();
-      runtime.block_on(async_main(&options))?;
+      runtime.block_on(async_main(options))?;
     }
     // Default or `current_thread` runtime
     Runtime::CurrentThread => {
@@ -90,14 +93,14 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()
         .unwrap();
-      runtime.block_on(async_main(&options))?;
+      runtime.block_on(async_main(options))?;
     }
   }
 
   Ok(())
 }
 
-async fn async_main(options: &Options) -> anyhow::Result<()> {
+async fn async_main(options: Options) -> Result<()> {
   let mut term_signal = signal(SignalKind::terminate())?;
 
   let thread_count = threads::get_threads();
@@ -137,7 +140,7 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
 
   let healthcheck_url: Uri = format!("http://127.0.0.1:{}/health", options.port)
     .parse()
-    .unwrap();
+    .expect("healthcheck url with port should always be valid");
 
   // Wait for the contained app to be ready
   let initialized = if options.async_init {
@@ -150,7 +153,7 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
 
     match result {
       Ok(success) => {
-        if success == false {
+        if !success {
           log::info!("Health check - returned false before timeout, deferring init to handler");
           goaway_received.store(true, Ordering::SeqCst);
         }
@@ -167,11 +170,9 @@ async fn async_main(options: &Options) -> anyhow::Result<()> {
   };
 
   let svc = LambdaService::new(
-    options.compression,
+    options,
     Arc::new(AtomicBool::new(initialized)),
-    options.port,
     healthcheck_url,
-    options.local_env,
   );
 
   tokio::select! {

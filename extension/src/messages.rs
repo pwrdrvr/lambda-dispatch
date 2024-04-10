@@ -6,7 +6,7 @@ pub struct WaiterRequest {
   #[serde(rename = "Id")]
   pub id: String,
   #[serde(rename = "DispatcherUrl")]
-  pub dispatcher_url: String,
+  pub router_url: String,
   #[serde(rename = "NumberOfChannels")]
   pub number_of_channels: u8,
   #[serde(rename = "SentTime")]

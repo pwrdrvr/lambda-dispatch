@@ -8,9 +8,15 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tower::Service;
 
+use crate::endpoint::{Endpoint, Scheme};
 use crate::lambda_request::LambdaRequest;
+use crate::options::Options;
+use crate::prelude::*;
 use crate::time::current_time_millis;
-use crate::{app_start, messages};
+use crate::{
+  app_start,
+  messages::{WaiterRequest, WaiterResponse},
+};
 
 use tokio_rustls::client::TlsStream;
 
@@ -21,33 +27,17 @@ impl Stream for TcpStream {}
 
 #[derive(Clone)]
 pub struct LambdaService {
+  options: Options,
   initialized: Arc<AtomicBool>,
-  domain: Uri,
-  compression: bool,
   healthcheck_url: Uri,
-  local_env: bool,
 }
 
 impl LambdaService {
-  pub fn new(
-    compression: bool,
-    initialized: Arc<AtomicBool>,
-    port: u16,
-    healthcheck_url: Uri,
-    local_env: bool,
-  ) -> Self {
-    let schema = "http";
-
-    let domain = format!("{}://{}:{}", schema, "127.0.0.1", port)
-      .parse()
-      .unwrap();
-
+  pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
     LambdaService {
+      options,
       initialized,
-      compression,
-      domain,
       healthcheck_url,
-      local_env,
     }
   }
 
@@ -56,9 +46,11 @@ impl LambdaService {
   //
   async fn fetch_response(
     &self,
-    event: LambdaEvent<messages::WaiterRequest>,
-  ) -> std::result::Result<messages::WaiterResponse, lambda_runtime::Error> {
+    event: LambdaEvent<WaiterRequest>,
+  ) -> Result<WaiterResponse, Error> {
     log::info!("LambdaId: {} - Received request", event.payload.id);
+
+    let app_endpoint = Endpoint::new(Scheme::Http, "127.0.0.1", self.options.port);
 
     if !self.initialized.load(Ordering::SeqCst) {
       self.initialized.store(
@@ -72,12 +64,12 @@ impl LambdaService {
     }
 
     // extract some useful info from the request
-    let lambda_id = event.payload.id;
+    let lambda_id: LambdaId = event.payload.id.into();
     let channel_count: u8 = event.payload.number_of_channels;
-    let dispatcher_url = event.payload.dispatcher_url;
+    let router_endpoint = event.payload.router_url.parse()?;
 
     // prepare the response
-    let resp = messages::WaiterResponse {
+    let resp = WaiterResponse {
       id: lambda_id.to_string(),
     };
 
@@ -90,8 +82,9 @@ impl LambdaService {
     // This is mostly needed locally where requests get stuck in the queue
     // Do not do this in a deployed env because an app that takes > 5 seconds to start
     // will get much longer initial request times
-    let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time).unwrap();
-    if self.local_env
+    let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time)
+      .context("unable to parse sent_time in lambda event payload")?;
+    if self.options.local_env
       && sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
     {
       log::info!("LambdaId: {} - Returning from stale request", lambda_id);
@@ -109,19 +102,21 @@ impl LambdaService {
       deadline_ms = current_time_millis() + 60 * 1000;
     }
     // check if env var is set to force deadline for testing
-    if let Ok(force_deadline_secs) = std::env::var("LAMBDA_DISPATCH_FORCE_DEADLINE") {
-      log::warn!("Forcing deadline to {} seconds", force_deadline_secs);
-      let force_deadline_secs: u64 = force_deadline_secs.parse().unwrap();
-      deadline_ms = current_time_millis() + force_deadline_secs * 1000;
+    if let Some(force_deadline_secs) = self.options.force_deadline_secs {
+      log::warn!(
+        "Forcing deadline to {} seconds",
+        force_deadline_secs.as_secs()
+      );
+      deadline_ms = current_time_millis() + force_deadline_secs.as_millis() as u64;
     }
 
     // run until we get a GoAway or deadline is about to be reached
     let mut lambda_request = LambdaRequest::new(
-      self.domain.clone(),
-      self.compression,
+      app_endpoint,
+      self.options.compression,
       lambda_id,
       channel_count,
-      dispatcher_url.parse().unwrap(),
+      router_endpoint,
       deadline_ms,
     );
     lambda_request.start().await?;
@@ -131,20 +126,19 @@ impl LambdaService {
 }
 
 // Tower.Service is the interface required by lambda_runtime::run
-impl Service<LambdaEvent<messages::WaiterRequest>> for LambdaService {
-  type Response = messages::WaiterResponse;
-  type Error = lambda_runtime::Error;
-  type Future =
-    Pin<Box<dyn Future<Output = std::result::Result<Self::Response, Self::Error>> + Send>>;
+impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
+  type Response = WaiterResponse;
+  type Error = Error;
+  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
   fn poll_ready(
     &mut self,
     _cx: &mut core::task::Context<'_>,
-  ) -> core::task::Poll<std::result::Result<(), Self::Error>> {
+  ) -> core::task::Poll<Result<(), Self::Error>> {
     core::task::Poll::Ready(Ok(()))
   }
 
-  fn call(&mut self, event: LambdaEvent<messages::WaiterRequest>) -> Self::Future {
+  fn call(&mut self, event: LambdaEvent<WaiterRequest>) -> Self::Future {
     let adapter = self.clone();
     Box::pin(async move { adapter.fetch_response(event).await })
   }

@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::SystemTime;
@@ -5,69 +6,53 @@ use std::{pin::Pin, sync::Arc};
 
 use futures::channel::mpsc;
 use futures::SinkExt;
-use http_body_util::{BodyExt, StreamBody};
+use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use httpdate::fmt_http_date;
-use hyper::body::Body;
 use hyper::{
-  body::{Bytes, Frame, Incoming},
+  body::{Body, Bytes, Frame, Incoming},
+  client::conn::{http1, http2},
   Request, Uri,
 };
 use hyper_util::rt::TokioIo;
+use mpsc::Receiver;
 use rand::prelude::*;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
 use crate::app_request;
 use crate::counter_drop::DecrementOnDrop;
+use crate::endpoint::Endpoint;
 use crate::time;
 
-use tokio_rustls::client::TlsStream;
-
 use flate2::write::GzEncoder;
-
-// Define a Stream trait that both TlsStream and TcpStream implement
-pub trait Stream: AsyncRead + AsyncWrite + Send {}
-impl Stream for TlsStream<TcpStream> {}
-impl Stream for TcpStream {}
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Clone)]
 pub struct RouterChannel {
   count: Arc<AtomicUsize>,
   compression: bool,
-  lambda_id: String,
   goaway_received: Arc<AtomicBool>,
   last_active: Arc<AtomicU64>,
   requests_in_flight: Arc<AtomicUsize>,
   channel_url: Uri,
   channel_id: String,
-  app_url: Uri,
+  app_endpoint: Endpoint,
   channel_number: u8,
-  sender: hyper::client::conn::http2::SendRequest<
-    http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>,
-  >,
-  dispatcher_authority: hyper::http::uri::Authority,
+  sender: http2::SendRequest<BoxBody<Bytes, Error>>,
+  lambda_id: LambdaId,
 }
 
 impl RouterChannel {
   pub fn new(
     count: Arc<AtomicUsize>,
     compression: bool,
-    lambda_id: String,
     goaway_received: Arc<AtomicBool>,
     last_active: Arc<AtomicU64>,
     mut rng: rand::rngs::StdRng,
     requests_in_flight: Arc<AtomicUsize>,
-    router_schema: String,
-    router_host: String,
-    router_port: u16,
-    app_url: Uri,
+    router_endpoint: Endpoint,
+    app_endpoint: Endpoint,
     channel_number: u8,
-    sender: hyper::client::conn::http2::SendRequest<
-      http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>,
-    >,
-    dispatcher_authority: hyper::http::uri::Authority,
+    sender: http2::SendRequest<BoxBody<Bytes, Error>>,
+    lambda_id: LambdaId,
   ) -> Self {
     let channel_id = uuid::Builder::from_random_bytes(rng.gen())
       .into_uuid()
@@ -75,7 +60,11 @@ impl RouterChannel {
 
     let channel_url = format!(
       "{}://{}:{}/api/chunked/request/{}/{}",
-      router_schema, router_host, router_port, lambda_id, channel_id
+      router_endpoint.scheme().as_str(),
+      router_endpoint.host(),
+      router_endpoint.port(),
+      lambda_id,
+      channel_id
     )
     .parse()
     .unwrap();
@@ -83,42 +72,25 @@ impl RouterChannel {
     RouterChannel {
       count,
       compression,
-      lambda_id,
       goaway_received,
       last_active,
       requests_in_flight,
       channel_id,
       channel_url,
-      app_url,
+      app_endpoint,
       channel_number,
       sender,
-      dispatcher_authority,
+      lambda_id,
     }
   }
 
-  pub async fn start(&mut self) -> anyhow::Result<()> {
-    let app_host = self.app_url.host().expect("uri has no host");
-    let app_port = self.app_url.port_u16().unwrap_or(80);
-    let app_addr = format!("{}:{}", app_host, app_port);
-
-    // Setup the contained app connection
-    // This is HTTP/1.1 so we need 1 connection for each worker
-    let app_tcp_stream = TcpStream::connect(app_addr).await?;
-    let app_io = TokioIo::new(app_tcp_stream);
-    let (mut app_sender, app_conn) = hyper::client::conn::http1::handshake(app_io).await?;
-    let lambda_id_clone = self.lambda_id.clone();
-    let channel_id_clone = self.channel_id.clone();
-
-    tokio::task::spawn(async move {
-      if let Err(err) = app_conn.await {
-        log::error!(
-          "LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}",
-          lambda_id_clone,
-          channel_id_clone,
-          err
-        );
-      }
-    });
+  pub async fn start(&mut self) -> Result<()> {
+    let mut app_sender = connect_to_app(
+      &self.app_endpoint,
+      Arc::clone(&self.lambda_id),
+      self.channel_id.clone(),
+    )
+    .await?;
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
     loop {
@@ -132,13 +104,13 @@ impl RouterChannel {
         .uri(&self.channel_url)
         .method("POST")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-        .header(hyper::header::HOST, self.dispatcher_authority.as_str())
+        .header(hyper::header::HOST, self.channel_url.host().unwrap())
         // The content-type that we're sending to the router is opaque
         // as it contains another HTTP request/response, so may start as text
         // with request/headers and then be binary after that - it should not be parsed
         // by anything other than us
         .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
-        .header("X-Lambda-Id", &self.lambda_id)
+        .header("X-Lambda-Id", self.lambda_id.as_ref())
         .header("X-Channel-Id", &self.channel_id)
         .body(boxed_body)?;
 
@@ -151,13 +123,11 @@ impl RouterChannel {
         self.lambda_id,
         self.channel_id
       );
-      if futures::future::poll_fn(|ctx| self.sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
-        // This gets hit when the router connection faults
-        panic!("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.lambda_id, self.channel_id);
-      }
+
+      self.sender
+                .ready()
+                .await
+                .context("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect")?;
 
       let res = self.sender.send_request(req).await?;
       log::debug!(
@@ -245,10 +215,7 @@ impl RouterChannel {
       let (mut app_req_tx, app_req_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
       let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
 
-      if futures::future::poll_fn(|ctx| app_sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if app_sender.ready().await.is_err() {
         // This gets hit when the app connection faults
         panic!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
                   self.lambda_id, self.channel_id, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
@@ -520,7 +487,7 @@ impl RouterChannel {
                       // All tasks completed successfully
                   }
                   Err(_) => {
-                      panic!("LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", self.lambda_id, channel_id_clone);
+                      panic!("LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", &self.lambda_id, channel_id_clone);
                   }
               }
           }
@@ -529,6 +496,29 @@ impl RouterChannel {
       self.count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 
-    Ok::<(), anyhow::Error>(())
+    Ok(())
   }
+}
+async fn connect_to_app(
+  app_endpoint: &Endpoint,
+  lambda_id: LambdaId,
+  channel_id: String,
+) -> Result<http1::SendRequest<StreamBody<Receiver<Result<Frame<Bytes>>>>>> {
+  // Setup the contained app connection
+  // This is HTTP/1.1 so we need 1 connection for each worker
+  let tcp_stream = TcpStream::connect(app_endpoint.socket_addr_coercable()).await?;
+  let io = TokioIo::new(tcp_stream);
+  let (sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+
+  tokio::task::spawn(async move {
+    if let Err(err) = conn.await {
+      log::error!(
+        "LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}",
+        lambda_id,
+        channel_id,
+        err
+      );
+    }
+  });
+  Ok(sender)
 }

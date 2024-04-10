@@ -1,40 +1,60 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
-use std::{pin::Pin, sync::Arc};
-
-use futures::channel::mpsc;
-use futures::SinkExt;
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, StreamBody};
-use httpdate::fmt_http_date;
-use hyper::body::Body;
-use hyper::client::conn::http2::SendRequest;
-use hyper::StatusCode;
-use hyper::{
-  body::{Bytes, Frame, Incoming},
-  Request,
+use std::{
+  borrow::Cow,
+  sync::{
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    Arc,
+  },
+  time::{Duration, SystemTime},
 };
 
-use crate::time;
+use futures::{channel::mpsc, SinkExt};
+use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
+use httpdate::fmt_http_date;
+use hyper::{
+  body::{Bytes, Frame},
+  client::conn::http2::SendRequest,
+  Request, StatusCode,
+};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+use crate::endpoint::Endpoint;
+use crate::prelude::*;
+use crate::time;
 
 pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
-  authority: String,
-  mut sender: SendRequest<BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>>,
-  lambda_id: String,
+  mut sender: SendRequest<BoxBody<Bytes, Error>>,
+  lambda_id: LambdaId,
   count: Arc<AtomicUsize>,
-  scheme: String,
-  host: String,
-  port: u16,
+  router_endpoint: Endpoint,
   deadline_ms: u64,
   cancel_token: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
 ) {
   let start_time = time::current_time_millis();
   let mut last_ping_time = start_time;
+
+  let scheme = router_endpoint.scheme();
+  let host = router_endpoint.host();
+  let port = router_endpoint.port();
+
+  // Compute host header now in case we need to allocate
+  let host_header = router_endpoint.host_header();
+
+  let ping_url = format!(
+    "{}://{}:{}/api/chunked/ping/{}",
+    scheme.as_ref(),
+    host,
+    port,
+    lambda_id
+  );
+  let close_url = format!(
+    "{}://{}:{}/api/chunked/close/{}",
+    scheme.as_ref(),
+    host,
+    port,
+    lambda_id
+  );
 
   while !goaway_received.load(std::sync::atomic::Ordering::Acquire) && !cancel_token.is_cancelled()
   {
@@ -83,25 +103,20 @@ pub async fn send_ping_requests(
       }
 
       // Send Close request to router
-      let close_url = format!(
-        "{}://{}:{}/api/chunked/close/{}",
-        scheme, host, port, lambda_id
-      );
       let (mut close_tx, close_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
       let boxed_close_body = BodyExt::boxed(StreamBody::new(close_recv));
       let close_req = Request::builder()
         .uri(&close_url)
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-        .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", &lambda_id)
-        .body(boxed_close_body)
-        .unwrap();
+        .header("X-Lambda-Id", lambda_id.as_ref());
+      let close_req = match &host_header {
+        Cow::Borrowed(v) => close_req.header(hyper::header::HOST, *v),
+        Cow::Owned(v) => close_req.header(hyper::header::HOST, v),
+      };
+      let close_req = close_req.body(boxed_close_body).unwrap();
 
-      if futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if sender.ready().await.is_err() {
         goaway_received.store(true, Ordering::Release);
 
         // This gets hit when the connection for HTTP/1.1 faults
@@ -113,14 +128,9 @@ pub async fn send_ping_requests(
       let res = sender.send_request(close_req).await;
       close_tx.close().await.unwrap();
       match res {
-        Ok(res) => {
-          let (_, mut res_stream) = res.into_parts();
-
+        Ok(mut res) => {
           // Rip through and discard so the response stream is closed
-          while let Some(_chunk) =
-            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
-          {
-          }
+          while res.frame().await.is_some() {}
         }
         Err(err) => {
           log::error!(
@@ -140,25 +150,20 @@ pub async fn send_ping_requests(
     if last_active > 0 && (time::current_time_millis() - last_ping_time) >= 5000 {
       last_ping_time = time::current_time_millis();
 
-      let ping_url = format!(
-        "{}://{}:{}/api/chunked/ping/{}",
-        scheme, host, port, lambda_id
-      );
       let (mut ping_tx, ping_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
       let boxed_ping_body = BodyExt::boxed(StreamBody::new(ping_recv));
       let ping_req = Request::builder()
         .uri(&ping_url)
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-        .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", &lambda_id)
-        .body(boxed_ping_body)
-        .unwrap();
+        .header("X-Lambda-Id", lambda_id.as_ref());
+      let ping_req = match &host_header {
+        Cow::Borrowed(v) => ping_req.header(hyper::header::HOST, *v),
+        Cow::Owned(v) => ping_req.header(hyper::header::HOST, v),
+      };
+      let ping_req = ping_req.body(boxed_ping_body).unwrap();
 
-      if futures::future::poll_fn(|ctx| sender.poll_ready(ctx))
-        .await
-        .is_err()
-      {
+      if sender.ready().await.is_err() {
         // This gets hit when the connection faults
         panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id);
       }
@@ -170,10 +175,7 @@ pub async fn send_ping_requests(
           let (parts, mut res_stream) = res.into_parts();
 
           // Rip through and discard so the response stream is closed
-          while let Some(_chunk) =
-            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
-          {
-          }
+          while res_stream.frame().await.is_some() {}
 
           if parts.status == 409 {
             log::info!(

@@ -105,10 +105,7 @@ pub async fn health_check_contained_app(
 
     let usable_sender = sender.as_mut().unwrap();
 
-    if futures::future::poll_fn(|ctx| usable_sender.poll_ready(ctx))
-      .await
-      .is_err()
-    {
+    if usable_sender.ready().await.is_err() {
       // The connection has errored
       sender.take();
       conn.take();
