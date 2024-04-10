@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::SystemTime;
 use std::{pin::Pin, sync::Arc};
 
+use bytes::{buf::Writer, BufMut, BytesMut};
 use futures::channel::mpsc;
 use futures::SinkExt;
 use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
@@ -417,9 +418,12 @@ impl RouterChannel {
       header_buffer.extend(b"\r\n");
       tx.send(Ok(Frame::data(header_buffer.into()))).await?;
 
-      let mut encoder: Option<GzEncoder<Vec<u8>>> = None;
+      let mut encoder: Option<GzEncoder<Writer<BytesMut>>> = None;
       if app_res_will_compress {
-        encoder = Some(GzEncoder::new(Vec::new(), flate2::Compression::default()));
+        encoder = Some(GzEncoder::new(
+          BytesMut::new().writer(),
+          flate2::Compression::default(),
+        ));
       }
 
       // Rip the bytes back to the caller
@@ -452,10 +456,10 @@ impl RouterChannel {
           let chunk_data = chunk.as_ref().unwrap().data_ref().unwrap();
           encoder.write_all(chunk_data)?;
           encoder.flush()?;
-          let compressed_chunk = encoder.get_mut();
-          tx.send(Ok(Frame::data(compressed_chunk.clone().into())))
-            .await?;
-          compressed_chunk.clear();
+
+          let writer = encoder.get_mut();
+          let bytes = writer.get_mut().split().into();
+          tx.send(Ok(Frame::data(bytes))).await?;
         } else {
           tx.send(Ok(chunk.unwrap())).await?;
         }
@@ -470,10 +474,10 @@ impl RouterChannel {
 
       let close_router_tx_task = tokio::task::spawn(async move {
         if let Some(encoder) = encoder.take() {
-          let compressed_chunk = encoder.finish().unwrap();
-          tx.send(Ok(Frame::data(compressed_chunk.into())))
-            .await
-            .unwrap();
+          let writer = encoder.finish().unwrap();
+          let bytes = writer.into_inner().into();
+
+          tx.send(Ok(Frame::data(bytes))).await.unwrap();
         }
         let _ = tx.flush().await;
         let _ = tx.close().await;
