@@ -66,7 +66,7 @@ impl LambdaService {
     }
 
     // extract some useful info from the request
-    let lambda_id = event.payload.id;
+    let lambda_id: LambdaId = event.payload.id.into();
     let channel_count: u8 = event.payload.number_of_channels;
     let dispatcher_url = event.payload.dispatcher_url;
 

@@ -35,7 +35,7 @@ impl Stream for TcpStream {}
 pub struct RouterChannel {
   count: Arc<AtomicUsize>,
   compression: bool,
-  lambda_id: String,
+  lambda_id: LambdaId,
   goaway_received: Arc<AtomicBool>,
   last_active: Arc<AtomicU64>,
   requests_in_flight: Arc<AtomicUsize>,
@@ -51,7 +51,7 @@ impl RouterChannel {
   pub fn new(
     count: Arc<AtomicUsize>,
     compression: bool,
-    lambda_id: String,
+    lambda_id: LambdaId,
     goaway_received: Arc<AtomicBool>,
     last_active: Arc<AtomicU64>,
     mut rng: rand::rngs::StdRng,
@@ -101,7 +101,7 @@ impl RouterChannel {
     let app_tcp_stream = TcpStream::connect(app_addr).await?;
     let app_io = TokioIo::new(app_tcp_stream);
     let (mut app_sender, app_conn) = http1::handshake(app_io).await?;
-    let lambda_id_clone = self.lambda_id.clone();
+    let lambda_id_clone = Arc::clone(&self.lambda_id);
     let channel_id_clone = self.channel_id.clone();
 
     tokio::task::spawn(async move {
@@ -133,7 +133,7 @@ impl RouterChannel {
         // with request/headers and then be binary after that - it should not be parsed
         // by anything other than us
         .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
-        .header("X-Lambda-Id", &self.lambda_id)
+        .header("X-Lambda-Id", self.lambda_id.as_ref())
         .header("X-Channel-Id", &self.channel_id)
         .body(boxed_body)?;
 

@@ -25,7 +25,7 @@ pub async fn send_ping_requests(
   goaway_received: Arc<AtomicBool>,
   authority: String,
   mut sender: SendRequest<BoxBody<Bytes, Error>>,
-  lambda_id: String,
+  lambda_id: LambdaId,
   count: Arc<AtomicUsize>,
   scheme: String,
   host: String,
@@ -100,7 +100,7 @@ pub async fn send_ping_requests(
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
         .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", &lambda_id)
+        .header("X-Lambda-Id", lambda_id.as_ref())
         .body(boxed_close_body)
         .unwrap();
 
@@ -145,7 +145,7 @@ pub async fn send_ping_requests(
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
         .header(hyper::header::HOST, authority.as_str())
-        .header("X-Lambda-Id", &lambda_id)
+        .header("X-Lambda-Id", lambda_id.as_ref())
         .body(boxed_ping_body)
         .unwrap();
 

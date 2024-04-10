@@ -27,7 +27,7 @@ impl Stream for TcpStream {}
 pub struct LambdaRequest {
   domain: Uri,
   compression: bool,
-  lambda_id: String,
+  lambda_id: LambdaId,
   channel_count: u8,
   dispatcher_url: Uri,
   cancel_token: tokio_util::sync::CancellationToken,
@@ -48,7 +48,7 @@ impl LambdaRequest {
   pub fn new(
     domain: Uri,
     compression: bool,
-    lambda_id: String,
+    lambda_id: LambdaId,
     channel_count: u8,
     dispatcher_url: Uri,
     deadline_ms: u64,
@@ -118,7 +118,7 @@ impl LambdaRequest {
       .await
       .unwrap();
 
-    let lambda_id_clone = self.lambda_id.clone();
+    let lambda_id_clone = Arc::clone(&self.lambda_id);
     tokio::task::spawn(async move {
       if let Err(err) = conn.await {
         log::error!(
@@ -139,7 +139,7 @@ impl LambdaRequest {
       Arc::clone(&self.goaway_received),
       dispatcher_authority.to_string(),
       sender.clone(),
-      self.lambda_id.clone(),
+      Arc::clone(&self.lambda_id),
       Arc::clone(&self.count),
       scheme_clone,
       host_clone,
@@ -162,7 +162,7 @@ impl LambdaRequest {
         let rng = self.rng.clone();
         let scheme = scheme.clone();
         let host = host.clone();
-        let lambda_id = self.lambda_id.clone();
+        let lambda_id = Arc::clone(&self.lambda_id);
         let requests_in_flight = Arc::clone(&self.requests_in_flight);
 
         // Create a JoinHandle and implicitly return it to be collected in the vector
