@@ -19,8 +19,8 @@ pub struct WaiterRequest {
 
 #[derive(Serialize, Debug)]
 pub struct WaiterResponse {
-  #[serde(rename = "PoolId", skip_serializing_if = "Option::is_none")]
-  pub pool_id: Option<String>,
+  #[serde(rename = "PoolId")]
+  pub pool_id: String,
   #[serde(rename = "Id")]
   pub id: String,
 }

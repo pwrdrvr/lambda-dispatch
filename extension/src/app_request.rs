@@ -17,6 +17,7 @@ impl Stream for TcpStream {}
 
 pub async fn read_until_req_headers(
   res_stream: &mut Incoming,
+  pool_id: &str,
   lambda_id: &str,
   channel_id: &str,
 ) -> Result<(hyper::http::request::Builder, bool, Vec<u8>)> {
@@ -54,6 +55,7 @@ pub async fn read_until_req_headers(
         let mut app_req_bld = Request::builder()
           .uri(app_url)
           .method(req.method.unwrap())
+          .header("X-Pool-Id", pool_id)
           .header("X-Lambda-Id", lambda_id)
           .header("X-Channel-Id", channel_id);
 
