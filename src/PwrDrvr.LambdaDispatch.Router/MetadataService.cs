@@ -87,16 +87,17 @@ public class MetadataService : IMetadataService
 
   private static ExecEnvType GetExecEnvType()
   {
-    var AWS_EXECUTION_ENV = Environment.GetEnvironmentVariable("AWS_EXECUTION_ENV");
     var K8S_POD_IP = Environment.GetEnvironmentVariable("K8S_POD_IP");
-    if (AWS_EXECUTION_ENV == null)
-    {
-      return ExecEnvType.Local;
-    }
 
     if (!string.IsNullOrWhiteSpace(K8S_POD_IP))
     {
       return ExecEnvType.EKS;
+    }
+
+    var AWS_EXECUTION_ENV = Environment.GetEnvironmentVariable("AWS_EXECUTION_ENV");
+    if (AWS_EXECUTION_ENV == null)
+    {
+      return ExecEnvType.Local;
     }
 
     return AWS_EXECUTION_ENV.StartsWith("AWS_ECS") ? ExecEnvType.ECS : ExecEnvType.EC2;
