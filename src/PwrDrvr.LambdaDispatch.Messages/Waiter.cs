@@ -3,6 +3,11 @@
 public class WaiterRequest
 {
   /// <summary>
+  /// Pool ID for this Lambda ARN (account/region/functionName/qualifier)
+  /// </summary>
+  public string? PoolId { get; set; }
+
+  /// <summary>
   /// Unique ID for this Lambda instance
   /// Sent on all requests and responses
   /// </summary>
@@ -32,5 +37,14 @@ public class WaiterRequest
 
 public class WaiterResponse
 {
+  /// <summary>
+  /// Pool ID for this Lambda ARN (account/region/functionName/qualifier)
+  /// </summary>
+  public string? PoolId { get; set; }
+
+  /// <summary>
+  /// Unique ID for this Lambda instance
+  /// Sent on all requests and responses
+  /// </summary>
   public string Id { get; set; }
 }

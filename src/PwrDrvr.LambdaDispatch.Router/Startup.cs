@@ -37,9 +37,10 @@ public class Startup
 
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue>();
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue2>();
-        services.AddSingleton<ILambdaInstanceQueue, LeastOutstandingQueue>();
-        services.AddSingleton<ILambdaInstanceManager, LambdaInstanceManager>();
-        services.AddSingleton<Dispatcher>();
+        services.AddScoped<ILambdaInstanceQueue, LeastOutstandingQueue>();
+        services.AddScoped<ILambdaInstanceManager, LambdaInstanceManager>();
+        services.AddScoped<Dispatcher>();
+        services.AddSingleton<PoolManager>();
         services.AddSingleton<IShutdownSignal>(_shutdownSignal);
 
         Task.Run(MetricsRegistry.PrintMetrics).ConfigureAwait(false);

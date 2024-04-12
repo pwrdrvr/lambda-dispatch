@@ -70,6 +70,8 @@ impl LambdaService {
 
     // prepare the response
     let resp = WaiterResponse {
+      // TODO: Pass the pool_id if we got one
+      pool_id: None,
       id: lambda_id.to_string(),
     };
 
