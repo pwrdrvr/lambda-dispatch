@@ -112,6 +112,7 @@ public class Program
             {
                 var config = Config.CreateAndValidate(hostContext.Configuration);
                 var metadataService = new MetadataService();
+                Console.WriteLine("NETWORK IP: " + metadataService.NetworkIP);
                 services.AddSingleton<IMetadataService>(metadataService);
                 services.AddSingleton<IConfig>(config);
 
