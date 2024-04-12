@@ -31,7 +31,7 @@ public class MetadataService : IMetadataService
     {
       var K8S_POD_IP = Environment.GetEnvironmentVariable("K8S_POD_IP");
 
-      if (K8S_POD_IP == null)
+      if (string.IsNullOrWhiteSpace(K8S_POD_IP))
       {
         throw new ApplicationException("Failed to find K8S_POD_IP");
       }
