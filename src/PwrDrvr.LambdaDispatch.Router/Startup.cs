@@ -37,6 +37,7 @@ public class Startup
 
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue>();
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue2>();
+        services.AddScoped<IPoolOptions, PoolOptions>();
         services.AddScoped<ILambdaInstanceQueue, LeastOutstandingQueue>();
         services.AddScoped<ILambdaInstanceManager, LambdaInstanceManager>();
         services.AddScoped<Dispatcher>();

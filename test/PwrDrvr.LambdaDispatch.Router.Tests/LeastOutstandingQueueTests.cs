@@ -44,7 +44,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var lambdaClient = new Mock<IAmazonLambda>();
       var dispatcher = new Mock<IBackgroundDispatcher>();
 
-      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object, dispatcher.Object);
+      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", "default", lambdaClient.Object, dispatcher.Object);
       queue.AddInstance(instance);
 
       var result = queue.TryGetConnection(out var connection);

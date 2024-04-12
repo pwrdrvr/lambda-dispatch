@@ -20,8 +20,8 @@ public class LambdaInstanceTests
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
 
-    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0, "somefunc", "$LATEST", lambdaClient.Object, dispatcher.Object));
-    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1, "somefunc", "$LATEST", lambdaClient.Object, dispatcher.Object));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0, "somefunc", "default", lambdaClient.Object, dispatcher.Object));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1, "somefunc", "default", lambdaClient.Object, dispatcher.Object));
   }
 
   [Test]
@@ -30,7 +30,7 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
+    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", "default", lambdaClient.Object, dispatcher.Object);
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -97,7 +97,7 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
+    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", "default", lambdaClient.Object, dispatcher.Object);
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -158,7 +158,7 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
+    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", "default", lambdaClient.Object, dispatcher.Object);
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -227,7 +227,7 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
+    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", "default", lambdaClient.Object, dispatcher.Object);
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -291,7 +291,7 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object, dispatcher.Object);
+    var instance = new LambdaInstance(maxConcurrentCount, "someFunc", "default", lambdaClient.Object, dispatcher.Object);
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();

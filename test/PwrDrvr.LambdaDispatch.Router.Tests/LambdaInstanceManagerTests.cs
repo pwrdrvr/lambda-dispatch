@@ -27,8 +27,9 @@ public class LambdaInstanceManagerTests
     var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object);
 
     var expectedConnectionResult = new AddConnectionResult()
     {
@@ -66,8 +67,9 @@ public class LambdaInstanceManagerTests
     var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -112,8 +114,9 @@ public class LambdaInstanceManagerTests
     var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -158,8 +161,9 @@ public class LambdaInstanceManagerTests
     var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -204,8 +208,9 @@ public class LambdaInstanceManagerTests
     var mockQueue = new Mock<ILambdaInstanceQueue>();
     var mockConfig = new Mock<IConfig>();
     var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
