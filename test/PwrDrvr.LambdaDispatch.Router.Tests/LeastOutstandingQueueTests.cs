@@ -40,8 +40,16 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       using var queue = new LeastOutstandingQueue(config.Object);
       var lambdaClient = new Mock<IAmazonLambda>();
       var dispatcher = new Mock<IBackgroundDispatcher>();
+      var getCallbackIP = new Mock<IGetCallbackIP>();
+      getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
 
-      var instance = new LambdaInstance(maxConcurrentCount, "someFunc", "default", lambdaClient.Object, dispatcher.Object);
+      var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+            functionName: "someFunc",
+            poolId: "default",
+            lambdaClient: lambdaClient.Object,
+            dispatcher: dispatcher.Object,
+            getCallbackIP: getCallbackIP.Object
+            );
       queue.AddInstance(instance);
 
       var result = queue.TryGetConnection(out var connection);

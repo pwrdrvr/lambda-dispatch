@@ -123,14 +123,21 @@ public class DispatcherTests
     mockConfig.SetupGet(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
     var mockMetricsLogger = new Mock<IMetricsLogger>();
     var mockPoolOptions = new Mock<IPoolOptions>();
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object);
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
     var dispatcher = new Dispatcher(_mockLogger.Object,
           _mockMetricsLogger.Object,
           manager,
           shutdownSignal
         );
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", "default", lambdaClient.Object, dispatcher);
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+      functionName: "someFunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher,
+      getCallbackIP: getCallbackIP.Object
+      );
 
     Assert.Multiple(() =>
     {

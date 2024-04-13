@@ -318,6 +318,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public int AvailableConnectionCount => Math.Min(Math.Max(maxConcurrentCount - Math.Min(OutstandingRequestCount, maxConcurrentCount), 0), internalActualAvailableConnectionCount);
 
+  private readonly IGetCallbackIP getCallbackIP;
+
   private readonly IBackgroundDispatcher dispatcher;
 
   /// <summary>
@@ -330,9 +332,9 @@ public class LambdaInstance : ILambdaInstance
   /// <exception cref="ArgumentNullException"></exception>
   /// <exception cref="ArgumentException"></exception>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  public LambdaInstance(int maxConcurrentCount, string functionName, string poolId, IAmazonLambda? lambdaClient = null, IBackgroundDispatcher? dispatcher = null, int channelCount = -1)
+  public LambdaInstance(int maxConcurrentCount, string functionName, string poolId, IGetCallbackIP getCallbackIP, IBackgroundDispatcher dispatcher, IAmazonLambda? lambdaClient = null, int channelCount = -1)
   {
-    ArgumentNullException.ThrowIfNull(dispatcher);
+    this.getCallbackIP = getCallbackIP;
     this.dispatcher = dispatcher;
     this.channelCount = channelCount;
     if (string.IsNullOrWhiteSpace(functionName))
@@ -803,7 +805,7 @@ public class LambdaInstance : ILambdaInstance
     {
       PoolId = poolId,
       Id = initOnlyLambdaId,
-      DispatcherUrl = GetCallbackIP.Get(),
+      DispatcherUrl = getCallbackIP.CallbackUrl,
       NumberOfChannels = 0,
       SentTime = DateTime.Now,
       InitOnly = true
@@ -870,7 +872,7 @@ public class LambdaInstance : ILambdaInstance
     {
       PoolId = poolId,
       Id = Id,
-      DispatcherUrl = GetCallbackIP.Get(),
+      DispatcherUrl = getCallbackIP.CallbackUrl,
       NumberOfChannels = channelCount == -1 ? 2 * maxConcurrentCount : channelCount,
       SentTime = DateTime.Now,
       InitOnly = false

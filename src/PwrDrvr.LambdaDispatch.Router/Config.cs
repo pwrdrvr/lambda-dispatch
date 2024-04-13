@@ -72,6 +72,12 @@ public interface IConfig
   /// The preferred scheme to use for the control channel (http or https)
   /// </summary>
   public string PreferredControlChannelScheme { get; set; }
+
+  /// <summary>
+  /// Primarily for testing, such as with docker-compose,
+  /// where the router is a single instance with a known before name such as `router`
+  /// </summary>
+  public string? RouterCallbackHost { get; set; }
 }
 
 public class Config : IConfig
@@ -100,6 +106,8 @@ public class Config : IConfig
   public string PreferredControlChannelScheme { get; set; }
 
   public int InstanceCountMultiplier { get; set; }
+
+  public string? RouterCallbackHost { get; set; }
 
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_

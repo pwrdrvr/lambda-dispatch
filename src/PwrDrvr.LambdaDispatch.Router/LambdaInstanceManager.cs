@@ -105,7 +105,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly IPoolOptions _options;
 
-  public LambdaInstanceManager(ILambdaInstanceQueue queue, IConfig config, IMetricsLogger metricsLogger, IPoolOptions options)
+  private readonly IGetCallbackIP _getCallbackIP;
+
+  public LambdaInstanceManager(ILambdaInstanceQueue queue, IConfig config, IMetricsLogger metricsLogger, IPoolOptions options, IGetCallbackIP getCallbackIP)
   {
     _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
@@ -115,6 +117,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     _metricsLogger = metricsLogger;
     _capacityManager = new(_maxConcurrentCount, _instanceCountMultiplier);
     _options = options;
+    _getCallbackIP = getCallbackIP;
 
     // Start the capacity manager
     Task.Factory.StartNew(ManageCapacity, TaskCreationOptions.LongRunning);
@@ -589,7 +592,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
 
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(maxConcurrentCount: _maxConcurrentCount, functionName: _functionName, poolId: _options.PoolId, channelCount: _channelCount, dispatcher: _dispatcher);
+    var instance = new LambdaInstance(maxConcurrentCount: _maxConcurrentCount, functionName: _functionName, poolId: _options.PoolId, channelCount: _channelCount, dispatcher: _dispatcher, getCallbackIP: _getCallbackIP);
 
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))

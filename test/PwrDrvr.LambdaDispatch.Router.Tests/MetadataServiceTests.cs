@@ -9,19 +9,40 @@ public class MetadataServiceTests
   private Mock<IHttpClientFactory> _httpClientFactoryMock;
   private HttpClient _client;
 
+  private IConfig configWithRouterCallbackHost;
+  private IConfig configWithoutRouterCallbackHost;
+
   [SetUp]
   public void SetUp()
   {
+    Environment.SetEnvironmentVariable("AWS_EXECUTION_ENV", null);
     _httpClientFactoryMock = new Mock<IHttpClientFactory>();
     _client = new HttpClient(new MockHttpMessageHandler());
     _httpClientFactoryMock.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(_client);
+    configWithRouterCallbackHost = new Config { RouterCallbackHost = "192.168.1.1" };
+    configWithoutRouterCallbackHost = new Config { RouterCallbackHost = null };
+  }
+
+  [Test]
+  public void Constructor_WhenConfigWithRouterCallbackHostIsPassed_SetsNetworkIP()
+  {
+    var metadataService = new MetadataService(config: configWithRouterCallbackHost);
+
+    Assert.That(metadataService.NetworkIP, Is.EqualTo("192.168.1.1"));
+  }
+
+  [Test]
+  public void Constructor_WhenConfigWithoutRouterCallbackHostIsPassed_SetsNetworkIPToDefault()
+  {
+    var metadataService = new MetadataService(config: configWithoutRouterCallbackHost);
+
+    Assert.That(metadataService.NetworkIP, Is.EqualTo("127.0.0.1")); // Assuming that the default IP is "127.0.0.1"
   }
 
   [Test]
   public void Test_Local_ExecEnvType()
   {
-    Environment.SetEnvironmentVariable("AWS_EXECUTION_ENV", null);
-    var service = new MetadataService(_httpClientFactoryMock.Object);
+    var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
     Assert.Multiple(() =>
    {
      Assert.That(service.NetworkIP, Is.EqualTo("127.0.0.1"));
@@ -34,7 +55,7 @@ public class MetadataServiceTests
   {
     Environment.SetEnvironmentVariable("AWS_EXECUTION_ENV", "AWS_ECS_FARGATE");
     Environment.SetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4", "http://localhost:1000/v4/metadata");
-    var service = new MetadataService(_httpClientFactoryMock.Object);
+    var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
     Assert.Multiple(() =>
     {
       Assert.That(service.NetworkIP, Is.EqualTo("192.168.0.1"));

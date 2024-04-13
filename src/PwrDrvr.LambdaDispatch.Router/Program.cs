@@ -111,10 +111,11 @@ public class Program
             .ConfigureServices((hostContext, services) =>
             {
                 var config = Config.CreateAndValidate(hostContext.Configuration);
-                var metadataService = new MetadataService();
-                Console.WriteLine("NETWORK IP: " + metadataService.NetworkIP);
-                services.AddSingleton<IMetadataService>(metadataService);
                 services.AddSingleton<IConfig>(config);
+
+                var metadataService = new MetadataService(config: config);
+                Console.WriteLine("CALLBACK NETWORK IP/HOST: " + metadataService.NetworkIP);
+                services.AddSingleton<IMetadataService>(metadataService);
 
                 var metricsDimensions = new Dictionary<string, string>
                 {
@@ -135,11 +136,11 @@ public class Program
 
                 if (config.PreferredControlChannelScheme == "http")
                 {
-                    GetCallbackIP.Init(port: config.ControlChannelInsecureHTTP2Port, scheme: "http", networkIp: metadataService.NetworkIP);
+                    services.AddSingleton<IGetCallbackIP>(new GetCallbackIP(port: config.ControlChannelInsecureHTTP2Port, scheme: "http", networkIp: metadataService.NetworkIP));
                 }
                 else
                 {
-                    GetCallbackIP.Init(port: config.ControlChannelHTTP2Port, scheme: "https", networkIp: metadataService.NetworkIP);
+                    services.AddSingleton<IGetCallbackIP>(new GetCallbackIP(port: config.ControlChannelHTTP2Port, scheme: "https", networkIp: metadataService.NetworkIP));
                 }
             })
             .ConfigureLogging(logging =>
