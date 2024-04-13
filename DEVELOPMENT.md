@@ -55,6 +55,12 @@ DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:50
 ```sh
 dotnet test
 
+dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=lcov /p:CoverletOutput=./lcov.info
+
+dotnet tool install --global dotnet-reportgenerator-globaltool
+
+reportgenerator "-reports:test/PwrDrvr.LambdaDispatch.Router.Tests/lcov.info" "-targetdir:coveragereport" -reporttypes:Html
+
 dotnet test --filter FullyQualifiedName~PwrDrvr.LambdaDispatch.Router.Tests.PoolOptionsTests
 ```
 
