@@ -52,10 +52,12 @@ DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:50
 
 ## Running Unit Tests
 
+https://medium.com/@nocgod/how-to-setup-your-dotnet-project-with-a-test-coverage-reporting-6ff1903f7240
+
 ```sh
 dotnet test
 
-dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=lcov /p:CoverletOutput=./lcov.info
+dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=lcov /p:CoverletOutput=./lcov.info /p:Include="[src.PwrDrvr.LambdaDispatch.Router.PwrDrvr.LambdaDispatch.Router]*"
 
 dotnet tool install --global dotnet-reportgenerator-globaltool
 

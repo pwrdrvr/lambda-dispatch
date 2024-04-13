@@ -40,7 +40,7 @@ public class ChunkedControllerTests
     var result = controller.PingInstance(poolId, lambdaId);
 
     // Assert
-    Assert.IsInstanceOf<OkResult>(result);
+    Assert.That(result, Is.InstanceOf<OkResult>());
   }
 
   [Test]
@@ -56,6 +56,6 @@ public class ChunkedControllerTests
     var result = controller.PingInstance(poolId, lambdaId);
 
     // Assert
-    Assert.IsInstanceOf<NotFoundResult>(result);
+    Assert.That(result, Is.InstanceOf<NotFoundResult>());
   }
 }

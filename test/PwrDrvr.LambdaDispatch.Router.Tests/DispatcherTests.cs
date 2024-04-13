@@ -41,7 +41,7 @@ public class DispatcherTests
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, "", "channelId");
 
     // Assert
-    Assert.IsTrue(result.LambdaIDNotFound);
+    Assert.That(result.LambdaIDNotFound, Is.True);
   }
 
   [Test]
@@ -61,7 +61,7 @@ public class DispatcherTests
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, "lambdaId", "channelId");
 
     // Assert
-    Assert.IsTrue(result.LambdaIDNotFound);
+    Assert.That(result.LambdaIDNotFound, Is.True);
   }
 
   [Test]

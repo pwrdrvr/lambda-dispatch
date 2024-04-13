@@ -16,6 +16,13 @@ public class StartupTests
         _client = _server.CreateClient();
     }
 
+    [TearDown]
+    public void TearDown()
+    {
+        _client.Dispose();
+        _server.Dispose();
+    }
+
     [Test]
     [Ignore("This test is not working")]
     public async Task TestRequestToPort5001()

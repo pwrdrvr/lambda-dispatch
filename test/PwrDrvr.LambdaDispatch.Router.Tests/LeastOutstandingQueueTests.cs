@@ -88,8 +88,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var result = queue.TryGetConnection(out var dequeuedConnection);
 
-      Assert.IsTrue(result);
-      Assert.IsNotNull(dequeuedConnection);
+      Assert.That(result, Is.True);
+      Assert.That(dequeuedConnection, Is.Not.Null);
 
       // Getting another instance should fail
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
@@ -99,7 +99,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       result = queue.TryGetConnection(out dequeuedConnection);
 
       Assert.That(result, Is.False);
-      Assert.IsNull(dequeuedConnection);
+      Assert.That(dequeuedConnection, Is.Null);
     }
 
 

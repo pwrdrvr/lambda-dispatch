@@ -23,6 +23,12 @@ public class MetadataServiceTests
     configWithoutRouterCallbackHost = new Config { RouterCallbackHost = null };
   }
 
+  [TearDown]
+  public void TearDown()
+  {
+    _client.Dispose();
+  }
+
   [Test]
   public void Constructor_WhenConfigWithRouterCallbackHostIsPassed_SetsNetworkIP()
   {
