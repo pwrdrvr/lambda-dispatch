@@ -1,8 +1,5 @@
 using Amazon.Lambda;
-using Amazon.Lambda.Model;
 using Moq;
-using NUnit.Framework;
-using PwrDrvr.LambdaDispatch.Router;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests
 {
