@@ -21,7 +21,15 @@ public interface IBackgroundDispatcher
   void WakeupBackgroundDispatcher(LambdaConnection? connection);
 }
 
-public class Dispatcher : IBackgroundDispatcher
+public interface IDispatcher
+{
+  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse);
+  Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId);
+  Task CloseInstance(string instanceId, bool lambdaInitiated = false);
+  bool PingInstance(string instanceId);
+}
+
+public class Dispatcher : IDispatcher, IBackgroundDispatcher
 {
   private readonly ILogger<Dispatcher> _logger;
 

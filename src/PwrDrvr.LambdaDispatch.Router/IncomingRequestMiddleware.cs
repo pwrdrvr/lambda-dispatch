@@ -3,10 +3,10 @@ namespace PwrDrvr.LambdaDispatch.Router;
 public class IncomingRequestMiddleware
 {
   private readonly RequestDelegate _next;
-  private readonly PoolManager _poolManager;
+  private readonly IPoolManager _poolManager;
   private readonly int[] _allowedPorts;
 
-  public IncomingRequestMiddleware(RequestDelegate next, PoolManager poolManager, int[] allowedPorts)
+  public IncomingRequestMiddleware(RequestDelegate next, IPoolManager poolManager, int[] allowedPorts)
   {
     _next = next;
     _poolManager = poolManager;

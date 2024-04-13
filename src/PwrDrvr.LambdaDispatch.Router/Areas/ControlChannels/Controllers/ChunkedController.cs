@@ -16,9 +16,9 @@ public class ChunkedController : ControllerBase
 {
   private readonly ILogger<ChunkedController> logger;
   private readonly IMetricsLogger metricsLogger;
-  private readonly PoolManager poolManager;
+  private readonly IPoolManager poolManager;
 
-  public ChunkedController(PoolManager poolManager, IMetricsLogger metricsLogger, ILogger<ChunkedController> logger)
+  public ChunkedController(IPoolManager poolManager, IMetricsLogger metricsLogger, ILogger<ChunkedController> logger)
   {
     this.poolManager = poolManager;
     this.logger = logger;

@@ -3,24 +3,37 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
-public class Pool
+public interface IPool
 {
-  public Dispatcher Dispatcher { get; }
+  IDispatcher Dispatcher { get; }
+  string PoolId { get; }
+}
+
+public class Pool : IPool
+{
+  public IDispatcher Dispatcher { get; }
   public string PoolId { get; }
 
-  public Pool(Dispatcher dispatcher, string poolId)
+  public Pool(IDispatcher dispatcher, string poolId)
   {
     Dispatcher = dispatcher;
     PoolId = poolId;
   }
 }
 
-public class PoolManager
+public interface IPoolManager
+{
+  IPool GetOrCreatePoolByLambdaName(string lambdaArn);
+  bool GetPoolByPoolId(string poolId, [NotNullWhen(true)] out IPool? pool);
+  void RemovePoolByArn(string lambdaArn);
+}
+
+public class PoolManager : IPoolManager
 {
   private readonly IServiceProvider _serviceProvider;
   private readonly IConfig _config;
-  private readonly ConcurrentDictionary<string, Pool> _poolsByLambdaArn = [];
-  private readonly ConcurrentDictionary<string, Pool> _poolsByPoolId = [];
+  private readonly ConcurrentDictionary<string, IPool> _poolsByLambdaArn = [];
+  private readonly ConcurrentDictionary<string, IPool> _poolsByPoolId = [];
 
   public PoolManager(IServiceProvider serviceProvider, IConfig config)
   {
@@ -28,12 +41,12 @@ public class PoolManager
     _config = config;
   }
 
-  public Pool GetOrCreatePoolByLambdaName(string lambdaArn)
+  public IPool GetOrCreatePoolByLambdaName(string lambdaArn)
   {
     return _poolsByLambdaArn.GetOrAdd(lambdaArn, _ => CreatePool(lambdaArn));
   }
 
-  public bool GetPoolByPoolId(string poolId, [NotNullWhen(true)] out Pool? pool)
+  public bool GetPoolByPoolId(string poolId, [NotNullWhen(true)] out IPool? pool)
   {
     return _poolsByPoolId.TryGetValue(poolId, out pool);
   }
@@ -45,7 +58,7 @@ public class PoolManager
   /// <param name="lambdaArn"></param>
   /// <returns></returns>
   /// <exception cref="ArgumentException"></exception>
-  private Pool CreatePool(string lambdaArn)
+  private IPool CreatePool(string lambdaArn)
   {
     var poolId = lambdaArn == "default" ? "default" : Guid.NewGuid().ToString();
     var lambaArnToUse = lambdaArn == "default" ? _config.FunctionName : lambdaArn;
@@ -56,7 +69,7 @@ public class PoolManager
     using var scope = _serviceProvider.CreateScope();
     var poolOptions = scope.ServiceProvider.GetRequiredService<IPoolOptions>();
     poolOptions.Setup(lambaArnToUse, poolId);
-    var dispatcher = scope.ServiceProvider.GetRequiredService<Dispatcher>();
+    var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
     var pool = new Pool(dispatcher, poolId);
     _poolsByPoolId.TryAdd(poolId, pool);
     return pool;

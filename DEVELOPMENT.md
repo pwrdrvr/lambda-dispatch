@@ -54,6 +54,8 @@ DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:50
 
 ```sh
 dotnet test
+
+dotnet test --filter FullyQualifiedName~PwrDrvr.LambdaDispatch.Router.Tests.PoolOptionsTests
 ```
 
 ## Start the Lambda Test Tool

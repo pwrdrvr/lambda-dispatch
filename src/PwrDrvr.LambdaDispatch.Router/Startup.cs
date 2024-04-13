@@ -40,8 +40,8 @@ public class Startup
         services.AddScoped<IPoolOptions, PoolOptions>();
         services.AddScoped<ILambdaInstanceQueue, LeastOutstandingQueue>();
         services.AddScoped<ILambdaInstanceManager, LambdaInstanceManager>();
-        services.AddScoped<Dispatcher>();
-        services.AddSingleton<PoolManager>();
+        services.AddScoped<IDispatcher, Dispatcher>();
+        services.AddSingleton<IPoolManager, PoolManager>();
         services.AddSingleton<IShutdownSignal>(_shutdownSignal);
 
         Task.Run(MetricsRegistry.PrintMetrics).ConfigureAwait(false);
