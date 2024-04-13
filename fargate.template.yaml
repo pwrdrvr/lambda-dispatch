@@ -63,11 +63,11 @@ Resources:
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/lambda-dispatch-router:latest'
           Essential: true
           Environment:
+            - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
+              Value: "0"
             # Setting to 1 seems to hang on Fargate, so set to no less than 2
             - Name: LAMBDA_DISPATCH_MaxWorkerThreads
               Value: "2"
-            - Name: DOTNET_ThreadPool_UnfairSemaphoreSpinLimit
-              Value: "0"
             - Name: LAMBDA_DISPATCH_FunctionName
               Value: !GetAtt LambdaDemoApp.Arn
             - Name: LAMBDA_DISPATCH_MaxConcurrentCount
