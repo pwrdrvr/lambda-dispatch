@@ -57,6 +57,12 @@ https://medium.com/@nocgod/how-to-setup-your-dotnet-project-with-a-test-coverage
 ```sh
 dotnet test
 
+# Coverage Report with HTML
+dotnet test --collect:"XPlat Code Coverage"
+
+# Convert to HTML
+reportgenerator "-reports:/Users/huntharo/pwrdrvr/lambda-dispatch/test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:/Users/huntharo/pwrdrvr/lambda-dispatch/test/coverage/html_report" -reporttypes:Html
+
 dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=lcov /p:CoverletOutput=./lcov.info /p:Include="[src.PwrDrvr.LambdaDispatch.Router.PwrDrvr.LambdaDispatch.Router]*"
 
 dotnet tool install --global dotnet-reportgenerator-globaltool
