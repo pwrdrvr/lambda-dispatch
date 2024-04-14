@@ -4,6 +4,24 @@ using Microsoft.AspNetCore.Http;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
 
+public class TransitionResultTests
+{
+  [Test]
+  public void TestTransitionResultProperties()
+  {
+    var transitionResult = new TransitionResult
+    {
+      TransitionedToDraining = true,
+      WasOpened = true,
+      OpenWasRejected = true
+    };
+
+    Assert.IsTrue(transitionResult.TransitionedToDraining);
+    Assert.IsTrue(transitionResult.WasOpened);
+    Assert.IsTrue(transitionResult.OpenWasRejected);
+  }
+}
+
 public class LambdaInstanceTests
 {
   [SetUp]
