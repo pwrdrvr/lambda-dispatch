@@ -80,9 +80,13 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly int _channelCount;
 
+  /// <summary>
+  /// Per the Lambda docs, this can be any of:
+  /// - FunctionName
+  /// - FunctionName:Qualifier
+  /// - ARN
+  /// </summary>
   private readonly string _functionName;
-
-  private readonly string? _functionNameQualifier;
 
   private readonly IMetricsLogger _metricsLogger;
 
@@ -95,20 +99,25 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   /// <summary>
   /// Used to lookup instances by ID
-  /// This allows associating the connecitons with their owning lambda instance
+  /// This allows associating the connections with their owning lambda instance
   /// </summary>
   private readonly ConcurrentDictionary<string, ILambdaInstance> _instances = new();
 
-  public LambdaInstanceManager(ILambdaInstanceQueue queue, IConfig config, IMetricsLogger metricsLogger)
+  private readonly IPoolOptions _options;
+
+  private readonly IGetCallbackIP _getCallbackIP;
+
+  public LambdaInstanceManager(ILambdaInstanceQueue queue, IConfig config, IMetricsLogger metricsLogger, IPoolOptions options, IGetCallbackIP getCallbackIP)
   {
     _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
     _channelCount = config.ChannelCount;
     _leastOutstandingQueue = queue;
-    _functionName = config.FunctionNameOnly;
-    _functionNameQualifier = config.FunctionNameQualifier;
+    _functionName = options.LambdaName;
     _metricsLogger = metricsLogger;
     _capacityManager = new(_maxConcurrentCount, _instanceCountMultiplier);
+    _options = options;
+    _getCallbackIP = getCallbackIP;
 
     // Start the capacity manager
     Task.Factory.StartNew(ManageCapacity, TaskCreationOptions.LongRunning);
@@ -541,7 +550,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   public void DebugAddInstance(string instanceId)
   {
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier, channelCount: _channelCount, dispatcher: _dispatcher);
+    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, channelCount: _channelCount, dispatcher: _dispatcher);
 
     instance.FakeStart(instanceId);
 
@@ -583,7 +592,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
 
     // Start a new LambdaInstance and add it to the list
-    var instance = new LambdaInstance(_maxConcurrentCount, _functionName, _functionNameQualifier, channelCount: _channelCount, dispatcher: _dispatcher);
+    var instance = new LambdaInstance(maxConcurrentCount: _maxConcurrentCount, functionName: _functionName, poolId: _options.PoolId, channelCount: _channelCount, dispatcher: _dispatcher, getCallbackIP: _getCallbackIP);
 
     // Add the instance to the collection
     if (!_instances.TryAdd(instance.Id, instance))

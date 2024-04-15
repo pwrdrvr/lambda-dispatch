@@ -28,6 +28,20 @@
       "problemMatcher": "$msCompile"
     },
     {
+      "label": "build-router",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "src/PwrDrvr.LambdaDispatch.Router",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign",
+        "/property:TestRunners=true",
+        "/property:DefineConstants=USE_INSECURE_HTTP2"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "publish",
       "command": "dotnet",
       "type": "process",

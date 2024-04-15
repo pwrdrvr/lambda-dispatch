@@ -1,11 +1,26 @@
 using Moq;
-using NUnit.Framework;
-using PwrDrvr.LambdaDispatch.Router;
 using Amazon.Lambda;
-using Amazon.Lambda.Model;
 using Microsoft.AspNetCore.Http;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
+
+public class TransitionResultTests
+{
+  [Test]
+  public void TestTransitionResultProperties()
+  {
+    var transitionResult = new TransitionResult
+    {
+      TransitionedToDraining = true,
+      WasOpened = true,
+      OpenWasRejected = true
+    };
+
+    Assert.IsTrue(transitionResult.TransitionedToDraining);
+    Assert.IsTrue(transitionResult.WasOpened);
+    Assert.IsTrue(transitionResult.OpenWasRejected);
+  }
+}
 
 public class LambdaInstanceTests
 {
@@ -19,9 +34,10 @@ public class LambdaInstanceTests
   {
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
+    var getCallbackIP = new Mock<IGetCallbackIP>();
 
-    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(0, "somefunc", "$LATEST", lambdaClient.Object, dispatcher.Object));
-    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(-1, "somefunc", "$LATEST", lambdaClient.Object, dispatcher.Object));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(maxConcurrentCount: 0, functionName: "somefunc", poolId: "default", lambdaClient: lambdaClient.Object, dispatcher: dispatcher.Object, getCallbackIP: getCallbackIP.Object));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(maxConcurrentCount: -1, functionName: "somefunc", poolId: "default", lambdaClient: lambdaClient.Object, dispatcher: dispatcher.Object, getCallbackIP: getCallbackIP.Object));
   }
 
   [Test]
@@ -30,14 +46,20 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+      functionName: "someFunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher.Object,
+      getCallbackIP: getCallbackIP.Object
+      );
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
     request.Setup(i => i.HttpContext).Returns(requestContext.Object);
     var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
-
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
     // Start the Lambda
     instance.Start();
@@ -97,14 +119,19 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
-
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+          functionName: "someFunc",
+          poolId: "default",
+          lambdaClient: lambdaClient.Object,
+          dispatcher: dispatcher.Object,
+          getCallbackIP: getCallbackIP.Object
+          );
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
     request.Setup(i => i.HttpContext).Returns(requestContext.Object);
     var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
-
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
     // Start the Lambda
     instance.Start();
@@ -158,7 +185,15 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+      functionName: "someFunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher.Object,
+      getCallbackIP: getCallbackIP.Object
+      );
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -171,8 +206,6 @@ public class LambdaInstanceTests
       {
         statusCode = value;
       });
-
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
     // Start the Lambda
     instance.Start();
@@ -227,8 +260,15 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher.Object);
-
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+      functionName: "someFunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher.Object,
+      getCallbackIP: getCallbackIP.Object
+      );
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
     request.Setup(i => i.HttpContext).Returns(requestContext.Object);
@@ -240,8 +280,6 @@ public class LambdaInstanceTests
       {
         statusCode = value;
       });
-
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
     // Start the Lambda
     instance.Start();
@@ -291,14 +329,19 @@ public class LambdaInstanceTests
     var maxConcurrentCount = 10;
     var lambdaClient = new Mock<IAmazonLambda>();
     var dispatcher = new Mock<IBackgroundDispatcher>();
-    var instance = new LambdaInstance(maxConcurrentCount, "someFunc", null, lambdaClient.Object, dispatcher.Object);
-
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+      functionName: "someFunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher.Object,
+      getCallbackIP: getCallbackIP.Object
+      );
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
     request.Setup(i => i.HttpContext).Returns(requestContext.Object);
     var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
-
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
 
     // Start the Lambda
     instance.Start();

@@ -24,6 +24,7 @@ pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
   mut sender: SendRequest<BoxBody<Bytes, Error>>,
+  pool_id: PoolId,
   lambda_id: LambdaId,
   count: Arc<AtomicUsize>,
   router_endpoint: Endpoint,
@@ -84,7 +85,8 @@ pub async fn send_ping_requests(
         && requests_in_flight == 0
       {
         log::info!(
-          "LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Last Active",
+          "PoolId: {}, LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Last Active",
+          pool_id,
           lambda_id,
           last_active_ago_ms,
           requests_in_flight,
@@ -93,7 +95,8 @@ pub async fn send_ping_requests(
         );
       } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
-          "LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
+          "PoolId: {}, LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
+          pool_id,
           lambda_id,
           deadline_ms - time::current_time_millis(),
           requests_in_flight,
@@ -109,6 +112,7 @@ pub async fn send_ping_requests(
         .uri(&close_url)
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
+        .header("X-Pool-Id", pool_id.as_ref())
         .header("X-Lambda-Id", lambda_id.as_ref());
       let close_req = match &host_header {
         Cow::Borrowed(v) => close_req.header(hyper::header::HOST, *v),
@@ -134,7 +138,8 @@ pub async fn send_ping_requests(
         }
         Err(err) => {
           log::error!(
-            "LambdaId: {} - PingLoop - Close request failed: {:?}",
+            "PoolId: {}, LambdaId: {} - PingLoop - Close request failed: {:?}",
+            pool_id,
             lambda_id,
             err
           );
@@ -156,6 +161,7 @@ pub async fn send_ping_requests(
         .uri(&ping_url)
         .method("GET")
         .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
+        .header("X-Pool-Id", pool_id.as_ref())
         .header("X-Lambda-Id", lambda_id.as_ref());
       let ping_req = match &host_header {
         Cow::Borrowed(v) => ping_req.header(hyper::header::HOST, *v),
@@ -165,7 +171,7 @@ pub async fn send_ping_requests(
 
       if sender.ready().await.is_err() {
         // This gets hit when the connection faults
-        panic!("LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", lambda_id);
+        panic!("PoolId: {}, LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, should reconnect", pool_id, lambda_id);
       }
 
       let res = sender.send_request(ping_req).await;
@@ -179,7 +185,8 @@ pub async fn send_ping_requests(
 
           if parts.status == 409 {
             log::info!(
-              "LambdaId: {} - Ping Loop - 409 received on ping, exiting",
+              "PoolId: {}, LambdaId: {} - Ping Loop - 409 received on ping, exiting",
+              pool_id,
               lambda_id
             );
             goaway_received.store(true, Ordering::Release);
@@ -188,7 +195,8 @@ pub async fn send_ping_requests(
 
           if parts.status != StatusCode::OK {
             log::info!(
-              "LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
+              "PoolId: {}, LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
+              pool_id,
               lambda_id,
               parts.status
             );
@@ -198,7 +206,8 @@ pub async fn send_ping_requests(
         }
         Err(err) => {
           log::error!(
-            "LambdaId: {} - Ping Loop - Ping request failed: {:?}",
+            "PoolId: {}, LambdaId: {} - Ping Loop - Ping request failed: {:?}",
+            pool_id,
             lambda_id,
             err
           );
@@ -207,7 +216,8 @@ pub async fn send_ping_requests(
       }
 
       log::info!(
-        "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Looping",
+        "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Looping",
+        pool_id,
         lambda_id,
         count,
         goaway_received.load(Ordering::Acquire),
@@ -220,7 +230,8 @@ pub async fn send_ping_requests(
     tokio::select! {
         _ = cancel_token.cancelled() => {
           // The token was cancelled
-          log::info!("LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Cancelled",
+          log::info!("PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Cancelled",
+            pool_id,
             lambda_id,
             count,
             goaway_received.load(Ordering::Acquire),
@@ -237,7 +248,8 @@ pub async fn send_ping_requests(
   let count = count.load(Ordering::Acquire);
   let elapsed = time::current_time_millis() - start_time;
   log::info!(
-    "LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Exiting",
+    "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Exiting",
+    pool_id,
     lambda_id,
     count,
     goaway_received.load(Ordering::Acquire),

@@ -5,6 +5,10 @@
 
 target/
 
+lcov.info
+coveragereport/
+test/coverage/
+
 # dotenv files
 .env
 

@@ -34,6 +34,7 @@ impl Stream for TcpStream {}
 pub struct LambdaRequest {
   app_endpoint: Endpoint,
   compression: bool,
+  pool_id: PoolId,
   lambda_id: LambdaId,
   channel_count: u8,
   router_endpoint: Endpoint,
@@ -55,6 +56,7 @@ impl LambdaRequest {
   pub fn new(
     app_endpoint: Endpoint,
     compression: bool,
+    pool_id: PoolId,
     lambda_id: LambdaId,
     channel_count: u8,
     router_endpoint: Endpoint,
@@ -64,6 +66,7 @@ impl LambdaRequest {
       count: Arc::new(AtomicUsize::new(0)),
       app_endpoint,
       compression,
+      pool_id,
       lambda_id,
       channel_count,
       router_endpoint,
@@ -80,14 +83,19 @@ impl LambdaRequest {
   pub async fn start(&mut self) -> Result<(), Error> {
     let start_time = current_time_millis();
 
-    let sender =
-      connect_to_router(self.router_endpoint.clone(), Arc::clone(&self.lambda_id)).await?;
+    let sender = connect_to_router(
+      self.router_endpoint.clone(),
+      Arc::clone(&self.pool_id),
+      Arc::clone(&self.lambda_id),
+    )
+    .await?;
 
     // Send the ping requests in background
     let ping_task = tokio::task::spawn(ping::send_ping_requests(
       Arc::clone(&self.last_active),
       Arc::clone(&self.goaway_received),
       sender.clone(),
+      Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
       Arc::clone(&self.count),
       self.router_endpoint.clone(),
@@ -112,6 +120,7 @@ impl LambdaRequest {
           self.app_endpoint.clone(),
           channel_number,
           sender.clone(),
+          Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
         );
         tokio::spawn(async move { router_channel.start().await })
@@ -152,8 +161,10 @@ impl LambdaRequest {
     Ok(())
   }
 }
+
 async fn connect_to_router(
   router_endpoint: Endpoint,
+  pool_id: PoolId,
   lambda_id: LambdaId,
 ) -> Result<SendRequest<BoxBody<Bytes, Error>>, Error> {
   let tcp_stream = TcpStream::connect(router_endpoint.socket_addr_coercable()).await?;
@@ -192,7 +203,8 @@ async fn connect_to_router(
   tokio::task::spawn(async move {
     if let Err(err) = conn.await {
       log::error!(
-        "LambdaId: {} - Router HTTP2 connection failed: {:?}",
+        "PoolId: {}, LambdaId: {} - Router HTTP2 connection failed: {:?}",
+        pool_id,
         lambda_id,
         err
       );

@@ -1,38 +1,23 @@
 namespace PwrDrvr.LambdaDispatch.Router;
 
-public static class GetCallbackIP
+public interface IGetCallbackIP
 {
-  static private string? callbackUrl = null;
+  string CallbackUrl { get; }
+}
 
-  static private string scheme = "https";
+public class GetCallbackIP : IGetCallbackIP
+{
+  private readonly string callbackUrl = null;
 
-  static private int port = 5004;
+  public string CallbackUrl { get => callbackUrl; }
 
-  static private string? networkIp;
-
-  static public string Init(int port, string scheme, string networkIp)
+  public GetCallbackIP(int port, string scheme, string networkIp)
   {
-    GetCallbackIP.port = port;
-    GetCallbackIP.scheme = scheme;
-    GetCallbackIP.networkIp = networkIp;
-
-    return Get();
-  }
-
-  static public string Get()
-  {
-    // Once it is set, it is set, we don't have to lock
-    if (callbackUrl != null)
+    if (string.IsNullOrEmpty(networkIp))
     {
-      return callbackUrl;
+      throw new ArgumentException("Network IP is not set", nameof(networkIp));
     }
 
-    if (networkIp == null)
-    {
-      throw new Exception("Network IP is not set");
-    }
-
-    callbackUrl = $"{scheme}://{Environment.GetEnvironmentVariable("ROUTER_CALLBACK_HOST") ?? networkIp}:{port}/api/chunked";
-    return callbackUrl;
+    callbackUrl = $"{scheme}://{networkIp}:{port}/api/chunked";
   }
 }

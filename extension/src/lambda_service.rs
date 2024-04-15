@@ -48,7 +48,21 @@ impl LambdaService {
     &self,
     event: LambdaEvent<WaiterRequest>,
   ) -> Result<WaiterResponse, Error> {
-    log::info!("LambdaId: {} - Received request", event.payload.id);
+    // extract some useful info from the request
+    let pool_id: PoolId = event
+      .payload
+      .pool_id
+      .unwrap_or_else(|| "default".to_string())
+      .into();
+    let lambda_id: LambdaId = event.payload.id.into();
+    let channel_count: u8 = event.payload.number_of_channels;
+    let router_endpoint = event.payload.router_url.parse()?;
+
+    log::info!(
+      "PoolId: {}, LambdaId: {} - Received request",
+      pool_id,
+      lambda_id
+    );
 
     let app_endpoint = Endpoint::new(Scheme::Http, "127.0.0.1", self.options.port);
 
@@ -63,18 +77,18 @@ impl LambdaService {
       );
     }
 
-    // extract some useful info from the request
-    let lambda_id: LambdaId = event.payload.id.into();
-    let channel_count: u8 = event.payload.number_of_channels;
-    let router_endpoint = event.payload.router_url.parse()?;
-
     // prepare the response
     let resp = WaiterResponse {
+      pool_id: pool_id.to_string(),
       id: lambda_id.to_string(),
     };
 
     if event.payload.init_only {
-      log::info!("LambdaId: {} - Returning from init-only request", lambda_id);
+      log::info!(
+        "PoolId: {}, LambdaId: {} - Returning from init-only request",
+        pool_id,
+        lambda_id
+      );
       return Ok(resp);
     }
 
@@ -87,12 +101,17 @@ impl LambdaService {
     if self.options.local_env
       && sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
     {
-      log::info!("LambdaId: {} - Returning from stale request", lambda_id);
+      log::info!(
+        "PoolId: {}, LambdaId: {} - Returning from stale request",
+        pool_id,
+        lambda_id
+      );
       return Ok(resp);
     }
 
     log::info!(
-      "LambdaId: {}, Timeout: {}s - Invoked",
+      "PoolId: {}, LambdaId: {}, Timeout: {}s - Invoked",
+      pool_id,
       lambda_id,
       (event.context.deadline - current_time_millis()) / 1000
     );
@@ -114,6 +133,7 @@ impl LambdaService {
     let mut lambda_request = LambdaRequest::new(
       app_endpoint,
       self.options.compression,
+      pool_id,
       lambda_id,
       channel_count,
       router_endpoint,

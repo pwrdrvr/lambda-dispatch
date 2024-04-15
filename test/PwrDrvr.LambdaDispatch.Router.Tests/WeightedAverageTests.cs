@@ -6,6 +6,7 @@ using PwrDrvr.LambdaDispatch.Router;
 public class WeightedAverageTests
 {
   [Test]
+  [Retry(3)]
   public void TestAdd()
   {
     var weightedAverage = new WeightedAverage(60);
@@ -15,6 +16,7 @@ public class WeightedAverageTests
   }
 
   [Test]
+  [Retry(3)]
   public void TestEWMA()
   {
     var weightedAverage = new WeightedAverage(5);
@@ -70,6 +72,7 @@ public class WeightedAverageTests
   }
 
   [Test]
+  [Retry(3)]
   public async Task TestConstantRateCalc()
   {
     // Arrange

@@ -38,6 +38,7 @@ pub struct RouterChannel {
   app_endpoint: Endpoint,
   channel_number: u8,
   sender: http2::SendRequest<BoxBody<Bytes, Error>>,
+  pool_id: PoolId,
   lambda_id: LambdaId,
 }
 
@@ -53,6 +54,7 @@ impl RouterChannel {
     app_endpoint: Endpoint,
     channel_number: u8,
     sender: http2::SendRequest<BoxBody<Bytes, Error>>,
+    pool_id: PoolId,
     lambda_id: LambdaId,
   ) -> Self {
     let channel_id = uuid::Builder::from_random_bytes(rng.gen())
@@ -81,6 +83,7 @@ impl RouterChannel {
       app_endpoint,
       channel_number,
       sender,
+      pool_id,
       lambda_id,
     }
   }
@@ -88,6 +91,7 @@ impl RouterChannel {
   pub async fn start(&mut self) -> Result<()> {
     let mut app_sender = connect_to_app(
       &self.app_endpoint,
+      Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
       self.channel_id.clone(),
     )
@@ -111,6 +115,7 @@ impl RouterChannel {
         // with request/headers and then be binary after that - it should not be parsed
         // by anything other than us
         .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
+        .header("X-Pool-Id", self.pool_id.as_ref())
         .header("X-Lambda-Id", self.lambda_id.as_ref())
         .header("X-Channel-Id", &self.channel_id)
         .body(boxed_body)?;
@@ -120,7 +125,8 @@ impl RouterChannel {
       //
 
       log::debug!(
-        "LambdaId: {}, ChannelId: {} - sending request",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - sending request",
+        self.pool_id,
         self.lambda_id,
         self.channel_id
       );
@@ -128,18 +134,20 @@ impl RouterChannel {
       self.sender
                 .ready()
                 .await
-                .context("LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect")?;
+                .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect")?;
 
       let res = self.sender.send_request(req).await?;
       log::debug!(
-        "LambdaId: {}, ChannelId: {} - got response: {:?}",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - got response: {:?}",
+        self.pool_id,
         self.lambda_id,
         self.channel_id,
         res
       );
       let (parts, mut res_stream) = res.into_parts();
       log::debug!(
-        "LambdaId: {}, ChannelId: {} - split response",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - split response",
+        self.pool_id,
         self.lambda_id,
         self.channel_id,
       );
@@ -151,8 +159,8 @@ impl RouterChannel {
           .goaway_received
           .load(std::sync::atomic::Ordering::Acquire)
         {
-          log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
-                  self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+          log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
+                  self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
             .goaway_received
             .store(true, std::sync::atomic::Ordering::Release);
@@ -165,17 +173,21 @@ impl RouterChannel {
       // We have to hold the pinger up else it will exit before connections to the router are established
       // We also count re-establishing a channel as an action since it can allow a request to flow in
       if self.last_active.load(Ordering::Acquire) == 0 {
-        log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
-                self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+        log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
+                self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
       }
       self
         .last_active
         .store(time::current_time_millis(), Ordering::Release);
 
       // Read until we get all the request headers so we can construct our app request
-      let (app_req_builder, is_goaway, left_over_buf) =
-        app_request::read_until_req_headers(&mut res_stream, &self.lambda_id, &self.channel_id)
-          .await?;
+      let (app_req_builder, is_goaway, left_over_buf) = app_request::read_until_req_headers(
+        &mut res_stream,
+        &self.pool_id,
+        &self.lambda_id,
+        &self.channel_id,
+      )
+      .await?;
 
       // Check if the request has an Accept-Encoding header with gzip
       // If it does, we *can* gzip the response
@@ -191,8 +203,8 @@ impl RouterChannel {
           .goaway_received
           .load(std::sync::atomic::Ordering::Acquire)
         {
-          log::info!("LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
-                    self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+          log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
+                    self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
             .goaway_received
             .store(true, std::sync::atomic::Ordering::Release);
@@ -218,8 +230,8 @@ impl RouterChannel {
 
       if app_sender.ready().await.is_err() {
         // This gets hit when the app connection faults
-        panic!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
-                  self.lambda_id, self.channel_id, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+        panic!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
+                  self.pool_id, self.lambda_id, self.channel_id, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
       }
 
       // Relay the request body to the contained app
@@ -228,6 +240,7 @@ impl RouterChannel {
       // and we need to set this up before we actually send the request
       // to the contained app
       let channel_id_clone = self.channel_id.clone();
+      let pool_id_clone = self.pool_id.clone();
       let lambda_id_clone = self.lambda_id.clone();
       let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
       // let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
@@ -238,7 +251,8 @@ impl RouterChannel {
         if !left_over_buf.is_empty() {
           bytes_sent += left_over_buf.len();
           log::debug!(
-            "LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
+            "PoolId: {}, LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
+            pool_id_clone,
             lambda_id_clone,
             channel_id_clone,
             left_over_buf.len()
@@ -259,7 +273,7 @@ impl RouterChannel {
           futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
         {
           if chunk.is_err() {
-            log::error!("LambadId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
+            log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
                           lambda_id_clone,
                           channel_id_clone,
                           requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
@@ -273,7 +287,8 @@ impl RouterChannel {
           // If chunk_len is zero the channel has closed
           if chunk_len == 0 {
             log::debug!(
-              "LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed",
+              "PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed",
+              pool_id_clone,
               lambda_id_clone,
               channel_id_clone,
               bytes_sent,
@@ -284,7 +299,8 @@ impl RouterChannel {
           match app_req_tx.send(Ok(chunk.unwrap())).await {
             Ok(_) => {}
             Err(err) => {
-              log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
+              log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
+                            pool_id_clone,
                             lambda_id_clone,
                             channel_id_clone,
                             requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
@@ -299,7 +315,7 @@ impl RouterChannel {
 
         // Close the post body stream
         if router_error_reading {
-          log::info!("LambdaId: {}, ChannelId: {}, BytesSent: {} - Error reading from res_stream, dropping app_req_tx", lambda_id_clone, channel_id_clone, bytes_sent);
+          log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {} - Error reading from res_stream, dropping app_req_tx", pool_id_clone, lambda_id_clone, channel_id_clone, bytes_sent);
           return;
         }
 
@@ -434,7 +450,8 @@ impl RouterChannel {
         futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut app_res_stream), cx)).await
       {
         if chunk.is_err() {
-          log::info!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+          log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+            self.pool_id,
             self.lambda_id,
             self.channel_id,
             self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
@@ -466,7 +483,8 @@ impl RouterChannel {
       }
       if app_error_reading {
         log::debug!(
-          "LambdaId: {}, ChannelId: {} - Error reading from app_res_stream, dropping tx",
+          "PoolId: {}, LambdaId: {}, ChannelId: {} - Error reading from app_res_stream, dropping tx",
+          self.pool_id,
           self.lambda_id,
           self.channel_id
         );
@@ -491,7 +509,7 @@ impl RouterChannel {
                       // All tasks completed successfully
                   }
                   Err(_) => {
-                      panic!("LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", &self.lambda_id, channel_id_clone);
+                      panic!("PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", self.pool_id, self.lambda_id, channel_id_clone);
                   }
               }
           }
@@ -503,8 +521,10 @@ impl RouterChannel {
     Ok(())
   }
 }
+
 async fn connect_to_app(
   app_endpoint: &Endpoint,
+  pool_id: PoolId,
   lambda_id: LambdaId,
   channel_id: String,
 ) -> Result<http1::SendRequest<StreamBody<Receiver<Result<Frame<Bytes>>>>>> {
@@ -517,7 +537,8 @@ async fn connect_to_app(
   tokio::task::spawn(async move {
     if let Err(err) = conn.await {
       log::error!(
-        "LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}",
+        pool_id,
         lambda_id,
         channel_id,
         err

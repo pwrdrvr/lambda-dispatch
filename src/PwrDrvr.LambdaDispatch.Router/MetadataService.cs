@@ -17,11 +17,16 @@ public class MetadataService : IMetadataService
   public string NetworkIP => _networkIP;
   public string? ClusterName => _clusterName;
 
-  public MetadataService(IHttpClientFactory? httpClientFactory = null)
+  public MetadataService(IHttpClientFactory? httpClientFactory = null, IConfig? config = null)
   {
     var execEnvType = GetExecEnvType();
 
-    if (execEnvType == ExecEnvType.Local)
+    if (config != null && !string.IsNullOrWhiteSpace(config.RouterCallbackHost))
+    {
+      _networkIP = config.RouterCallbackHost;
+      _clusterName = null;
+    }
+    else if (execEnvType == ExecEnvType.Local)
     {
       _networkIP = "127.0.0.1";
       _clusterName = null;

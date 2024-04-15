@@ -549,7 +549,7 @@ public class LambdaConnection
     }
 
     //
-    // Start writing the Respone Body
+    // Start writing the Response Body
     // This implicitly flushes the headers
     //
 

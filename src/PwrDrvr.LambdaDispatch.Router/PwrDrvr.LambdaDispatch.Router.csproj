@@ -33,5 +33,4 @@
   <ItemGroup>
     <ProjectReference Include="..\PwrDrvr.LambdaDispatch.Messages\PwrDrvr.LambdaDispatch.Messages.csproj" />
   </ItemGroup>
-
 </Project>

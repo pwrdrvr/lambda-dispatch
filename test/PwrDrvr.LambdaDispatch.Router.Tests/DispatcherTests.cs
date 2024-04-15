@@ -41,7 +41,7 @@ public class DispatcherTests
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, "", "channelId");
 
     // Assert
-    Assert.IsTrue(result.LambdaIDNotFound);
+    Assert.That(result.LambdaIDNotFound, Is.True);
   }
 
   [Test]
@@ -61,7 +61,7 @@ public class DispatcherTests
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, "lambdaId", "channelId");
 
     // Assert
-    Assert.IsTrue(result.LambdaIDNotFound);
+    Assert.That(result.LambdaIDNotFound, Is.True);
   }
 
   [Test]
@@ -122,14 +122,22 @@ public class DispatcherTests
     var mockConfig = new Mock<IConfig>();
     mockConfig.SetupGet(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
     var mockMetricsLogger = new Mock<IMetricsLogger>();
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object);
+    var mockPoolOptions = new Mock<IPoolOptions>();
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
     var dispatcher = new Dispatcher(_mockLogger.Object,
           _mockMetricsLogger.Object,
           manager,
           shutdownSignal
         );
-    var instance = new LambdaInstance(maxConcurrentCount, "somefunc", null, lambdaClient.Object, dispatcher);
-    GetCallbackIP.Init(1000, "https", "127.0.0.1");
+    var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+      functionName: "someFunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher,
+      getCallbackIP: getCallbackIP.Object
+      );
 
     Assert.Multiple(() =>
     {

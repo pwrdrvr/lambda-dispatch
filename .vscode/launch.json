@@ -66,7 +66,7 @@
       "name": "Router (console)",
       "type": "coreclr",
       "request": "launch",
-      "preLaunchTask": "build",
+      "preLaunchTask": "build-router",
       "program": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.Router/bin/Debug/net8.0/PwrDrvr.LambdaDispatch.Router.dll",
       "args": [],
       "cwd": "${workspaceFolder}/src/PwrDrvr.LambdaDispatch.Router",
@@ -74,6 +74,8 @@
       "stopAtEntry": false,
       "env": {
         "LAMBDA_DISPATCH_FunctionName": "arn:aws:lambda:us-east-2:220761759939:function:dogs",
+        "LAMBDA_DISPATCH_InstanceCountMultiplier": "1",
+        "LAMBDA_DISPATCH_MaxConcurrentCount": "1",
         "AWS_ACCESS_KEY_ID": "test-access-key-id",
         "AWS_SECRET_ACCESS_KEY": "test-secret-access-key",
         "AWS_SESSION_TOKEN": "test-session-token",

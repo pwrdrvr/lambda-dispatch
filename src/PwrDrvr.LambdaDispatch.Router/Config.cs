@@ -72,6 +72,12 @@ public interface IConfig
   /// The preferred scheme to use for the control channel (http or https)
   /// </summary>
   public string PreferredControlChannelScheme { get; set; }
+
+  /// <summary>
+  /// Primarily for testing, such as with docker-compose,
+  /// where the router is a single instance with a known before name such as `router`
+  /// </summary>
+  public string? RouterCallbackHost { get; set; }
 }
 
 public class Config : IConfig
@@ -101,6 +107,8 @@ public class Config : IConfig
 
   public int InstanceCountMultiplier { get; set; }
 
+  public string? RouterCallbackHost { get; set; }
+
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
   /// </summary>
@@ -124,16 +132,13 @@ public class Config : IConfig
     var config = new Config();
     configuration.Bind(config);
     config.Validate();
-    (config.FunctionNameOnly, config.FunctionNameQualifier) = Config.ParseFunctionName(config.FunctionName);
+    (config.FunctionNameOnly, config.FunctionNameQualifier) = LambdaArnParser.ParseFunctionName(config.FunctionName);
     return config;
   }
 
   private void Validate()
   {
-    if (string.IsNullOrWhiteSpace(FunctionName)
-        || (!IsValidLambdaName(FunctionName) &&
-            !IsValidLambdaNameWithQualifier(FunctionName) &&
-            !IsValidLambdaArn(FunctionName)))
+    if (!LambdaArnParser.IsValidLambdaArgument(FunctionName))
     {
       throw new ApplicationException($"Invalid FunctionName in configuration: {FunctionName}");
     }
@@ -194,46 +199,5 @@ public class Config : IConfig
     {
       throw new ApplicationException($"InstanceCountMultiplier must be less than or equal to 10");
     }
-  }
-
-  private static (string, string?) ParseFunctionName(string functionName)
-  {
-    var parts = functionName.Split(':');
-    if (parts.Length == 2 || parts.Length == 8)
-    {
-      var qualifier = parts.Last();
-      var baseFunctionName = string.Join(':', parts.Take(parts.Length - 1));
-      return (baseFunctionName, qualifier);
-    }
-    else if (parts.Length == 7)
-    {
-      return (functionName, null);
-    }
-    else if (parts.Length == 1)
-    {
-      return (functionName, null);
-    }
-    else
-    {
-      throw new ApplicationException($"Invalid FunctionName in configuration: {functionName}");
-    }
-  }
-
-  private static bool IsValidLambdaName(string functionName)
-  {
-    var regex = new Regex(@"^[a-zA-Z0-9-_]{1,64}$");
-    return regex.IsMatch(functionName);
-  }
-
-  private static bool IsValidLambdaNameWithQualifier(string functionName)
-  {
-    var regex = new Regex(@"^[a-zA-Z0-9-_]{1,64}:([a-zA-Z0-9-_]{1,128}|\$LATEST)$");
-    return regex.IsMatch(functionName);
-  }
-
-  private static bool IsValidLambdaArn(string functionName)
-  {
-    var regex = new Regex(@"^arn:aws:lambda:[a-z0-9-]+:[0-9]{12}:function:[a-zA-Z0-9-_]{1,64}(:[a-zA-Z0-9-_]{1,128}|:\$LATEST)?$");
-    return regex.IsMatch(functionName);
   }
 }

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -257,7 +258,7 @@ public class LambdaInstance : ILambdaInstance
 
   private readonly string functionName;
 
-  private readonly string? functionQualifier;
+  private readonly string poolId;
 
   private readonly int maxConcurrentCount;
 
@@ -317,6 +318,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public int AvailableConnectionCount => Math.Min(Math.Max(maxConcurrentCount - Math.Min(OutstandingRequestCount, maxConcurrentCount), 0), internalActualAvailableConnectionCount);
 
+  private readonly IGetCallbackIP getCallbackIP;
+
   private readonly IBackgroundDispatcher dispatcher;
 
   /// <summary>
@@ -324,15 +327,14 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   /// <param name="maxConcurrentCount"></param>
   /// <param name="functionName"></param>
-  /// <param name="functionQualifier"></param>
   /// <param name="lambdaClient"></param>
   /// <param name="dispatcher">REQUIRED: Link to an IBackgroundDispatcher</param>
   /// <exception cref="ArgumentNullException"></exception>
   /// <exception cref="ArgumentException"></exception>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  public LambdaInstance(int maxConcurrentCount, string functionName, string? functionQualifier = null, IAmazonLambda? lambdaClient = null, IBackgroundDispatcher? dispatcher = null, int channelCount = -1)
+  public LambdaInstance(int maxConcurrentCount, string functionName, string poolId, IGetCallbackIP getCallbackIP, IBackgroundDispatcher dispatcher, IAmazonLambda? lambdaClient = null, int channelCount = -1)
   {
-    ArgumentNullException.ThrowIfNull(dispatcher);
+    this.getCallbackIP = getCallbackIP;
     this.dispatcher = dispatcher;
     this.channelCount = channelCount;
     if (string.IsNullOrWhiteSpace(functionName))
@@ -340,7 +342,7 @@ public class LambdaInstance : ILambdaInstance
       throw new ArgumentException("Cannot be null or whitespace", nameof(functionName));
     }
     this.functionName = functionName;
-    this.functionQualifier = functionQualifier;
+    this.poolId = poolId;
 
     if (maxConcurrentCount < 1)
     {
@@ -793,11 +795,17 @@ public class LambdaInstance : ILambdaInstance
 
     var initOnlyLambdaId = $"{Id}-initonly";
 
+    var options = new JsonSerializerOptions
+    {
+      DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     // Setup the Lambda payload
     var payload = new WaiterRequest
     {
+      PoolId = poolId,
       Id = initOnlyLambdaId,
-      DispatcherUrl = GetCallbackIP.Get(),
+      DispatcherUrl = getCallbackIP.CallbackUrl,
       NumberOfChannels = 0,
       SentTime = DateTime.Now,
       InitOnly = true
@@ -808,12 +816,8 @@ public class LambdaInstance : ILambdaInstance
     {
       FunctionName = functionName,
       InvocationType = InvocationType.RequestResponse,
-      Payload = JsonSerializer.Serialize(payload),
+      Payload = JsonSerializer.Serialize(payload, options),
     };
-    if (functionQualifier != null && functionQualifier != "$LATEST")
-    {
-      request.Qualifier = functionQualifier;
-    }
 
     // Should not wait here as we will not get a response until the Lambda is done
     var invokeTask = LambdaClient.InvokeAsync(request);
@@ -866,8 +870,9 @@ public class LambdaInstance : ILambdaInstance
     // Setup the Lambda payload
     var payload = new WaiterRequest
     {
+      PoolId = poolId,
       Id = Id,
-      DispatcherUrl = GetCallbackIP.Get(),
+      DispatcherUrl = getCallbackIP.CallbackUrl,
       NumberOfChannels = channelCount == -1 ? 2 * maxConcurrentCount : channelCount,
       SentTime = DateTime.Now,
       InitOnly = false
@@ -880,10 +885,6 @@ public class LambdaInstance : ILambdaInstance
       InvocationType = InvocationType.RequestResponse,
       Payload = JsonSerializer.Serialize(payload),
     };
-    if (functionQualifier != null && functionQualifier != "$LATEST")
-    {
-      request.Qualifier = functionQualifier;
-    }
 
     // Should not wait here as we will not get a response until the Lambda is done
     _startTime.Start();

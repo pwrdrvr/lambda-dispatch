@@ -3,6 +3,8 @@ use serde::Serialize;
 
 #[derive(Deserialize, Debug)]
 pub struct WaiterRequest {
+  #[serde(rename = "PoolId")]
+  pub pool_id: Option<String>,
   #[serde(rename = "Id")]
   pub id: String,
   #[serde(rename = "DispatcherUrl")]
@@ -17,6 +19,8 @@ pub struct WaiterRequest {
 
 #[derive(Serialize, Debug)]
 pub struct WaiterResponse {
+  #[serde(rename = "PoolId")]
+  pub pool_id: String,
   #[serde(rename = "Id")]
   pub id: String,
 }
