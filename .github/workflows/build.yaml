@@ -29,7 +29,7 @@ jobs:
 
   build-router-arm64:
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: [self-hosted, arm64]
     permissions:
       contents: read
@@ -94,7 +94,7 @@ jobs:
 
   build-router:
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -160,7 +160,7 @@ jobs:
   merge-router:
     if: github.event.pull_request.head.repo.fork == false
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
     needs:
       - build-router
@@ -208,7 +208,7 @@ jobs:
 
   build-extension-arm64:
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     permissions:
       contents: read
       id-token: write
@@ -271,7 +271,7 @@ jobs:
 
   build-extension:
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
       ARCH: x86_64
 
     permissions:
@@ -339,7 +339,7 @@ jobs:
   merge-extension:
     if: github.event.pull_request.head.repo.fork == false
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
     needs:
       - build-extension
@@ -387,7 +387,7 @@ jobs:
 
   build-demoapp:
     env:
-      REGISTRY_IMAGE: public.ecr.aws/e4p3x8r3/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -417,7 +417,7 @@ jobs:
           fi
       - name: Swap in tagged image name in the Dockerfile
         run: |
-          sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/e4p3x8r3/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.prSuffix.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
+          sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.prSuffix.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
 
       - name: Configure AWS Credentials
         if: github.event.pull_request.head.repo.fork == false
