@@ -195,7 +195,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable
-        run: echo "DOCKER_METADATA_OUTPUT_JSON=${{ toJson(steps.meta.outputs) }}" >> $GITHUB_ENV
+        run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -386,7 +386,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable
-        run: echo "DOCKER_METADATA_OUTPUT_JSON=${{ toJson(steps.meta.outputs) }}" >> $GITHUB_ENV
+        run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
