@@ -15,6 +15,7 @@ public class MetadataServiceTests
   [SetUp]
   public void SetUp()
   {
+    Environment.SetEnvironmentVariable("K8S_POD_IP", null);
     Environment.SetEnvironmentVariable("AWS_EXECUTION_ENV", null);
     _httpClientFactoryMock = new Mock<IHttpClientFactory>();
     _client = new HttpClient(new MockHttpMessageHandler());
@@ -46,7 +47,7 @@ public class MetadataServiceTests
   }
 
   [Test]
-  public void Test_Local_ExecEnvType()
+  public void Test_Local_IpSourceType()
   {
     var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
     Assert.Multiple(() =>
@@ -57,7 +58,7 @@ public class MetadataServiceTests
   }
 
   [Test]
-  public void Test_ECS_ExecEnvType()
+  public void Test_ECS_IpSourceType()
   {
     Environment.SetEnvironmentVariable("AWS_EXECUTION_ENV", "AWS_ECS_FARGATE");
     Environment.SetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4", "http://localhost:1000/v4/metadata");
@@ -66,6 +67,31 @@ public class MetadataServiceTests
     {
       Assert.That(service.NetworkIP, Is.EqualTo("192.168.0.1"));
       Assert.That(service.ClusterName, Is.EqualTo("test_cluster"));
+    });
+  }
+
+  [Test]
+  public void Test_EnvVar_IpSourceType()
+  {
+    Environment.SetEnvironmentVariable("K8S_POD_IP", "10.1.1.1");
+    var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
+    Assert.Multiple(() =>
+    {
+      Assert.That(service.NetworkIP, Is.EqualTo("10.1.1.1"));
+      Assert.That(service.ClusterName, Is.Null);
+    });
+  }
+
+  [Test]
+  public void Test_EnvVar_FromElsewhere_IpSourceType()
+  {
+    var configWithEnvVarForCallbackIp = new Config { EnvVarForCallbackIp = "IP_FROM_ELSEWHERE" };
+    Environment.SetEnvironmentVariable("IP_FROM_ELSEWHERE", "10.3.2.1");
+    var service = new MetadataService(_httpClientFactoryMock.Object, configWithEnvVarForCallbackIp);
+    Assert.Multiple(() =>
+    {
+      Assert.That(service.NetworkIP, Is.EqualTo("10.3.2.1"));
+      Assert.That(service.ClusterName, Is.Null);
     });
   }
 }
