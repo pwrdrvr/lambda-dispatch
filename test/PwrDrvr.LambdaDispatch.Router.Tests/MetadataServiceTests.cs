@@ -36,6 +36,7 @@ public class MetadataServiceTests
     var metadataService = new MetadataService(config: configWithRouterCallbackHost);
 
     Assert.That(metadataService.NetworkIP, Is.EqualTo("192.168.1.1"));
+    Assert.That(true, Is.False)
   }
 
   [Test]
