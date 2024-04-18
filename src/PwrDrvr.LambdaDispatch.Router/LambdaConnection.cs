@@ -25,7 +25,51 @@ public enum LambdaConnectionState
   Closed
 }
 
-public class LambdaConnection
+public interface ILambdaConnection
+{
+
+  /// <summary>
+  /// The state of the connection
+  /// </summary>
+  public LambdaConnectionState State { get; }
+
+  /// <summary>
+  /// The Request from the Lambda (which we will send the response on)
+  /// </summary>
+  public HttpRequest Request { get; }
+
+  /// <summary>
+  /// The Response from the Lambda (which we will send the request on)
+  /// </summary>
+  public HttpResponse Response { get; }
+
+  /// <summary>
+  /// Handle back to the Lambda Instance that owns this Connection
+  /// </summary>
+  public ILambdaInstance Instance { get; }
+
+  /// <summary>
+  /// The channel id for this connection
+  /// </summary>
+  public string ChannelId { get; }
+
+  /// <summary>
+  /// Indicates whether this was the first connection for an instance, causing the instance to be marked `Open`
+  /// </summary>
+  public bool FirstConnectionForInstance { get; }
+
+  /// <summary>
+  /// Task that completes when the connection is closed
+  /// </summary>
+  public TaskCompletionSource TCS { get; }
+
+  public Task Discard();
+
+  public Task RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse);
+
+}
+
+public class LambdaConnection : ILambdaConnection
 {
   private readonly static string _gitHash = Environment.GetEnvironmentVariable("GIT_HASH") ?? "unknown";
   private readonly static string _buildTime = Environment.GetEnvironmentVariable("BUILD_TIME") ?? "unknown";
@@ -34,39 +78,18 @@ public class LambdaConnection
 
   private volatile int _runRequestCalled = 0;
 
-  /// <summary>
-  /// The state of the connection
-  /// </summary>
   public LambdaConnectionState State { get; private set; }
 
-  /// <summary>
-  /// The Request from the Lambda (which we will send the response on)
-  /// </summary>
   public HttpRequest Request { get; private set; }
 
-  /// <summary>
-  /// The Response from the Lambda (which we will send the request on)
-  /// </summary>
   public HttpResponse Response { get; private set; }
 
-  /// <summary>
-  /// Handle back to the Lambda Instance that owns this Connection
-  /// </summary>
   public ILambdaInstance Instance { get; private set; }
 
-  /// <summary>
-  /// The channel id for this connection
-  /// </summary>
   public string ChannelId { get; private set; }
 
-  /// <summary>
-  /// Indicates whether this was the first connection for an instance, causing the instance to be marked `Open`
-  /// </summary>
   public bool FirstConnectionForInstance { get; private set; }
 
-  /// <summary>
-  /// Task that completes when the connection is closed
-  /// </summary>
   public TaskCompletionSource TCS { get; private set; } = new TaskCompletionSource();
 
   private CancellationTokenSource CTS = new CancellationTokenSource();

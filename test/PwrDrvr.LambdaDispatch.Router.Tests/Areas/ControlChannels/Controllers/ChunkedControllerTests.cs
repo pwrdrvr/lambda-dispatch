@@ -124,4 +124,78 @@ public class ChunkedControllerTests
     Assert.IsInstanceOf<OkResult>(result);
     mockPool.Verify(x => x.Dispatcher.CloseInstance(lambdaId, true), Times.Once);
   }
+
+  [Test]
+  public async Task Post_WithLambdaIdAndChannelId_ReturnsOk()
+  {
+    // Arrange
+    var lambdaId = "testLambda";
+    var channelId = "testChannel";
+    var mockPool = new Mock<IPool>();
+    var mockConnection = new Mock<ILambdaConnection>();
+    var tcs = new TaskCompletionSource();
+    tcs.SetResult();
+    mockConnection.Setup(x => x.TCS).Returns(tcs);
+    var dispatcherResult = new DispatcherAddConnectionResult
+    {
+      Connection = mockConnection.Object,
+      LambdaIDNotFound = false
+    };
+    var mockDispatcher = new Mock<IDispatcher>();
+    mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
+                  .Returns(Task.FromResult(dispatcherResult));
+    IPool outPool = mockPool.Object;
+    mockPoolManager.Setup(p => p.GetPoolByPoolId("default", out outPool)).Returns(true);
+    mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
+    var httpContext = new DefaultHttpContext();
+    httpContext.Request.Headers["X-Lambda-Id"] = lambdaId;
+    controller.ControllerContext = new ControllerContext
+    {
+      HttpContext = httpContext
+    };
+
+    // Act
+    await controller.Post(lambdaId, channelId);
+
+    // Assert
+    Assert.AreEqual(200, controller.Response.StatusCode);
+  }
+
+  [Test]
+  public async Task Post_WithPoolIdLambdaIdAndChannelId_ReturnsOk()
+  {
+    // Arrange
+    var poolId = "testPool";
+    var lambdaId = "testLambda";
+    var channelId = "testChannel";
+    var mockPool = new Mock<IPool>();
+    var mockConnection = new Mock<ILambdaConnection>();
+    var tcs = new TaskCompletionSource();
+    tcs.SetResult();
+    mockConnection.Setup(x => x.TCS).Returns(tcs);
+    var dispatcherResult = new DispatcherAddConnectionResult
+    {
+      Connection = mockConnection.Object,
+      LambdaIDNotFound = false
+    };
+    var mockDispatcher = new Mock<IDispatcher>();
+    mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
+                  .Returns(Task.FromResult(dispatcherResult));
+    IPool outPool = mockPool.Object;
+    mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
+    mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
+    var httpContext = new DefaultHttpContext();
+    httpContext.Request.Headers["X-Lambda-Id"] = lambdaId;
+    httpContext.Request.Headers["X-Pool-Id"] = poolId;
+    controller.ControllerContext = new ControllerContext
+    {
+      HttpContext = httpContext
+    };
+
+    // Act
+    await controller.Post(poolId, lambdaId, channelId);
+
+    // Assert
+    Assert.AreEqual(200, controller.Response.StatusCode);
+  }
 }

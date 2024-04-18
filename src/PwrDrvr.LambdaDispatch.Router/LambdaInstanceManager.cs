@@ -20,11 +20,11 @@ public interface ILambdaInstanceManager
 {
   void AddBackgroundDispatcherReference(IBackgroundDispatcher dispatcher);
 
-  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
+  bool TryGetConnection([NotNullWhen(true)] out ILambdaConnection? connection, bool tentative = false);
 
   bool ValidateLambdaId(string lambdaId, [NotNullWhen(true)] out ILambdaInstance? instance);
 
-  void ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId);
+  void ReenqueueUnusedConnection(ILambdaConnection connection, string lambdaId);
 
   Task<AddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode);
 
@@ -142,7 +142,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     return _instances.TryAdd(instance.Id, instance);
   }
 
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
+  public bool TryGetConnection([NotNullWhen(true)] out ILambdaConnection? connection, bool tentative = false)
   {
     // Return an available instance or start a new one if none are available
     var gotConnection = _leastOutstandingQueue.TryGetConnection(out var dequeuedConnection, tentative);
@@ -156,7 +156,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     return _instances.TryGetValue(lambdaId, out instance);
   }
 
-  public void ReenqueueUnusedConnection(LambdaConnection connection, string lambdaId)
+  public void ReenqueueUnusedConnection(ILambdaConnection connection, string lambdaId)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))

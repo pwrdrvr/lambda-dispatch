@@ -6,7 +6,7 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 public class DispatcherAddConnectionResult
 {
-  public LambdaConnection? Connection { get; set; }
+  public ILambdaConnection? Connection { get; set; }
   public bool ImmediatelyDispatched { get; set; } = false;
 
   public bool LambdaIDNotFound { get; set; } = false;
@@ -18,7 +18,7 @@ public class DispatcherAddConnectionResult
 /// </summary>
 public interface IBackgroundDispatcher
 {
-  void WakeupBackgroundDispatcher(LambdaConnection? connection);
+  void WakeupBackgroundDispatcher(ILambdaConnection? connection);
 }
 
 public interface IDispatcher
@@ -57,7 +57,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   /// The background dispatcher will pick these up and either use them or add them to the LOQ using
   /// ReenqueueUnusedConnection() in that case.
   /// </summary>
-  private readonly BlockingCollection<LambdaConnection?> _newConnections = [];
+  private readonly BlockingCollection<ILambdaConnection?> _newConnections = [];
 
   private readonly IShutdownSignal _shutdownSignal;
 
@@ -294,7 +294,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   /// sees a completed request that exposes an existing unused / hidden connection
   /// </summary>
   /// <param name="lambdaConnection"></param>
-  public void WakeupBackgroundDispatcher(LambdaConnection? lambdaConnection)
+  public void WakeupBackgroundDispatcher(ILambdaConnection? lambdaConnection)
   {
     // Yes, it is a race condition, but it doesn't matter because the
     // background dispatcher will check it shortly after
@@ -389,7 +389,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   /// 
   /// Handles adjusting all counts
   /// </summary>
-  private bool TryGetPendingRequestAndDispatch(LambdaConnection connection)
+  private bool TryGetPendingRequestAndDispatch(ILambdaConnection connection)
   {
     var dispatchedRequest = false;
 
@@ -432,7 +432,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   /// Handles adjusting all counts
   /// </summary>
   /// <returns>Whether a request was dispatched</returns>
-  private bool TryBackgroundDispatchOne(PendingRequest pendingRequest, LambdaConnection lambdaConnection)
+  private bool TryBackgroundDispatchOne(PendingRequest pendingRequest, ILambdaConnection lambdaConnection)
   {
     var startedRequest = false;
 

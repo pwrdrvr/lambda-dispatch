@@ -78,7 +78,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.State).Returns(LambdaInstanceState.Open);
       instance.Setup(i => i.IsOpen).Returns(true);
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
-      var connectionObject = connection.Object;
+      var connectionObject = connection.Object as ILambdaConnection;
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       using var queue = new LeastOutstandingQueue(config.Object);
@@ -125,7 +125,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.IsOpen).Returns(true);
       instance.Setup(i => i.AvailableConnectionCount).Returns(1);
       instance.Setup(i => i.OutstandingRequestCount).Returns(0);
-      var connectionObject = connection.Object;
+      var connectionObject = connection.Object as ILambdaConnection;
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       // Add the instance
@@ -167,7 +167,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.IsOpen).Returns(true);
       instance.Setup(i => i.AvailableConnectionCount).Returns(0);
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
-      var connectionObject = connection.Object;
+      var connectionObject = connection.Object as ILambdaConnection;
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       // Add the instance
@@ -216,7 +216,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       instance.Setup(i => i.IsOpen).Returns(true);
       instance.SetupSequence(i => i.AvailableConnectionCount).Returns(1).Returns(1).Returns(0);
       instance.Setup(i => i.OutstandingRequestCount).Returns(1);
-      var connectionObject = connection.Object;
+      var connectionObject = connection.Object as ILambdaConnection;
       instance.Setup(i => i.TryGetConnection(out connectionObject, false)).Returns(true);
 
       // Add the instance
