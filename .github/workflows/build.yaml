@@ -21,25 +21,17 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-      - name: Install Coverlet and ReportGenerator
-        run: |
-          dotnet tool install --global dotnet-reportgenerator-globaltool
-
-      - name: Run DotNet Tests with coverage
-        run: |
-          dotnet test --collect:"XPlat Code Coverage"
-
-      - name: Generate Coverage Report
-        if: success() || failure()
-        run: |
-          reportgenerator "-reports:test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:test/coverage/html_report" -reporttypes:Html
-
-      - name: Publish Coverage Report
-        if: success() || failure()
-        uses: mikepenz/action-junit-report@v4
+      - name: unit tests for Contoso Service Layer
+        uses: zyborg/dotnet-tests-report@v1
         with:
+          project_path: test/PwrDrvr.LambdaDispatch.Router.Tests/
+          report_name: lambda_dispatch_router_tests
+          report_title: Lambda Dispatch Router Tests
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          report_paths: "test/coverage/html_report/index.html"
+          set_check_status_from_test_outcome: true
+          # gist_name: contoso_service_tests.md
+          # gist_badge_label: "Contoso Service: %Counters_passed%/%Counters_total%"
+          # gist_token: ${{ secrets.GIST_TOKEN }}
 
   rust-tests:
     runs-on: ubuntu-latest
