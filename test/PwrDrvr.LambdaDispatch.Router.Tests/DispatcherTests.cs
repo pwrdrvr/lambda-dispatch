@@ -7,7 +7,6 @@ using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
 
-
 [TestFixture]
 public class DispatcherTests
 {
@@ -203,4 +202,5 @@ public class DispatcherTests
 
     shutdownSignal.Shutdown.Cancel();
   }
+
 }
