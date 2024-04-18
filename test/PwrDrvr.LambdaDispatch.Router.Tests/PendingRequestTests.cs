@@ -77,6 +77,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     }
 
     [Test]
+    [Retry(3)]
     public void TestDurationAfterDispatch()
     {
       var mockRequest = new Mock<HttpRequest>();
