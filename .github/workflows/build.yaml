@@ -453,8 +453,8 @@ jobs:
             echo "prSuffixPackageVersion=-pr.${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=-pr-"${{ github.event.pull_request.number }} >> $GITHUB_ENV
           else
-            BRANCH_NAME=${GITHUB_REF#refs/heads/}
-            echo "imageTag=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+            TAG_OR_BRANCH=$(echo $GITHUB_REF | sed -e 's|refs/tags/v||' -e 's|refs/heads/||')
+            echo "imageTag=${TAG_OR_BRANCH}" >> $GITHUB_OUTPUT
             echo "prSuffix=" >> $GITHUB_OUTPUT
             echo "prSuffixPackageVersion=" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=" >> $GITHUB_ENV
