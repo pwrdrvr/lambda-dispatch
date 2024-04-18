@@ -483,3 +483,4 @@ jobs:
           file: ./DockerfileLambdaDemoApp
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event.pull_request.head.repo.fork == false }}
+          tags: ${{ steps.meta.outputs.tags }}
