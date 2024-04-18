@@ -32,11 +32,14 @@ public class ChunkedController : ControllerBase
 
   private string GetPoolId()
   {
-    var poolId = "default";
+    string poolId = "default";
     if (Request.Headers.TryGetValue("X-Pool-Id",
-        out Microsoft.Extensions.Primitives.StringValues poolIdMulti) && poolIdMulti.Count == 1)
+          out Microsoft.Extensions.Primitives.StringValues poolIdMulti)
+        && poolIdMulti.Count == 1
+        && poolIdMulti[0] != null
+        && !string.IsNullOrWhiteSpace(poolIdMulti[0]))
     {
-      poolId = !string.IsNullOrWhiteSpace(poolIdMulti[0]) ? poolIdMulti[0] : poolId;
+      poolId = poolIdMulti[0] ?? poolId;
     }
 
     return poolId;

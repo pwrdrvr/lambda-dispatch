@@ -6,8 +6,91 @@ using Microsoft.AspNetCore.Http;
 using PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Http.Features;
+using System.Security.Claims;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
+
+
+public class ThrowingHttpContext : HttpContext
+{
+  private readonly ThrowingHttpResponse _response;
+  private readonly DefaultHttpContext _defaultHttpContext;
+
+  public ThrowingHttpContext()
+  {
+    _defaultHttpContext = new DefaultHttpContext();
+    _response = new ThrowingHttpResponse(this);
+  }
+
+  public override HttpResponse Response => _response;
+
+  public override IFeatureCollection Features => throw new NotImplementedException();
+
+  public override HttpRequest Request => _defaultHttpContext.Request;
+
+  public override ConnectionInfo Connection => throw new NotImplementedException();
+
+  public override WebSocketManager WebSockets => throw new NotImplementedException();
+
+  public override ClaimsPrincipal User { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override IDictionary<object, object?> Items { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override IServiceProvider RequestServices { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override CancellationToken RequestAborted { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override string TraceIdentifier { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override ISession Session { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+
+  public override void Abort()
+  {
+    throw new NotImplementedException();
+  }
+}
+
+public class ThrowingHttpResponse : HttpResponse
+{
+  private readonly HttpContext _context;
+
+  public ThrowingHttpResponse(HttpContext context) : base()
+  {
+    _context = context;
+  }
+
+  public override HttpContext HttpContext => throw new NotImplementedException();
+
+  public override int StatusCode { get => throw new NotImplementedException(); set { /* do nothing */ } }
+
+  public override IHeaderDictionary Headers => throw new NotImplementedException();
+
+  public override Stream Body { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override long? ContentLength { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+  public override string? ContentType { get => throw new NotImplementedException(); set { /* do nothing */ } }
+
+  public override IResponseCookies Cookies => throw new NotImplementedException();
+
+  public override bool HasStarted => throw new NotImplementedException();
+
+  public override void OnCompleted(Func<object, Task> callback, object state)
+  {
+    // Do Nothing
+  }
+
+  public override void OnStarting(Func<object, Task> callback, object state)
+  {
+    // Do Nothing
+  }
+
+  public override void Redirect([StringSyntax("Uri")] string location, bool permanent)
+  {
+    throw new NotImplementedException();
+  }
+
+  public override Task StartAsync(CancellationToken cancellationToken = default)
+  {
+    // You can make this method throw an exception or do anything else you need for your tests
+    throw new Exception("StartAsync exception");
+  }
+}
 
 [TestFixture]
 public class ChunkedControllerTests
@@ -186,7 +269,7 @@ public class ChunkedControllerTests
     await controller.Post(lambdaId, channelId);
 
     // Assert
-    Assert.AreEqual(200, controller.Response.StatusCode);
+    Assert.That(controller.Response.StatusCode, Is.EqualTo(200));
   }
 
   [Test]
@@ -224,7 +307,7 @@ public class ChunkedControllerTests
     await controller.Post(poolId, lambdaId, channelId);
 
     // Assert
-    Assert.AreEqual(200, controller.Response.StatusCode);
+    Assert.That(controller.Response.StatusCode, Is.EqualTo(200));
   }
 
   [Test]
@@ -262,7 +345,43 @@ public class ChunkedControllerTests
     await controller.Post(poolId, lambdaId, channelId);
 
     // Assert
-    Assert.AreEqual(409, controller.Response.StatusCode);
+    Assert.That(controller.Response.StatusCode, Is.EqualTo(409));
+  }
+
+  [Test]
+  public async Task Post_LambdaIdNotFoundThrows_DoesNotThrow()
+  {
+    // Arrange
+    var poolId = "testPool";
+    var lambdaId = "testLambda";
+    var channelId = "testChannel";
+    var mockPool = new Mock<IPool>();
+    var mockConnection = new Mock<ILambdaConnection>();
+    var tcs = new TaskCompletionSource();
+    tcs.SetResult();
+    mockConnection.Setup(x => x.TCS).Returns(tcs);
+    var dispatcherResult = new DispatcherAddConnectionResult
+    {
+      Connection = null,
+      LambdaIDNotFound = true
+    };
+    var mockDispatcher = new Mock<IDispatcher>();
+    mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
+                  .Returns(Task.FromResult(dispatcherResult));
+    IPool outPool = mockPool.Object;
+    mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
+    mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
+    var httpContext = new ThrowingHttpContext();
+    httpContext.Request.Headers["X-Lambda-Id"] = lambdaId;
+    httpContext.Request.Headers["X-Pool-Id"] = poolId;
+    controller.ControllerContext = new ControllerContext
+    {
+      HttpContext = httpContext
+    };
+
+    // Act
+    // Asset no exception thrown
+    Assert.DoesNotThrowAsync(async () => await controller.Post(poolId, lambdaId, channelId));
   }
 
   [Test]
@@ -287,7 +406,7 @@ public class ChunkedControllerTests
     await controller.Post(poolId, lambdaId, channelId);
 
     // Assert
-    Assert.AreEqual(409, controller.Response.StatusCode);
+    Assert.That(controller.Response.StatusCode, Is.EqualTo(409));
   }
 
   [Test]
@@ -312,7 +431,7 @@ public class ChunkedControllerTests
     await controller.Post(lambdaId, channelId);
 
     // Assert
-    Assert.AreEqual(409, controller.Response.StatusCode);
+    Assert.That(controller.Response.StatusCode, Is.EqualTo(409));
   }
 
   [Test]
@@ -335,6 +454,6 @@ public class ChunkedControllerTests
     await controller.Post(poolId, lambdaId, channelId);
 
     // Assert
-    Assert.AreEqual(400, controller.Response.StatusCode);
+    Assert.That(controller.Response.StatusCode, Is.EqualTo(400));
   }
 }
