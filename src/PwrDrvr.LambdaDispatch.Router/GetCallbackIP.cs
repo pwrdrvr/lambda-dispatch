@@ -7,7 +7,7 @@ public interface IGetCallbackIP
 
 public class GetCallbackIP : IGetCallbackIP
 {
-  private readonly string callbackUrl = null;
+  private readonly string callbackUrl;
 
   public string CallbackUrl { get => callbackUrl; }
 

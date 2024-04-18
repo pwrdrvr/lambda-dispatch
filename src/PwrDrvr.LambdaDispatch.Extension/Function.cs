@@ -268,7 +268,7 @@ public class Function
 
             CancellationTokenSource cts = new CancellationTokenSource();
 
-            List<Task> tasks = new List<Task>();
+            List<Task> tasks = [];
             for (int i = 0; i < NumberOfChannels; i++)
             {
                 // Required to get a unique variable that identifies the task
@@ -352,7 +352,7 @@ public class Function
                                         Port = 3001,
                                         // The requestUri is ONLY a path/query string
                                         // TODO: Not sure Path will accept a query string here
-                                        Path = receivedRequest.RequestUri.OriginalString,
+                                        Path = receivedRequest.RequestUri?.OriginalString,
                                         // Query = receivedRequest.RequestUri.Query,
                                         Scheme = "http",
                                     }.Uri;

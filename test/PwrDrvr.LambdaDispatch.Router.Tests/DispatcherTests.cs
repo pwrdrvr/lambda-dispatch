@@ -182,7 +182,7 @@ public class DispatcherTests
       Assert.That(result.LambdaIDNotFound, Is.False, "LambdaIDNotFound");
       Assert.That(result.ImmediatelyDispatched, Is.False, "ImmediatelyDispatched");
       Assert.That(result.Connection, Is.Not.Null, "Connection");
-      Assert.That(result.Connection.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
+      Assert.That(result.Connection?.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
     });
 
     // Act
@@ -200,7 +200,7 @@ public class DispatcherTests
       Assert.That(result.LambdaIDNotFound, Is.False, "LambdaIDNotFound");
       Assert.That(result.ImmediatelyDispatched, Is.False, "ImmediatelyDispatched");
       Assert.That(result.Connection, Is.Not.Null, "Connection");
-      Assert.That(result.Connection.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
+      Assert.That(result.Connection?.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
     });
 
     shutdownSignal.Shutdown.Cancel();

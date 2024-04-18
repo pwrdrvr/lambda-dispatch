@@ -12,7 +12,7 @@ public class MetricsLogger : IMetricsLogger, IDisposable
 {
   private class Metric
   {
-    public string Name { get; set; }
+    public string Name { get; set; } = string.Empty;
     public double Value { get; set; }
     public Unit Unit { get; set; }
   }
@@ -20,7 +20,7 @@ public class MetricsLogger : IMetricsLogger, IDisposable
   private class MetricData
   {
     public Unit Unit { get; set; }
-    public List<double> Values { get; set; } = new List<double>();
+    public List<double> Values { get; set; } = [];
   }
 
   private readonly Channel<Metric> _channel;

@@ -18,7 +18,7 @@ public class LoggerMetricsReporter : IReportMetrics
 {
   private readonly ILogger _logger = LoggerInstance.CreateLogger<LoggerMetricsReporter>();
 
-  public IFilterMetrics Filter { get; set; }
+  public IFilterMetrics? Filter { get; set; }
   public TimeSpan FlushInterval { get; set; }
   public IMetricsOutputFormatter Formatter { get; set; }
 

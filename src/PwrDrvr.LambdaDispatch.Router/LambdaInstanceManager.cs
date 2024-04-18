@@ -609,6 +609,11 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
     }
 
+    if (_dispatcher == null)
+    {
+      throw new NullReferenceException("Dispatcher is null");
+    }
+
     // Start a new LambdaInstance and add it to the list
     var instance = new LambdaInstance(maxConcurrentCount: _maxConcurrentCount,
       functionName: _functionName,
