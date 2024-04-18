@@ -28,17 +28,17 @@ jobs:
 
       - name: Run DotNet Tests with coverage
         run: |
-          coverlet ./test/Project.Tests --target "dotnet" --targetargs "test ./test/Project.Tests --no-restore" --format opencover
+          dotnet test --collect:"XPlat Code Coverage"
 
       - name: Generate Coverage Report
         run: |
-          reportgenerator "-reports:./coverage.opencover.xml" "-targetdir:./coverage" -reporttypes:Html
+          reportgenerator "-reports:test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:test/coverage/html_report" -reporttypes:Html
 
       - name: Publish Coverage Report
         uses: mikepenz/action-junit-report@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          report_paths: "coverage/index.htm"
+          report_paths: "test/coverage/html_report/index.htm"
 
   rust-tests:
     runs-on: ubuntu-latest
