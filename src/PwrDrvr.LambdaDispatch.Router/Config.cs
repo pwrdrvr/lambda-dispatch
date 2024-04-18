@@ -159,6 +159,10 @@ public class Config : IConfig
     {
       throw new ApplicationException($"Invalid IncomingRequestHTTPSPort in configuration: {IncomingRequestHTTPSPort}");
     }
+    if (ControlChannelInsecureHTTP2Port < 1 || ControlChannelInsecureHTTP2Port > 65535)
+    {
+      throw new ApplicationException($"Invalid ControlChannelInsecureHTTP2Port in configuration: {ControlChannelHTTP2Port}");
+    }
     if (ControlChannelHTTP2Port < 1 || ControlChannelHTTP2Port > 65535)
     {
       throw new ApplicationException($"Invalid ControlChannelHTTP2Port in configuration: {ControlChannelHTTP2Port}");
@@ -206,6 +210,11 @@ public class Config : IConfig
     else if (InstanceCountMultiplier > 10)
     {
       throw new ApplicationException($"InstanceCountMultiplier must be less than or equal to 10");
+    }
+
+    if (!string.IsNullOrWhiteSpace(EnvVarForCallbackIp) && !Regex.IsMatch(EnvVarForCallbackIp, @"^[a-zA-Z_][a-zA-Z0-9_]*$"))
+    {
+      throw new ApplicationException($"Invalid EnvVarForCallbackIp in configuration: {EnvVarForCallbackIp}");
     }
   }
 }
