@@ -3,6 +3,9 @@ using Microsoft.Extensions.Logging;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 using Microsoft.AspNetCore.Http;
 using Amazon.Lambda;
+using App.Metrics.Counter;
+using App.Metrics.Gauge;
+using App.Metrics.Meter;
 using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
@@ -203,4 +206,50 @@ public class DispatcherTests
     shutdownSignal.Shutdown.Cancel();
   }
 
+  [Test]
+  public async Task AddRequest_ValidRequest_IncrementsMetricsAndDispatches()
+  {
+    // Arrange
+    var shutdownSignal = new Mock<IShutdownSignal>();
+    var lambdaClient = new Mock<IAmazonLambda>();
+    var mockChannelContext = new Mock<HttpContext>();
+    var mockChannelRequest = new Mock<HttpRequest>();
+    mockChannelRequest.Setup(i => i.HttpContext).Returns(mockChannelContext.Object);
+    var mockChannelResponse = new Mock<HttpResponse>();
+    var maxConcurrentCount = 1;
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
+    var mockConfig = new Mock<IConfig>();
+    mockConfig.SetupGet(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+    var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var mockLambdaClientConfig = new Mock<ILambdaClientConfig>();
+    var mockLambdaInstanceManager = new Mock<ILambdaInstanceManager>();
+    var dispatcher = new Dispatcher(
+          _mockLogger.Object,
+          _mockMetricsLogger.Object,
+          mockLambdaInstanceManager.Object,
+          shutdownSignal.Object,
+          metricsRegistry: _metricsRegistry.Object);
+    var mockInstance = new Mock<ILambdaInstance>();
+    var mockConnection = new Mock<LambdaConnection>(mockChannelRequest.Object, mockChannelResponse.Object, mockInstance.Object, "channel-1", false);
+
+    ILambdaConnection? mockConnectionOut = mockConnection.Object;
+    mockLambdaInstanceManager.Setup(l => l.TryGetConnection(out mockConnectionOut, false)).Returns(true);
+
+    var mockIncomingContenxt = new Mock<HttpContext>();
+    var mockIncomingRequest = new Mock<HttpRequest>();
+    mockChannelRequest.Setup(i => i.HttpContext).Returns(mockIncomingContenxt.Object);
+    var mockIncomingResponse = new Mock<HttpResponse>();
+
+    // Act
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+
+    // Assert
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Counter.Increment(It.IsAny<CounterOptions>()), Times.Exactly(3));
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Meter.Mark(It.IsAny<MeterOptions>(), 1), Times.Once);
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Gauge.SetValue(It.IsAny<GaugeOptions>(), It.IsAny<double>()), Times.Exactly(2));
+    mockLambdaInstanceManager.Verify(l => l.TryGetConnection(out mockConnectionOut, false), Times.Once);
+  }
 }
