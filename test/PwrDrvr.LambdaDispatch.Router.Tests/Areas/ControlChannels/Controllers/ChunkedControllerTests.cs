@@ -1,5 +1,4 @@
 using Moq;
-using NUnit.Framework;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
@@ -10,8 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Http.Features;
 using System.Security.Claims;
 
-namespace PwrDrvr.LambdaDispatch.Router.Tests;
-
+namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Tests;
 
 public class ThrowingHttpContext : HttpContext
 {

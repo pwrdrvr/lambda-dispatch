@@ -10,7 +10,7 @@ namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 [Route("{*url}")]
 public class DefaultController : ControllerBase
 {
-  public async void HandleRequest()
+  public async Task HandleRequest()
   {
     Console.WriteLine("Router.ControlChannels.Controllers.DefaultController.HandleRequest - Start");
     Response.StatusCode = 404;
