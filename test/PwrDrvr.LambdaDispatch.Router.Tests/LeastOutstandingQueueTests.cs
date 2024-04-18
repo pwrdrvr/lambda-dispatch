@@ -6,11 +6,13 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
   public class LeastOutstandingQueueTests
   {
     private Mock<IMetricsRegistry> _metricsRegistry;
+    private Mock<ILambdaClientConfig> _mockLambdaClientConfig;
 
     [SetUp]
     public void Setup()
     {
       _metricsRegistry = new Mock<IMetricsRegistry>();
+      _mockLambdaClientConfig = new Mock<ILambdaClientConfig>();
     }
 
     [Test]
@@ -52,7 +54,8 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
             lambdaClient: lambdaClient.Object,
             dispatcher: dispatcher.Object,
             getCallbackIP: getCallbackIP.Object,
-            metricsRegistry: _metricsRegistry.Object
+            metricsRegistry: _metricsRegistry.Object,
+            lambdaClientConfig: _mockLambdaClientConfig.Object
             );
       queue.AddInstance(instance);
 

@@ -129,12 +129,14 @@ public class DispatcherTests
     var mockPoolOptions = new Mock<IPoolOptions>();
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var mockLambdaClientConfig = new Mock<ILambdaClientConfig>();
     var manager = new LambdaInstanceManager(mockQueue.Object,
       mockConfig.Object,
       mockMetricsLogger.Object,
       mockPoolOptions.Object,
       getCallbackIP.Object,
-      _metricsRegistry.Object);
+      _metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
     var dispatcher = new Dispatcher(_mockLogger.Object,
           _mockMetricsLogger.Object,
           manager,
@@ -146,7 +148,8 @@ public class DispatcherTests
       lambdaClient: lambdaClient.Object,
       dispatcher: dispatcher,
       getCallbackIP: getCallbackIP.Object,
-      metricsRegistry: _metricsRegistry.Object
+      metricsRegistry: _metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object
       );
 
     Assert.Multiple(() =>

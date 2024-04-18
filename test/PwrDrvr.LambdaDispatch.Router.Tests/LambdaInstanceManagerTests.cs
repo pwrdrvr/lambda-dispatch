@@ -11,6 +11,7 @@ using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 public class LambdaInstanceManagerTests
 {
   private Mock<IMetricsRegistry> metricsRegistry = new Mock<IMetricsRegistry>();
+  private Mock<ILambdaClientConfig> mockLambdaClientConfig = new Mock<ILambdaClientConfig>();
 
   [Test]
   public async Task AddConnectionForLambda_WhenLambdaDoesNotExist()
@@ -38,7 +39,8 @@ public class LambdaInstanceManagerTests
       mockMetricsLogger.Object,
       mockPoolOptions.Object,
       getCallbackIP.Object,
-      metricsRegistry.Object);
+      metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
 
     var expectedConnectionResult = new AddConnectionResult()
     {
@@ -85,7 +87,8 @@ public class LambdaInstanceManagerTests
       mockMetricsLogger.Object,
       mockPoolOptions.Object,
       getCallbackIP.Object,
-      metricsRegistry.Object);
+      metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -139,7 +142,8 @@ public class LambdaInstanceManagerTests
       mockMetricsLogger.Object,
       mockPoolOptions.Object,
       getCallbackIP.Object,
-      metricsRegistry.Object);
+      metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -192,7 +196,8 @@ public class LambdaInstanceManagerTests
       mockMetricsLogger.Object,
       mockPoolOptions.Object,
       getCallbackIP.Object,
-      metricsRegistry.Object);
+      metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -246,7 +251,8 @@ public class LambdaInstanceManagerTests
       mockMetricsLogger.Object,
       mockPoolOptions.Object,
       getCallbackIP: getCallbackIP.Object,
-      metricsRegistry: metricsRegistry.Object);
+      metricsRegistry: metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);

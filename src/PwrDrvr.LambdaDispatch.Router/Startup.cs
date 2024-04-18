@@ -39,6 +39,7 @@ public class Startup
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue2>();
         var metricsRegistry = new MetricsRegistry();
         services.AddSingleton<IMetricsRegistry>(metricsRegistry);
+        services.AddSingleton<ILambdaClientConfig, LambdaClientConfig>();
         services.AddScoped<IPoolOptions, PoolOptions>();
         services.AddScoped<ILambdaInstanceQueue, LeastOutstandingQueue>();
         services.AddScoped<ILambdaInstanceManager, LambdaInstanceManager>();

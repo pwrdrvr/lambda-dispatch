@@ -341,6 +341,7 @@ public class LambdaInstance : ILambdaInstance
     IGetCallbackIP getCallbackIP,
     IBackgroundDispatcher dispatcher,
     IMetricsRegistry metricsRegistry,
+    ILambdaClientConfig lambdaClientConfig,
     IAmazonLambda? lambdaClient = null,
     int channelCount = -1)
   {
@@ -361,7 +362,7 @@ public class LambdaInstance : ILambdaInstance
     }
     this.maxConcurrentCount = maxConcurrentCount;
 
-    LambdaClient = lambdaClient ?? LambdaClientConfig.LambdaClient;
+    LambdaClient = lambdaClient ?? lambdaClientConfig.LambdaClient;
   }
 
   /// <summary>
