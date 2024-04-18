@@ -8,7 +8,7 @@ public interface IMetricsLogger
   void PutMetric(string name, double value, Unit unit);
 }
 
-public class MetricsLogger : IMetricsLogger
+public class MetricsLogger : IMetricsLogger, IDisposable
 {
   private class Metric
   {
@@ -29,6 +29,7 @@ public class MetricsLogger : IMetricsLogger
   private readonly Dictionary<string, string> _dimensions;
   private readonly object _flushLock = new();
   private DateTime _currentMinute;
+  private CancellationTokenSource _cancellationTokenSource;
 
   public MetricsLogger(string metricsNamespace, Dictionary<string, string>? dimensions = null)
   {
@@ -46,14 +47,27 @@ public class MetricsLogger : IMetricsLogger
     var now = DateTime.UtcNow;
     _currentMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
 
+    _cancellationTokenSource = new CancellationTokenSource();
     StartFlushTask();
 
-    Task.Run(ReadFromChannel);
+    Task.Run(ReadFromChannel, cancellationToken: _cancellationTokenSource.Token);
   }
 
   public void PutMetric(string name, double value, Unit unit)
   {
+    if (_cancellationTokenSource.Token.IsCancellationRequested)
+    {
+      throw new ObjectDisposedException(nameof(MetricsLogger));
+    }
+
     _channel.Writer.TryWrite(new Metric { Name = name, Value = value, Unit = unit });
+  }
+
+  public void Dispose()
+  {
+    _cancellationTokenSource.Cancel();
+    _cancellationTokenSource.Dispose();
+    GC.SuppressFinalize(this);
   }
 
   private void UpdateCurrentMinute()
@@ -67,13 +81,13 @@ public class MetricsLogger : IMetricsLogger
   {
     Task.Run(async () =>
     {
-      while (true)
+      while (!_cancellationTokenSource.Token.IsCancellationRequested)
       {
         var now = DateTime.UtcNow;
         var nextMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0).AddMinutes(1);
         var delay = nextMinute - now;
 
-        await Task.Delay(delay);
+        await Task.Delay(delay, _cancellationTokenSource.Token);
 
         lock (_flushLock)
         {
@@ -81,12 +95,12 @@ public class MetricsLogger : IMetricsLogger
           UpdateCurrentMinute();
         }
       }
-    });
+    }, cancellationToken: _cancellationTokenSource.Token);
   }
 
   private async Task ReadFromChannel()
   {
-    await foreach (var metric in _channel.Reader.ReadAllAsync())
+    await foreach (var metric in _channel.Reader.ReadAllAsync(_cancellationTokenSource.Token))
     {
       if (!_metrics.TryGetValue(metric.Name, out var metricData))
       {
