@@ -23,7 +23,6 @@ jobs:
 
       - name: Install Coverlet and ReportGenerator
         run: |
-          dotnet tool install --global coverlet.console
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Run DotNet Tests with coverage
@@ -38,7 +37,7 @@ jobs:
         uses: mikepenz/action-junit-report@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          report_paths: "test/coverage/html_report/index.htm"
+          report_paths: "test/coverage/html_report/index.html"
 
   rust-tests:
     runs-on: ubuntu-latest
