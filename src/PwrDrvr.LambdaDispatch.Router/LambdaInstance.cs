@@ -322,6 +322,8 @@ public class LambdaInstance : ILambdaInstance
 
   private readonly IBackgroundDispatcher dispatcher;
 
+  private readonly IMetricsRegistry metricsRegistry;
+
   /// <summary>
   /// 
   /// </summary>
@@ -332,7 +334,15 @@ public class LambdaInstance : ILambdaInstance
   /// <exception cref="ArgumentNullException"></exception>
   /// <exception cref="ArgumentException"></exception>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  public LambdaInstance(int maxConcurrentCount, string functionName, string poolId, IGetCallbackIP getCallbackIP, IBackgroundDispatcher dispatcher, IAmazonLambda? lambdaClient = null, int channelCount = -1)
+  public LambdaInstance(
+    int maxConcurrentCount,
+    string functionName,
+    string poolId,
+    IGetCallbackIP getCallbackIP,
+    IBackgroundDispatcher dispatcher,
+    IMetricsRegistry metricsRegistry,
+    IAmazonLambda? lambdaClient = null,
+    int channelCount = -1)
   {
     this.getCallbackIP = getCallbackIP;
     this.dispatcher = dispatcher;
@@ -343,6 +353,7 @@ public class LambdaInstance : ILambdaInstance
     }
     this.functionName = functionName;
     this.poolId = poolId;
+    this.metricsRegistry = metricsRegistry;
 
     if (maxConcurrentCount < 1)
     {
@@ -394,14 +405,14 @@ public class LambdaInstance : ILambdaInstance
           firstConnectionForInstance = true;
           // Signal that we are open
           WasOpened = true;
-          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
+          metricsRegistry.Metrics.Measure.Histogram.Update(metricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
           OnOpen?.Invoke(this);
         }
       }
     }
 
     Interlocked.Increment(ref openConnectionCount);
-    MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
+    metricsRegistry.Metrics.Measure.Histogram.Update(metricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
 
     var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
 
@@ -849,7 +860,7 @@ public class LambdaInstance : ILambdaInstance
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
-    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInvokeCount);
+    metricsRegistry.Metrics.Measure.Counter.Increment(metricsRegistry.LambdaInvokeCount);
 
     // Throw if the instance is already open or closed
     // There should only be a single call to this ever
@@ -893,7 +904,7 @@ public class LambdaInstance : ILambdaInstance
     // Handle completion of the task
     _ = invokeTask.ContinueWith(t =>
      {
-       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInvokeCount);
+       metricsRegistry.Metrics.Measure.Counter.Decrement(metricsRegistry.LambdaInvokeCount);
 
        // NOTE: The Lambda will return via the callback to indicate that it's shutting down
        // but it will linger until we close the responses to it's requests

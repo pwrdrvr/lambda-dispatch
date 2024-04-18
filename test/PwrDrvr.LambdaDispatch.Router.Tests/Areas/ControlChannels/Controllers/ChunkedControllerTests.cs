@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
+using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
 
@@ -14,6 +15,7 @@ public class ChunkedControllerTests
   private Mock<IPoolManager> mockPoolManager;
   private Mock<IMetricsLogger> mockMetricsLogger;
   private Mock<ILogger<ChunkedController>> mockLogger;
+  private Mock<IMetricsRegistry> mockMetricsRegistry;
   private ChunkedController controller;
 
   [SetUp]
@@ -22,7 +24,8 @@ public class ChunkedControllerTests
     mockPoolManager = new Mock<IPoolManager>();
     mockMetricsLogger = new Mock<IMetricsLogger>();
     mockLogger = new Mock<ILogger<ChunkedController>>();
-    controller = new ChunkedController(mockPoolManager.Object, mockMetricsLogger.Object, mockLogger.Object);
+    mockMetricsRegistry = MetricsRegistryMockFactory.Create();
+    controller = new ChunkedController(mockPoolManager.Object, mockMetricsLogger.Object, mockLogger.Object, mockMetricsRegistry.Object);
   }
 
   [Test]

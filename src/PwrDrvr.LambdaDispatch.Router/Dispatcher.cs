@@ -64,7 +64,13 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   // We need to keep a count of the running requests so we can set the desired count
   private volatile int _runningRequestCount = 0;
 
-  public Dispatcher(ILogger<Dispatcher> logger, IMetricsLogger metricsLogger, ILambdaInstanceManager lambdaInstanceManager, IShutdownSignal shutdownSignal)
+  private readonly IMetricsRegistry _metricsRegistry;
+
+  public Dispatcher(ILogger<Dispatcher> logger,
+    IMetricsLogger metricsLogger,
+    ILambdaInstanceManager lambdaInstanceManager,
+    IShutdownSignal shutdownSignal,
+    IMetricsRegistry metricsRegistry)
   {
     _logger = logger;
     _metricsLogger = metricsLogger;
@@ -72,6 +78,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     _lambdaInstanceManager = lambdaInstanceManager;
     _shutdownSignal = shutdownSignal;
     _lambdaInstanceManager.AddBackgroundDispatcherReference(this);
+    _metricsRegistry = metricsRegistry;
 
     // Start the background task to process pending requests
     // This needs it's own thread because BlockingCollection will block the thread
@@ -101,10 +108,10 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   {
     _logger.LogDebug("Adding request to the Dispatcher");
 
-    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RequestCount);
-    MetricsRegistry.Metrics.Measure.Meter.Mark(MetricsRegistry.IncomingRequestsMeter, 1);
+    _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.RequestCount);
+    _metricsRegistry.Metrics.Measure.Meter.Mark(_metricsRegistry.IncomingRequestsMeter, 1);
     _incomingRequestsWeightedAverage.Add();
-    MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestsWeightedAverage.EWMA);
+    _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestRPS, _incomingRequestsWeightedAverage.EWMA);
 
     // If idle lambdas, try to get an idle lambda and dispatch immediately
     // If there is a queue, they are going to see the new connections before us anyway
@@ -114,14 +121,14 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       var sw = Stopwatch.StartNew();
       _logger.LogDebug("Dispatching incoming request immediately to LambdaId: {Id}", lambdaConnection.Instance.Id);
 
-      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.ImmediateDispatchCount);
+      _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.ImmediateDispatchCount);
       // Recording 0 dispatch delays skews the stats about
       // requests that actually encounted a delay
-      // MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, 0);
+      // _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.DispatchDelay, 0);
       // _metricsLogger.PutMetric("DispatchDelay", 0, Unit.Milliseconds);
 
       var runningRequestCount = Interlocked.Increment(ref _runningRequestCount);
-      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
+      _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.RunningRequests);
 
       // Tell the scaler we're running more requests now
       _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
@@ -158,12 +165,12 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       finally
       {
         Interlocked.Decrement(ref _runningRequestCount);
-        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
+        _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.RunningRequests);
 
         _incomingRequestDurationAverage.Add((long)sw.Elapsed.TotalMilliseconds * 1000);
-        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
-        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, sw.ElapsedMilliseconds);
-        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDurationAfterDispatch, sw.ElapsedMilliseconds);
+        _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+        _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDuration, sw.ElapsedMilliseconds);
+        _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDurationAfterDispatch, sw.ElapsedMilliseconds);
         _metricsLogger.PutMetric("IncomingRequestDuration", Math.Round(sw.Elapsed.TotalMilliseconds, 1), Unit.Milliseconds);
         _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(sw.Elapsed.TotalMilliseconds, 1), Unit.Milliseconds);
 
@@ -180,7 +187,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
     _pendingRequests.Add(pendingRequest);
     var pendingRequestCount = Interlocked.Increment(ref _pendingRequestCount);
-    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.QueuedRequests);
+    _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.QueuedRequests);
 
     // Update number of instances that we want
     _lambdaInstanceManager.UpdateDesiredCapacity(pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
@@ -272,7 +279,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     {
       if (TryGetPendingRequestAndDispatch(addConnectionResult.Connection))
       {
-        MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchForegroundCount);
+        _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.PendingDispatchForegroundCount);
         return new DispatcherAddConnectionResult { ImmediatelyDispatched = true, Connection = addConnectionResult.Connection };
       }
 
@@ -328,7 +335,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
             connection.Instance.Id, connection.ChannelId);
           if (TryGetPendingRequestAndDispatch(connection))
           {
-            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+            _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.PendingDispatchBackgroundCount);
             swLastCapacityMessage.Restart();
             anyDispatched = true;
           }
@@ -343,7 +350,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
                   && TryGetPendingRequestAndDispatch(connection))
           {
             anyDispatched = true;
-            MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchBackgroundCount);
+            _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.PendingDispatchBackgroundCount);
 
             // Make sure we do not starve the LOQ for foreground dispatches
             if (_newConnections.TryTake(out connection) && connection != null)
@@ -371,8 +378,8 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         }
         else if (swLastCapacityMessage.Elapsed > capacityMessageInterval)
         {
-          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
-          MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
+          _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+          _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestRPS, _incomingRequestDurationAverage.EWMA);
           _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
           swLastCapacityMessage.Restart();
         }
@@ -401,7 +408,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       {
         // The pending request at front of queue was canceled, we're removing it
         Interlocked.Decrement(ref _pendingRequestCount);
-        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
+        _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.QueuedRequests);
         // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
         // Try to find another request
@@ -441,7 +448,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       startedRequest = true;
       pendingRequest.RecordDispatchTime();
       _logger.LogDebug("Dispatching pending request");
-      MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.DispatchDelay, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
+      _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.DispatchDelay, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
       _metricsLogger.PutMetric("DispatchDelay", Math.Round(pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
       if (pendingRequest.DispatchDelay > TimeSpan.FromSeconds(1))
       {
@@ -452,13 +459,13 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       // This will add the decrement of outstanding connections when complete
       lambdaConnection.Instance.TryGetConnectionWillUse(lambdaConnection);
 
-      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.PendingDispatchCount);
+      _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.PendingDispatchCount);
 
       var pendingRequestCount = Interlocked.Decrement(ref _pendingRequestCount);
-      MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.QueuedRequests);
+      _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.QueuedRequests);
 
       var runningRequestCount = Interlocked.Increment(ref _runningRequestCount);
-      MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.RunningRequests);
+      _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.RunningRequests);
 
       // Update number of instances that we want
       _lambdaInstanceManager.UpdateDesiredCapacity(pendingRequestCount, runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
@@ -467,16 +474,16 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       _ = lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ContinueWith(async Task (task) =>
       {
         Interlocked.Decrement(ref _runningRequestCount);
-        MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.RunningRequests);
+        _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.RunningRequests);
 
         // Signal the pending request that it's been completed
         pendingRequest.ResponseFinishedTCS.SetResult();
 
         // Record the duration
         _incomingRequestDurationAverage.Add((long)pendingRequest.Duration.TotalMilliseconds * 1000);
-        MetricsRegistry.Metrics.Measure.Gauge.SetValue(MetricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
-        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDuration, (long)pendingRequest.Duration.TotalMilliseconds);
-        MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.IncomingRequestDurationAfterDispatch, (long)(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds));
+        _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+        _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDuration, (long)pendingRequest.Duration.TotalMilliseconds);
+        _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDurationAfterDispatch, (long)(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds));
         _metricsLogger.PutMetric("IncomingRequestDuration", Math.Round(pendingRequest.Duration.TotalMilliseconds, 1), Unit.Milliseconds);
         _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
 

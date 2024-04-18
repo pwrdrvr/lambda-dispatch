@@ -10,6 +10,8 @@ using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 [TestFixture]
 public class LambdaInstanceManagerTests
 {
+  private Mock<IMetricsRegistry> metricsRegistry = new Mock<IMetricsRegistry>();
+
   [Test]
   public async Task AddConnectionForLambda_WhenLambdaDoesNotExist()
   {
@@ -31,7 +33,12 @@ public class LambdaInstanceManagerTests
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object,
+      mockConfig.Object,
+      mockMetricsLogger.Object,
+      mockPoolOptions.Object,
+      getCallbackIP.Object,
+      metricsRegistry.Object);
 
     var expectedConnectionResult = new AddConnectionResult()
     {
@@ -73,7 +80,12 @@ public class LambdaInstanceManagerTests
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object,
+      mockConfig.Object,
+      mockMetricsLogger.Object,
+      mockPoolOptions.Object,
+      getCallbackIP.Object,
+      metricsRegistry.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -122,7 +134,12 @@ public class LambdaInstanceManagerTests
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
 
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object,
+      mockConfig.Object,
+      mockMetricsLogger.Object,
+      mockPoolOptions.Object,
+      getCallbackIP.Object,
+      metricsRegistry.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -170,7 +187,12 @@ public class LambdaInstanceManagerTests
     var mockPoolOptions = new Mock<IPoolOptions>();
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
+    var manager = new LambdaInstanceManager(mockQueue.Object,
+      mockConfig.Object,
+      mockMetricsLogger.Object,
+      mockPoolOptions.Object,
+      getCallbackIP.Object,
+      metricsRegistry.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);
@@ -218,7 +240,13 @@ public class LambdaInstanceManagerTests
     var mockPoolOptions = new Mock<IPoolOptions>();
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP: getCallbackIP.Object);
+    var manager = new LambdaInstanceManager(
+      mockQueue.Object,
+      mockConfig.Object,
+      mockMetricsLogger.Object,
+      mockPoolOptions.Object,
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object);
     manager.TryAddInstance(mockInstance.Object);
     // Raise the OnOpen event to get the manager to think it has an instance
     mockInstance.Raise(m => m.OnOpen += null, mockInstance.Object);

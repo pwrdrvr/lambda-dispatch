@@ -17,12 +17,17 @@ public class ChunkedController : ControllerBase
   private readonly ILogger<ChunkedController> logger;
   private readonly IMetricsLogger metricsLogger;
   private readonly IPoolManager poolManager;
+  private readonly IMetricsRegistry metricsRegistry;
 
-  public ChunkedController(IPoolManager poolManager, IMetricsLogger metricsLogger, ILogger<ChunkedController> logger)
+  public ChunkedController(IPoolManager poolManager,
+    IMetricsLogger metricsLogger,
+    ILogger<ChunkedController> logger,
+    IMetricsRegistry metricsRegistry)
   {
     this.poolManager = poolManager;
     this.logger = logger;
     this.metricsLogger = metricsLogger;
+    this.metricsRegistry = metricsRegistry;
   }
 
   private string GetPoolId()
@@ -104,7 +109,7 @@ public class ChunkedController : ControllerBase
   {
     logger.LogDebug("Router.ChunkedController.Post - Start for LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
-    using (MetricsRegistry.Metrics.Measure.Timer.Time(MetricsRegistry.LambdaRequestTimer))
+    using (metricsRegistry.Metrics.Measure.Timer.Time(metricsRegistry.LambdaRequestTimer))
     {
       try
       {
@@ -166,7 +171,7 @@ public class ChunkedController : ControllerBase
           {
             try
             {
-              MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaConnectionRejectedCount);
+              metricsRegistry.Metrics.Measure.Counter.Increment(metricsRegistry.LambdaConnectionRejectedCount);
               logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-Pool-Id: {}, X-Lambda-Id: {}, X-Channel-Id: {}, closing", poolId, lambdaId, channelId);
               // Only in this case can we close the response because it hasn't been started
               // Have to write the response body first since the Lambda

@@ -10,9 +10,16 @@ namespace PwrDrvr.LambdaDispatch.Router.ControlChannels.Controllers;
 [Route("/reset")]
 public class ResetController : ControllerBase
 {
+  private readonly IMetricsRegistry _metricsRegistry;
+
+  public ResetController(IMetricsRegistry metricsRegistry)
+  {
+    _metricsRegistry = metricsRegistry;
+  }
+
   public void HandleRequest()
   {
-    MetricsRegistry.Reset();
+    _metricsRegistry.Reset();
     Ok();
   }
 }

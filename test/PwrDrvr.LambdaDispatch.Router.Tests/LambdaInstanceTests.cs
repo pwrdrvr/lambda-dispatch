@@ -1,6 +1,7 @@
 using Moq;
 using Amazon.Lambda;
 using Microsoft.AspNetCore.Http;
+using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
 
@@ -24,6 +25,8 @@ public class TransitionResultTests
 
 public class LambdaInstanceTests
 {
+  private Mock<IMetricsRegistry> metricsRegistry = MetricsRegistryMockFactory.Create();
+
   [SetUp]
   public void Setup()
   {
@@ -36,8 +39,20 @@ public class LambdaInstanceTests
     var dispatcher = new Mock<IBackgroundDispatcher>();
     var getCallbackIP = new Mock<IGetCallbackIP>();
 
-    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(maxConcurrentCount: 0, functionName: "somefunc", poolId: "default", lambdaClient: lambdaClient.Object, dispatcher: dispatcher.Object, getCallbackIP: getCallbackIP.Object));
-    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(maxConcurrentCount: -1, functionName: "somefunc", poolId: "default", lambdaClient: lambdaClient.Object, dispatcher: dispatcher.Object, getCallbackIP: getCallbackIP.Object));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(maxConcurrentCount: 0,
+      functionName: "somefunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher.Object,
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LambdaInstance(maxConcurrentCount: -1,
+      functionName: "somefunc",
+      poolId: "default",
+      lambdaClient: lambdaClient.Object,
+      dispatcher: dispatcher.Object,
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object));
   }
 
   [Test]
@@ -53,7 +68,8 @@ public class LambdaInstanceTests
       poolId: "default",
       lambdaClient: lambdaClient.Object,
       dispatcher: dispatcher.Object,
-      getCallbackIP: getCallbackIP.Object
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object
       );
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
@@ -126,7 +142,8 @@ public class LambdaInstanceTests
           poolId: "default",
           lambdaClient: lambdaClient.Object,
           dispatcher: dispatcher.Object,
-          getCallbackIP: getCallbackIP.Object
+          getCallbackIP: getCallbackIP.Object,
+          metricsRegistry: metricsRegistry.Object
           );
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -192,7 +209,8 @@ public class LambdaInstanceTests
       poolId: "default",
       lambdaClient: lambdaClient.Object,
       dispatcher: dispatcher.Object,
-      getCallbackIP: getCallbackIP.Object
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object
       );
 
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
@@ -267,7 +285,8 @@ public class LambdaInstanceTests
       poolId: "default",
       lambdaClient: lambdaClient.Object,
       dispatcher: dispatcher.Object,
-      getCallbackIP: getCallbackIP.Object
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object
       );
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
@@ -336,7 +355,8 @@ public class LambdaInstanceTests
       poolId: "default",
       lambdaClient: lambdaClient.Object,
       dispatcher: dispatcher.Object,
-      getCallbackIP: getCallbackIP.Object
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: metricsRegistry.Object
       );
     var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
     var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
