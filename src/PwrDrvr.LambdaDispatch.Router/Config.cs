@@ -78,6 +78,11 @@ public interface IConfig
   /// where the router is a single instance with a known before name such as `router`
   /// </summary>
   public string? RouterCallbackHost { get; set; }
+
+  /// <summary>
+  /// The environment variable to use to get the callback IP address
+  /// </summary>
+  public string EnvVarForCallbackIp { get; set; }
 }
 
 public class Config : IConfig
@@ -109,6 +114,8 @@ public class Config : IConfig
 
   public string? RouterCallbackHost { get; set; }
 
+  public string EnvVarForCallbackIp { get; set; }
+
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
   /// </summary>
@@ -125,6 +132,7 @@ public class Config : IConfig
     AllowInsecureControlChannel = false;
     PreferredControlChannelScheme = "https";
     InstanceCountMultiplier = 2;
+    EnvVarForCallbackIp = "K8S_POD_IP";
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)
