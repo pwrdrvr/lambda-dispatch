@@ -35,7 +35,7 @@ public class DispatcherSimpleTests
   public void PingInstance_ValidInstanceId_ReturnsTrue()
   {
     string instanceId = "valid-instance-id";
-    _mockLambdaInstanceManager.Setup(l => l.ValidateLambdaId(instanceId, out It.Ref<ILambdaInstance>.IsAny)).Returns(true);
+    _mockLambdaInstanceManager.Setup(l => l.ValidateLambdaId(instanceId, out It.Ref<ILambdaInstance?>.IsAny)).Returns(true);
 
     bool result = _dispatcher.PingInstance(instanceId);
 
@@ -46,7 +46,7 @@ public class DispatcherSimpleTests
   public void PingInstance_InvalidInstanceId_ReturnsFalse()
   {
     string instanceId = "invalid-instance-id";
-    _mockLambdaInstanceManager.Setup(l => l.ValidateLambdaId(instanceId, out It.Ref<ILambdaInstance>.IsAny)).Returns(false);
+    _mockLambdaInstanceManager.Setup(l => l.ValidateLambdaId(instanceId, out It.Ref<ILambdaInstance?>.IsAny)).Returns(false);
 
     bool result = _dispatcher.PingInstance(instanceId);
 
@@ -70,7 +70,7 @@ public class DispatcherSimpleTests
   public async Task CloseInstance_InvalidInstanceId_DoesNotCallCloseInstance()
   {
     string instanceId = "invalid-instance-id";
-    _mockLambdaInstanceManager.Setup(l => l.ValidateLambdaId(instanceId, out It.Ref<ILambdaInstance>.IsAny)).Returns(false);
+    _mockLambdaInstanceManager.Setup(l => l.ValidateLambdaId(instanceId, out It.Ref<ILambdaInstance?>.IsAny)).Returns(false);
 
     await _dispatcher.CloseInstance(instanceId);
 

@@ -117,7 +117,7 @@ public class ChunkedControllerTests
     var mockPool = new Mock<IPool>();
     var mockDispatcher = new Mock<IDispatcher>();
     mockPool.Setup(p => p.Dispatcher).Returns(mockDispatcher.Object);
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId("default", out outPool)).Returns(true);
 
     var httpContext = new DefaultHttpContext();

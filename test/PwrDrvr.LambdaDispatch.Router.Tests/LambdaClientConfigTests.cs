@@ -5,7 +5,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests;
 [TestFixture]
 public class LambdaClientConfigTests
 {
-  private string _originalServiceUrl;
+  private string? _originalServiceUrl;
 
   [SetUp]
   public void SetUp()

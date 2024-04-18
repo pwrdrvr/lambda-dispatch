@@ -61,7 +61,7 @@ public class DispatcherTests
       _mockShutdownSignal.Object,
       metricsRegistry: _metricsRegistry.Object
     );
-    _mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId(It.IsAny<string>(), out It.Ref<ILambdaInstance>.IsAny)).Returns(false);
+    _mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId(It.IsAny<string>(), out It.Ref<ILambdaInstance?>.IsAny)).Returns(false);
 
     // Act
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, "lambdaId", "channelId");
@@ -90,7 +90,7 @@ public class DispatcherTests
     var mockConnection = new Mock<LambdaConnection>(mockRequest.Object, mockResponse.Object, mockInstance.Object, "channel-1", false);
     _mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId(
         It.IsAny<string>(),
-        out It.Ref<ILambdaInstance>.IsAny))
+        out It.Ref<ILambdaInstance?>.IsAny))
       .Returns(true);
     _mockLambdaInstanceManager.Setup(m => m.AddConnectionForLambda(
         It.IsAny<HttpRequest>(),
