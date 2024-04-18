@@ -12,7 +12,6 @@ using App.Metrics.Histogram;
 using App.Metrics.Meter;
 using App.Metrics.Reporting;
 using App.Metrics.ReservoirSampling.Uniform;
-using App.Metrics.Scheduling;
 using App.Metrics.Timer;
 
 public class LoggerMetricsReporter : IReportMetrics
