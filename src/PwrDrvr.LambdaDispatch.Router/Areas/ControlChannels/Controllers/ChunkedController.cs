@@ -117,6 +117,7 @@ public class ChunkedController : ControllerBase
           await Response.WriteAsync("No X-Lambda-Id header");
           await Response.CompleteAsync();
           try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
+          return;
         }
 
         // Log an error if the request was delayed in reaching us, using the Date header added by HttpClient
@@ -200,6 +201,7 @@ public class ChunkedController : ControllerBase
           await Response.CompleteAsync();
           try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
           logger.LogDebug("Router.ChunkedController.Post - Pool not found for X-PoolId: {}, closed", poolId);
+          return;
         }
       }
       catch (Exception ex)
