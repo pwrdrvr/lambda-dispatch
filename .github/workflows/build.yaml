@@ -30,10 +30,12 @@ jobs:
           dotnet test --collect:"XPlat Code Coverage"
 
       - name: Generate Coverage Report
+        if: success() || failure()
         run: |
           reportgenerator "-reports:test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:test/coverage/html_report" -reporttypes:Html
 
       - name: Publish Coverage Report
+        if: success() || failure()
         uses: mikepenz/action-junit-report@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
