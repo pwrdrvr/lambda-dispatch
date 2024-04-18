@@ -288,6 +288,31 @@ public class ChunkedControllerTests
   }
 
   [Test]
+  public async Task Post_PoolIdMultiNotFound_ReturnsConflict()
+  {
+    // Arrange
+    var poolId = string.Empty;
+    var lambdaId = "testLambda";
+    var channelId = "testChannel";
+    IPool outPool = null;
+    mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(false);
+    var httpContext = new DefaultHttpContext();
+    httpContext.Request.Headers["X-Lambda-Id"] = lambdaId;
+    httpContext.Request.Headers["X-Pool-Id"] = poolId;
+    httpContext.Request.Headers["Date"] = "Tue, 01 Feb 2022 12:34:56 GMT";
+    controller.ControllerContext = new ControllerContext
+    {
+      HttpContext = httpContext
+    };
+
+    // Act
+    await controller.Post(lambdaId, channelId);
+
+    // Assert
+    Assert.AreEqual(409, controller.Response.StatusCode);
+  }
+
+  [Test]
   public async Task Post_NoXLambdaIdHeader_ReturnsBadRequest()
   {
     // Arrange

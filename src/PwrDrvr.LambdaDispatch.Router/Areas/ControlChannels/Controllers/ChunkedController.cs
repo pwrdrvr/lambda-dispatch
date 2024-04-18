@@ -31,7 +31,7 @@ public class ChunkedController : ControllerBase
     if (Request.Headers.TryGetValue("X-Pool-Id",
         out Microsoft.Extensions.Primitives.StringValues poolIdMulti) && poolIdMulti.Count == 1)
     {
-      poolId = poolIdMulti[0] ?? poolId;
+      poolId = !string.IsNullOrWhiteSpace(poolIdMulti[0]) ? poolIdMulti[0] : poolId;
     }
 
     return poolId;
