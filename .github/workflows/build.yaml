@@ -11,13 +11,34 @@ on:
 jobs:
   dotnet-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run DotNet Tests
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Install Coverlet and ReportGenerator
         run: |
-          dotnet test
+          dotnet tool install --global coverlet.console
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Run DotNet Tests with coverage
+        run: |
+          coverlet ./test/Project.Tests --target "dotnet" --targetargs "test ./test/Project.Tests --no-restore" --format opencover
+
+      - name: Generate Coverage Report
+        run: |
+          reportgenerator "-reports:./coverage.opencover.xml" "-targetdir:./coverage" -reporttypes:Html
+
+      - name: Publish Coverage Report
+        uses: mikepenz/action-junit-report@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          report_paths: "coverage/index.htm"
 
   rust-tests:
     runs-on: ubuntu-latest
