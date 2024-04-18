@@ -8,7 +8,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_ValidFunctionName()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         {"FunctionName", "my-function"},
     };
     IConfiguration configuration = new ConfigurationBuilder()
@@ -26,7 +26,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_ValidFunctionNameWithQualifier()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         {"FunctionName", "my-function:qualifier"},
     };
     IConfiguration configuration = new ConfigurationBuilder()
@@ -44,7 +44,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_ValidLambdaArn()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         {"FunctionName", "arn:aws:lambda:us-west-2:123456789012:function:my-function"},
     };
     IConfiguration configuration = new ConfigurationBuilder()
@@ -62,7 +62,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_ValidLambdaArnWithQualifier()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         {"FunctionName", "arn:aws:lambda:us-west-2:123456789012:function:my-function:qualifier"},
     };
     IConfiguration configuration = new ConfigurationBuilder()
@@ -80,7 +80,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_InvalidFunctionName_ThrowsException()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         {"FunctionName", "invalid function name"},
     };
     IConfiguration configuration = new ConfigurationBuilder()
@@ -109,7 +109,7 @@ public class ConfigTests
   [TestCase("EnvVarForCallbackIp", "@", typeof(ApplicationException))]
   public void TestCreateAndValidate_InvalidSettings(string settingKey, string settingValue, Type expectedExceptionType)
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         { "FunctionName", "my-function"},
         {settingKey, settingValue},
     };
@@ -123,7 +123,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_InvalidSettings_AllowInsecureControlChannelFalse()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         { "FunctionName", "my-function"},
         { "AllowInsecureControlChannel", "false"},
         { "PreferredControlChannelScheme", "http" },
@@ -138,7 +138,7 @@ public class ConfigTests
   [Test]
   public void TestCreateAndValidate_AllowInsecureControlChannelTrue()
   {
-    var inMemorySettings = new Dictionary<string, string> {
+    var inMemorySettings = new Dictionary<string, string?> {
         { "FunctionName", "my-function"},
         { "AllowInsecureControlChannel", "true"},
         { "PreferredControlChannelScheme", "http" },

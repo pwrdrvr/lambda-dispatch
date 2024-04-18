@@ -33,7 +33,9 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       config.Setup(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
       using var queue = new LeastOutstandingQueue(config.Object);
 
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
       Assert.Throws<ArgumentNullException>(() => queue.AddInstance(null));
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
     }
 
     [Test]

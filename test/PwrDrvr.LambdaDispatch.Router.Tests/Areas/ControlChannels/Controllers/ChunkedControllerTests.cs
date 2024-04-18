@@ -143,7 +143,7 @@ public class ChunkedControllerTests
     var mockPool = new Mock<IPool>();
     var mockDispatcher = new Mock<IDispatcher>();
     mockPool.Setup(p => p.Dispatcher).Returns(mockDispatcher.Object);
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
 
     // Act
@@ -159,7 +159,7 @@ public class ChunkedControllerTests
     // Arrange
     var poolId = "testPoolId";
     var lambdaId = "testLambdaId";
-    IPool outPool = null;
+    IPool? outPool = null;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(false);
 
     // Act
@@ -177,7 +177,7 @@ public class ChunkedControllerTests
     var lambdaId = "testLambda";
     var mockPool = new Mock<IPool>();
     var mockDispatcher = new Mock<IDispatcher>();
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
     mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
     mockPool.Setup(x => x.Dispatcher.CloseInstance(lambdaId, true)).Returns(Task.CompletedTask);
@@ -196,7 +196,7 @@ public class ChunkedControllerTests
     // Arrange
     var poolId = "testPool";
     var lambdaId = "testLambda";
-    mockPoolManager.Setup(x => x.GetPoolByPoolId(poolId, out It.Ref<IPool>.IsAny)).Returns(false);
+    mockPoolManager.Setup(x => x.GetPoolByPoolId(poolId, out It.Ref<IPool?>.IsAny)).Returns(false);
 
     // Act
     var result = await controller.CloseInstance(poolId, lambdaId);
@@ -214,7 +214,7 @@ public class ChunkedControllerTests
     var mockPool = new Mock<IPool>();
     var mockDispatcher = new Mock<IDispatcher>();
     mockDispatcher.Setup(x => x.CloseInstance(lambdaId, true)).Returns(Task.CompletedTask);
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
     mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
 
@@ -253,7 +253,7 @@ public class ChunkedControllerTests
     var mockDispatcher = new Mock<IDispatcher>();
     mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
                   .Returns(Task.FromResult(dispatcherResult));
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId("default", out outPool)).Returns(true);
     mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
     var httpContext = new DefaultHttpContext();
@@ -290,7 +290,7 @@ public class ChunkedControllerTests
     var mockDispatcher = new Mock<IDispatcher>();
     mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
                   .Returns(Task.FromResult(dispatcherResult));
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
     mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
     var httpContext = new DefaultHttpContext();
@@ -328,7 +328,7 @@ public class ChunkedControllerTests
     var mockDispatcher = new Mock<IDispatcher>();
     mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
                   .Returns(Task.FromResult(dispatcherResult));
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
     mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
     var httpContext = new DefaultHttpContext();
@@ -347,7 +347,7 @@ public class ChunkedControllerTests
   }
 
   [Test]
-  public async Task Post_LambdaIdNotFoundThrows_DoesNotThrow()
+  public void Post_LambdaIdNotFoundThrows_DoesNotThrow()
   {
     // Arrange
     var poolId = "testPool";
@@ -366,7 +366,7 @@ public class ChunkedControllerTests
     var mockDispatcher = new Mock<IDispatcher>();
     mockDispatcher.Setup(x => x.AddConnectionForLambda(It.IsAny<HttpRequest>(), It.IsAny<HttpResponse>(), lambdaId, channelId))
                   .Returns(Task.FromResult(dispatcherResult));
-    IPool outPool = mockPool.Object;
+    IPool? outPool = mockPool.Object;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(true);
     mockPool.Setup(x => x.Dispatcher).Returns(mockDispatcher.Object);
     var httpContext = new ThrowingHttpContext();
@@ -389,7 +389,7 @@ public class ChunkedControllerTests
     var poolId = "testPool";
     var lambdaId = "testLambda";
     var channelId = "testChannel";
-    IPool outPool = null;
+    IPool? outPool = null;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(false);
     var httpContext = new DefaultHttpContext();
     httpContext.Request.Headers["X-Lambda-Id"] = lambdaId;
@@ -414,7 +414,7 @@ public class ChunkedControllerTests
     var poolId = string.Empty;
     var lambdaId = "testLambda";
     var channelId = "testChannel";
-    IPool outPool = null;
+    IPool? outPool = null;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(false);
     var httpContext = new DefaultHttpContext();
     httpContext.Request.Headers["X-Lambda-Id"] = lambdaId;
@@ -439,7 +439,7 @@ public class ChunkedControllerTests
     var poolId = "testPool";
     var lambdaId = "testLambda";
     var channelId = "testChannel";
-    IPool outPool = null;
+    IPool? outPool = null;
     mockPoolManager.Setup(p => p.GetPoolByPoolId(poolId, out outPool)).Returns(false);
     var httpContext = new DefaultHttpContext();
     httpContext.Request.Headers["X-Pool-Id"] = poolId;

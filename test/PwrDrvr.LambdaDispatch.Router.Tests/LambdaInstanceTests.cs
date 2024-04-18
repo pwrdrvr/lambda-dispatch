@@ -403,6 +403,7 @@ public class LambdaInstanceTests
     });
 
     // Reinstate the connection
+    Assert.That(connection, Is.Not.Null);
     instance.ReenqueueUnusedConnection(connection);
     Assert.Multiple(() =>
     {

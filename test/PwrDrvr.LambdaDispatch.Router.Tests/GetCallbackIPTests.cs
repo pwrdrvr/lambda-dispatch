@@ -3,12 +3,10 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests;
 [TestFixture]
 public class GetCallbackIPTests
 {
-  private IGetCallbackIP getCallbackIP;
-
   [Test]
   public void Constructor_WhenCalled_SetsPropertiesAndReturnsUrl()
   {
-    getCallbackIP = new GetCallbackIP(5004, "https", "192.168.1.1");
+    var getCallbackIP = new GetCallbackIP(5004, "https", "192.168.1.1");
 
     var url = getCallbackIP.CallbackUrl;
 
@@ -18,6 +16,8 @@ public class GetCallbackIPTests
   [Test]
   public void Constructor_WhenNetworkIpIsNotSet_ThrowsException()
   {
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
     Assert.Throws<ArgumentException>(() => new GetCallbackIP(5004, "https", null));
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
   }
 }
