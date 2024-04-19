@@ -370,6 +370,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public Task<bool> InvokeCompletionTask => _tcs.Task;
 
+  private static DateTime lastWarningTime = DateTime.MinValue;
+
   /// <summary>
   /// Called when we get a connection for the Lambda Instance ID
   /// </summary>
@@ -384,14 +386,28 @@ public class LambdaInstance : ILambdaInstance
         || State == LambdaInstanceState.Closing
         || State == LambdaInstanceState.Initial)
     {
-      _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
-
-      return new AddConnectionResult
+      lock (stateLock)
       {
-        WasRejected = true,
-        CanUseNow = false,
-        Connection = null
-      };
+        if (State == LambdaInstanceState.Closed
+            || State == LambdaInstanceState.Closing
+            || State == LambdaInstanceState.Initial)
+        {
+#if DEBUG
+          _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+#else
+          if ((DateTime.Now - LambdaInstance.lastWarningTime).TotalSeconds >= 1) {
+            _logger.LogWarning("Connection added to Lambda Instance that is not open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+            LambdaInstance.lastWarningTime = DateTime.Now;
+          }
+#endif
+          return new AddConnectionResult
+          {
+            WasRejected = true,
+            CanUseNow = false,
+            Connection = null
+          };
+        }
+      }
     }
 
     // Signal that we are ready if this the first connection
