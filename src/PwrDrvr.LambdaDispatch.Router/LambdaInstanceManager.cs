@@ -111,6 +111,8 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly ILambdaClientConfig _lambdaClientConfig;
 
+  private readonly ScalingAlgorithms _scalingAlgorithm;
+
   public LambdaInstanceManager(
     ILambdaInstanceQueue queue,
     IConfig config,
@@ -123,6 +125,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     _instanceCountMultiplier = config.InstanceCountMultiplier;
     _maxConcurrentCount = config.MaxConcurrentCount;
     _channelCount = config.ChannelCount;
+    _scalingAlgorithm = config.ScalingAlgorithmEnum;
     _leastOutstandingQueue = queue;
     _functionName = options.LambdaName;
     _metricsLogger = metricsLogger;
@@ -291,27 +294,22 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
         // Override the simple scale-from zero logic (which uses running and pending requests only)
         // with the EWMA data, if available
-        // If we got a
         int? ewmaScalerDesiredInstanceCount = null;
         if (requestsPerSecondEWMA > 0 && requestDurationEWMA > 0)
         {
           ewmaScalerDesiredInstanceCount = _capacityManager.EwmaDesiredInstanceCount(requestsPerSecondEWMA, requestDurationEWMA, _desiredInstanceCount);
         }
 
-        // Switch to the EWMA scaler we've got activity
-        var shouldUseSimpleScaler = simpleScalerDesiredInstanceCount == 0
-            && !gotNonZeroPendingOrRunning
-            && messagesToRead != 0
-            && swLastNonZeroTime.ElapsedMilliseconds > 100;
-        // shouldUseSimpleScaler = true;
+        // Switch to the EWMA scaler we've got activity and EWMA is allowed
+        var shouldUseSimpleScaler = _scalingAlgorithm == ScalingAlgorithms.Simple
+          || (simpleScalerDesiredInstanceCount == 0
+              && !gotNonZeroPendingOrRunning
+              && messagesToRead != 0
+              && swLastNonZeroTime.ElapsedMilliseconds > 100);
         if (!shouldUseSimpleScaler && ewmaScalerDesiredInstanceCount.HasValue)
         {
           newDesiredInstanceCount = ewmaScalerDesiredInstanceCount.Value;
         }
-        // if (!shouldUseSimpleScaler && averageDesiredInstanceCount.EWMA > 0)
-        // {
-        //   newDesiredInstanceCount = (int)Math.Ceiling(averageDesiredInstanceCount.EWMA);
-        // }
 
         //
         // Locking instance counts - Do not do anything Async / IO in this block

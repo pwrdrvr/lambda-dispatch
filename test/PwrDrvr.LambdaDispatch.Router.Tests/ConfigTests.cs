@@ -147,7 +147,44 @@ public class ConfigTests
         .AddInMemoryCollection(inMemorySettings)
         .Build();
     var config = Config.CreateAndValidate(configuration);
-    Assert.That(config.PreferredControlChannelScheme, Is.EqualTo("http"));
-    Assert.That(config.AllowInsecureControlChannel, Is.True);
+    Assert.Multiple(() =>
+    {
+      Assert.That(config.PreferredControlChannelScheme, Is.EqualTo("http"));
+      Assert.That(config.AllowInsecureControlChannel, Is.True);
+    });
+  }
+
+  [TestCase("simple", ScalingAlgorithms.Simple)]
+  [TestCase("Simple", ScalingAlgorithms.Simple)]
+  [TestCase("ewma", ScalingAlgorithms.EWMA)]
+  [TestCase("EWMA", ScalingAlgorithms.EWMA)]
+  public void TestScalingAlgorithm_Valid(string scalingAlgorithm, ScalingAlgorithms expectedScalingAlgorithm)
+  {
+    var inMemorySettings = new Dictionary<string, string?> {
+        { "FunctionName", "my-function"},
+        { "ScalingAlgorithm", scalingAlgorithm},
+    };
+    IConfiguration configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(inMemorySettings)
+        .Build();
+    var config = Config.CreateAndValidate(configuration);
+    Assert.Multiple(() =>
+    {
+      Assert.That(config.ScalingAlgorithm, Is.EqualTo(scalingAlgorithm));
+      Assert.That(config.ScalingAlgorithmEnum, Is.EqualTo(expectedScalingAlgorithm));
+    });
+  }
+
+  [Test]
+  public void TestScalingAlgorithm_Invalid()
+  {
+    var inMemorySettings = new Dictionary<string, string?> {
+        { "FunctionName", "my-function"},
+        { "ScalingAlgorithm", "cats"},
+    };
+    IConfiguration configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(inMemorySettings)
+        .Build();
+    Assert.Throws<ArgumentException>(() => Config.CreateAndValidate(configuration));
   }
 }
