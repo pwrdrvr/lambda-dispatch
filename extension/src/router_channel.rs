@@ -16,7 +16,6 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use mpsc::Receiver;
-use rand::prelude::*;
 use tokio::net::TcpStream;
 
 use crate::app_request;
@@ -34,12 +33,12 @@ pub struct RouterChannel {
   last_active: Arc<AtomicU64>,
   requests_in_flight: Arc<AtomicUsize>,
   channel_url: Uri,
-  channel_id: String,
   app_endpoint: Endpoint,
   channel_number: u8,
   sender: http2::SendRequest<BoxBody<Bytes, Error>>,
   pool_id: PoolId,
   lambda_id: LambdaId,
+  channel_id: ChannelId,
 }
 
 impl RouterChannel {
@@ -48,7 +47,6 @@ impl RouterChannel {
     compression: bool,
     goaway_received: Arc<AtomicBool>,
     last_active: Arc<AtomicU64>,
-    mut rng: rand::rngs::StdRng,
     requests_in_flight: Arc<AtomicUsize>,
     router_endpoint: Endpoint,
     app_endpoint: Endpoint,
@@ -56,11 +54,8 @@ impl RouterChannel {
     sender: http2::SendRequest<BoxBody<Bytes, Error>>,
     pool_id: PoolId,
     lambda_id: LambdaId,
+    channel_id: String,
   ) -> Self {
-    let channel_id = uuid::Builder::from_random_bytes(rng.gen())
-      .into_uuid()
-      .to_string();
-
     let channel_url = format!(
       "{}://{}:{}/api/chunked/request/{}/{}",
       router_endpoint.scheme().as_str(),
@@ -78,13 +73,13 @@ impl RouterChannel {
       goaway_received,
       last_active,
       requests_in_flight,
-      channel_id,
       channel_url,
       app_endpoint,
       channel_number,
       sender,
       pool_id,
       lambda_id,
+      channel_id: channel_id.into(),
     }
   }
 
@@ -93,7 +88,7 @@ impl RouterChannel {
       &self.app_endpoint,
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
-      self.channel_id.clone(),
+      Arc::clone(&self.channel_id),
     )
     .await?;
 
@@ -117,7 +112,7 @@ impl RouterChannel {
         .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
         .header("X-Pool-Id", self.pool_id.as_ref())
         .header("X-Lambda-Id", self.lambda_id.as_ref())
-        .header("X-Channel-Id", &self.channel_id)
+        .header("X-Channel-Id", self.channel_id.as_ref())
         .body(boxed_body)?;
 
       //
@@ -526,7 +521,7 @@ async fn connect_to_app(
   app_endpoint: &Endpoint,
   pool_id: PoolId,
   lambda_id: LambdaId,
-  channel_id: String,
+  channel_id: ChannelId,
 ) -> Result<http1::SendRequest<StreamBody<Receiver<Result<Frame<Bytes>>>>>> {
   // Setup the contained app connection
   // This is HTTP/1.1 so we need 1 connection for each worker
