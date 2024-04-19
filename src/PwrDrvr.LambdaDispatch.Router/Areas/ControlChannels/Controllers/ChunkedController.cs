@@ -167,7 +167,7 @@ public class ChunkedController : ControllerBase
         // This is our status code for the response
         Response.StatusCode = 200;
 
-        // Register this Lambda with the Dispatcher
+        // Register this LambdaConnection with the Dispatcher
         if (poolManager.GetPoolByPoolId(poolId, out var pool))
         {
           var result = await pool.Dispatcher.AddConnectionForLambda(Request, Response, lambdaId, channelId);
