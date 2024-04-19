@@ -191,7 +191,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     }
   }
 
-  public async Task<AddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId, AddConnectionDispatchMode dispatchMode)
+  public async Task<AddConnectionResult> AddConnectionForLambda(
+    HttpRequest request,
+    HttpResponse response,
+    string lambdaId,
+    string channelId,
+    AddConnectionDispatchMode dispatchMode)
   {
     // Get the instance for the lambda
     if (_instances.TryGetValue(lambdaId, out var instance))
@@ -633,6 +638,14 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
     instance.OnOpen += (instance) =>
     {
+      _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
+
+      // Add the instance to the least outstanding queue
+      // We add this before taking the lock because it could be a wait
+      // to get the lock and the lock is just used for accounting
+      // Let's allow requests to dispatch immediately
+      _leastOutstandingQueue.AddInstance(instance);
+
       // We always decrement the starting count
       lock (_instanceCountLock)
       {
@@ -640,17 +653,12 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
         _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
 
-        _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
-
         // We need to keep track of how many Lambdas are running
         // We will replace this one if it's still desired
         _runningInstanceCount++;
         _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
         _metricsLogger.PutMetric("LambdaInstanceRunningCount", _runningInstanceCount, Unit.Count);
       }
-
-      // Add the instance to the least outstanding queue
-      _leastOutstandingQueue.AddInstance(instance);
     };
 
     //
