@@ -173,6 +173,9 @@ public class Program
                     // Turn off body size limits
                     serverOptions.Limits.MaxRequestBodySize = null;
 
+                    // Remove the `Server: Kestrel` response header
+                    serverOptions.AddServerHeader = false;
+
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
                     //
