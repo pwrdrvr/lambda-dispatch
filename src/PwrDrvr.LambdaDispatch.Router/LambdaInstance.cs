@@ -290,7 +290,7 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   private volatile int internalActualAvailableConnectionCount = 0;
 
-  private object requestCountLock = new();
+  private readonly object requestCountLock = new();
 
   /// <summary>
   /// The actual number of requests in flight
