@@ -818,7 +818,7 @@ public class LambdaInstance : ILambdaInstance
   /// This is a "buddy" to the `Start` call that uses the same parameters
   /// </summary>
   /// <returns></returns>
-  public void StartInitOnly()
+  private void StartInitOnly()
   {
     var initOnlyLambdaId = $"{Id}-initonly";
 
@@ -947,16 +947,10 @@ public class LambdaInstance : ILambdaInstance
        }
      });
 
-    _ = Task.Run(async () =>
-    {
-      // Wait a short time before starting the buddy invoke
-      // This does not guarantee that the buddy request will arrive after
-      // the real request, but it's likely
-      await Task.Delay(TimeSpan.FromMilliseconds(100));
-
-      // Start an init-only buddy
-      StartInitOnly();
-    });
+    // Wait a short time before starting the buddy invoke
+    // This does not guarantee that the buddy request will arrive after
+    // the real request, but it's likely
+    _ = Task.Delay(TimeSpan.FromMilliseconds(100)).ContinueWith(t => StartInitOnly());
   }
 
   public void ReenqueueUnusedConnection(ILambdaConnection connection)
