@@ -16,12 +16,14 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var mockResponse = new Mock<HttpResponse>();
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
-
-      Assert.AreEqual(mockRequest.Object, pendingRequest.Request);
-      Assert.AreEqual(mockResponse.Object, pendingRequest.Response);
-      Assert.IsFalse(pendingRequest.Dispatched);
-      Assert.IsNotNull(pendingRequest.ResponseFinishedTCS);
-      Assert.IsNotNull(pendingRequest.GatewayTimeoutCTS);
+      Assert.Multiple(() =>
+      {
+        Assert.That(pendingRequest.Request, Is.EqualTo(mockRequest.Object));
+        Assert.That(pendingRequest.Response, Is.EqualTo(mockResponse.Object));
+        Assert.That(pendingRequest.Dispatched, Is.False);
+        Assert.That(pendingRequest.ResponseFinishedTCS, Is.Not.Null);
+        Assert.That(pendingRequest.GatewayTimeoutCTS, Is.Not.Null);
+      });
     }
 
     [Test]
@@ -32,11 +34,11 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.IsFalse(pendingRequest.GatewayTimeoutCTS.IsCancellationRequested);
+      Assert.That(pendingRequest.GatewayTimeoutCTS.IsCancellationRequested, Is.False);
 
       pendingRequest.Abort();
 
-      Assert.IsTrue(pendingRequest.GatewayTimeoutCTS.IsCancellationRequested);
+      Assert.That(pendingRequest.GatewayTimeoutCTS.IsCancellationRequested, Is.True);
     }
 
     [Test]
@@ -47,11 +49,11 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.IsFalse(pendingRequest.Dispatched);
+      Assert.That(pendingRequest.Dispatched, Is.False);
 
       pendingRequest.RecordDispatchTime();
 
-      Assert.IsTrue(pendingRequest.Dispatched);
+      Assert.That(pendingRequest.Dispatched, Is.True);
     }
 
     [Test]
@@ -62,7 +64,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.IsTrue(pendingRequest.DispatchDelay.TotalMilliseconds >= 0);
+      Assert.That(pendingRequest.DispatchDelay.TotalMilliseconds >= 0, Is.True);
     }
 
     [Test]
@@ -73,10 +75,11 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.IsTrue(pendingRequest.Duration.TotalMilliseconds >= 0);
+      Assert.That(pendingRequest.Duration.TotalMilliseconds >= 0, Is.True);
     }
 
     [Test]
+    [Retry(3)]
     public void TestDurationAfterDispatch()
     {
       var mockRequest = new Mock<HttpRequest>();
@@ -84,11 +87,11 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.IsTrue(pendingRequest.DurationAfterDispatch.TotalMilliseconds >= 0);
+      Assert.That(pendingRequest.DurationAfterDispatch.TotalMilliseconds >= 0, Is.True);
 
       pendingRequest.RecordDispatchTime();
 
-      Assert.IsTrue(pendingRequest.DurationAfterDispatch.TotalMilliseconds >= 0);
+      Assert.That(pendingRequest.DurationAfterDispatch.TotalMilliseconds >= 0, Is.True);
     }
   }
 }

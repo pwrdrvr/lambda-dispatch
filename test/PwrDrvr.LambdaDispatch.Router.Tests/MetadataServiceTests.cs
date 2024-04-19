@@ -49,7 +49,7 @@ public class MetadataServiceTests
   [Test]
   public void Test_Local_IpSourceType()
   {
-    var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
+    var service = new MetadataService(configWithoutRouterCallbackHost, _httpClientFactoryMock.Object);
     Assert.Multiple(() =>
    {
      Assert.That(service.NetworkIP, Is.EqualTo("127.0.0.1"));
@@ -62,7 +62,7 @@ public class MetadataServiceTests
   {
     Environment.SetEnvironmentVariable("AWS_EXECUTION_ENV", "AWS_ECS_FARGATE");
     Environment.SetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4", "http://localhost:1000/v4/metadata");
-    var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
+    var service = new MetadataService(configWithoutRouterCallbackHost, _httpClientFactoryMock.Object);
     Assert.Multiple(() =>
     {
       Assert.That(service.NetworkIP, Is.EqualTo("192.168.0.1"));
@@ -74,7 +74,7 @@ public class MetadataServiceTests
   public void Test_EnvVar_IpSourceType()
   {
     Environment.SetEnvironmentVariable("K8S_POD_IP", "10.1.1.1");
-    var service = new MetadataService(_httpClientFactoryMock.Object, configWithoutRouterCallbackHost);
+    var service = new MetadataService(configWithoutRouterCallbackHost, _httpClientFactoryMock.Object);
     Assert.Multiple(() =>
     {
       Assert.That(service.NetworkIP, Is.EqualTo("10.1.1.1"));
@@ -87,7 +87,7 @@ public class MetadataServiceTests
   {
     var configWithEnvVarForCallbackIp = new Config { EnvVarForCallbackIp = "IP_FROM_ELSEWHERE" };
     Environment.SetEnvironmentVariable("IP_FROM_ELSEWHERE", "10.3.2.1");
-    var service = new MetadataService(_httpClientFactoryMock.Object, configWithEnvVarForCallbackIp);
+    var service = new MetadataService(configWithEnvVarForCallbackIp, _httpClientFactoryMock.Object);
     Assert.Multiple(() =>
     {
       Assert.That(service.NetworkIP, Is.EqualTo("10.3.2.1"));
@@ -103,11 +103,11 @@ public class MockHttpMessageHandler : HttpMessageHandler
     var responseMessage = new HttpResponseMessage(HttpStatusCode.OK);
 
     // Set the content of the response message based on the request URL
-    if (request.RequestUri.ToString() == Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4"))
+    if (request.RequestUri?.ToString() == Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4"))
     {
       responseMessage.Content = new StringContent("{ \"Networks\": [ { \"NetworkMode\": \"awsvpc\", \"IPv4Addresses\": [ \"192.168.0.1\" ] } ] }");
     }
-    if (request.RequestUri.ToString() == $"{Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4")}/task")
+    if (request.RequestUri?.ToString() == $"{Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI_V4")}/task")
     {
       responseMessage.Content = new StringContent("{ \"TaskARN\": \"arn:aws:ecs:us-west-2:123456789012:task/test_cluster/abcdefg\" }");
     }

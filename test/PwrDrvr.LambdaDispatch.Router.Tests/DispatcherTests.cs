@@ -3,9 +3,12 @@ using Microsoft.Extensions.Logging;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 using Microsoft.AspNetCore.Http;
 using Amazon.Lambda;
+using App.Metrics.Counter;
+using App.Metrics.Gauge;
+using App.Metrics.Meter;
+using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
-
 
 [TestFixture]
 public class DispatcherTests
@@ -14,6 +17,7 @@ public class DispatcherTests
   private Mock<IMetricsLogger> _mockMetricsLogger;
   private Mock<ILambdaInstanceManager> _mockLambdaInstanceManager;
   private Mock<IShutdownSignal> _mockShutdownSignal;
+  private Mock<IMetricsRegistry> _metricsRegistry;
 
   [SetUp]
   public void SetUp()
@@ -22,7 +26,7 @@ public class DispatcherTests
     _mockMetricsLogger = new Mock<IMetricsLogger>();
     _mockShutdownSignal = new Mock<IShutdownSignal>();
     _mockLambdaInstanceManager = new Mock<ILambdaInstanceManager>();
-
+    _metricsRegistry = MetricsRegistryMockFactory.Create();
   }
 
   [Test]
@@ -34,7 +38,8 @@ public class DispatcherTests
     var dispatcher = new Dispatcher(_mockLogger.Object,
       _mockMetricsLogger.Object,
       _mockLambdaInstanceManager.Object,
-      _mockShutdownSignal.Object
+      _mockShutdownSignal.Object,
+      metricsRegistry: _metricsRegistry.Object
     );
 
     // Act
@@ -53,9 +58,10 @@ public class DispatcherTests
     var dispatcher = new Dispatcher(_mockLogger.Object,
       _mockMetricsLogger.Object,
       _mockLambdaInstanceManager.Object,
-      _mockShutdownSignal.Object
+      _mockShutdownSignal.Object,
+      metricsRegistry: _metricsRegistry.Object
     );
-    _mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId(It.IsAny<string>(), out It.Ref<ILambdaInstance>.IsAny)).Returns(false);
+    _mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId(It.IsAny<string>(), out It.Ref<ILambdaInstance?>.IsAny)).Returns(false);
 
     // Act
     var result = await dispatcher.AddConnectionForLambda(mockRequest.Object, mockResponse.Object, "lambdaId", "channelId");
@@ -79,12 +85,12 @@ public class DispatcherTests
     var dispatcher = new Dispatcher(_mockLogger.Object,
       _mockMetricsLogger.Object,
       _mockLambdaInstanceManager.Object,
-      _mockShutdownSignal.Object
-    );
+      _mockShutdownSignal.Object,
+      metricsRegistry: _metricsRegistry.Object);
     var mockConnection = new Mock<LambdaConnection>(mockRequest.Object, mockResponse.Object, mockInstance.Object, "channel-1", false);
     _mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId(
         It.IsAny<string>(),
-        out It.Ref<ILambdaInstance>.IsAny))
+        out It.Ref<ILambdaInstance?>.IsAny))
       .Returns(true);
     _mockLambdaInstanceManager.Setup(m => m.AddConnectionForLambda(
         It.IsAny<HttpRequest>(),
@@ -125,18 +131,27 @@ public class DispatcherTests
     var mockPoolOptions = new Mock<IPoolOptions>();
     var getCallbackIP = new Mock<IGetCallbackIP>();
     getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
-    var manager = new LambdaInstanceManager(mockQueue.Object, mockConfig.Object, mockMetricsLogger.Object, mockPoolOptions.Object, getCallbackIP.Object);
+    var mockLambdaClientConfig = new Mock<ILambdaClientConfig>();
+    var manager = new LambdaInstanceManager(mockQueue.Object,
+      mockConfig.Object,
+      mockMetricsLogger.Object,
+      mockPoolOptions.Object,
+      getCallbackIP.Object,
+      _metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object);
     var dispatcher = new Dispatcher(_mockLogger.Object,
           _mockMetricsLogger.Object,
           manager,
-          shutdownSignal
-        );
+          shutdownSignal,
+          metricsRegistry: _metricsRegistry.Object);
     var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
       functionName: "someFunc",
       poolId: "default",
       lambdaClient: lambdaClient.Object,
       dispatcher: dispatcher,
-      getCallbackIP: getCallbackIP.Object
+      getCallbackIP: getCallbackIP.Object,
+      metricsRegistry: _metricsRegistry.Object,
+      lambdaClientConfig: mockLambdaClientConfig.Object
       );
 
     Assert.Multiple(() =>
@@ -167,7 +182,7 @@ public class DispatcherTests
       Assert.That(result.LambdaIDNotFound, Is.False, "LambdaIDNotFound");
       Assert.That(result.ImmediatelyDispatched, Is.False, "ImmediatelyDispatched");
       Assert.That(result.Connection, Is.Not.Null, "Connection");
-      Assert.That(result.Connection.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
+      Assert.That(result.Connection?.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
     });
 
     // Act
@@ -185,9 +200,56 @@ public class DispatcherTests
       Assert.That(result.LambdaIDNotFound, Is.False, "LambdaIDNotFound");
       Assert.That(result.ImmediatelyDispatched, Is.False, "ImmediatelyDispatched");
       Assert.That(result.Connection, Is.Not.Null, "Connection");
-      Assert.That(result.Connection.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
+      Assert.That(result.Connection?.State, Is.EqualTo(LambdaConnectionState.Open), "Connection.State");
     });
 
     shutdownSignal.Shutdown.Cancel();
+  }
+
+  [Test]
+  public async Task AddRequest_ValidRequest_IncrementsMetricsAndDispatches()
+  {
+    // Arrange
+    var shutdownSignal = new Mock<IShutdownSignal>();
+    var lambdaClient = new Mock<IAmazonLambda>();
+    var mockChannelContext = new Mock<HttpContext>();
+    var mockChannelRequest = new Mock<HttpRequest>();
+    mockChannelRequest.Setup(i => i.HttpContext).Returns(mockChannelContext.Object);
+    var mockChannelResponse = new Mock<HttpResponse>();
+    var maxConcurrentCount = 1;
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
+    var mockConfig = new Mock<IConfig>();
+    mockConfig.SetupGet(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+    var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var mockLambdaClientConfig = new Mock<ILambdaClientConfig>();
+    var mockLambdaInstanceManager = new Mock<ILambdaInstanceManager>();
+    var dispatcher = new Dispatcher(
+          _mockLogger.Object,
+          _mockMetricsLogger.Object,
+          mockLambdaInstanceManager.Object,
+          shutdownSignal.Object,
+          metricsRegistry: _metricsRegistry.Object);
+    var mockInstance = new Mock<ILambdaInstance>();
+    var mockConnection = new Mock<LambdaConnection>(mockChannelRequest.Object, mockChannelResponse.Object, mockInstance.Object, "channel-1", false);
+
+    ILambdaConnection? mockConnectionOut = mockConnection.Object;
+    mockLambdaInstanceManager.Setup(l => l.TryGetConnection(out mockConnectionOut, false)).Returns(true);
+
+    var mockIncomingContenxt = new Mock<HttpContext>();
+    var mockIncomingRequest = new Mock<HttpRequest>();
+    mockChannelRequest.Setup(i => i.HttpContext).Returns(mockIncomingContenxt.Object);
+    var mockIncomingResponse = new Mock<HttpResponse>();
+
+    // Act
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+
+    // Assert
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Counter.Increment(It.IsAny<CounterOptions>()), Times.Exactly(3));
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Meter.Mark(It.IsAny<MeterOptions>(), 1), Times.Once);
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Gauge.SetValue(It.IsAny<GaugeOptions>(), It.IsAny<double>()), Times.Exactly(2));
+    mockLambdaInstanceManager.Verify(l => l.TryGetConnection(out mockConnectionOut, false), Times.Once);
   }
 }

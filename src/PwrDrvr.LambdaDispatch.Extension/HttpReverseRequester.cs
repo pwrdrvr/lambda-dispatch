@@ -93,7 +93,11 @@ public class HttpReverseRequester
 
   private readonly HttpClient _client;
 
-  public HttpReverseRequester(string id, string dispatcherUrl, HttpClient httpClient, ILogger<HttpReverseRequester> logger = null)
+  public HttpReverseRequester(
+    string id,
+    string dispatcherUrl,
+    HttpClient httpClient,
+    ILogger<HttpReverseRequester>? logger = null)
   {
     _logger = logger ?? LoggerInstance.CreateLogger<HttpReverseRequester>();
     _id = id;

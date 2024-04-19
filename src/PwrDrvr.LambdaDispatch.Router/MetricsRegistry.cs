@@ -12,14 +12,13 @@ using App.Metrics.Histogram;
 using App.Metrics.Meter;
 using App.Metrics.Reporting;
 using App.Metrics.ReservoirSampling.Uniform;
-using App.Metrics.Scheduling;
 using App.Metrics.Timer;
 
 public class LoggerMetricsReporter : IReportMetrics
 {
   private readonly ILogger _logger = LoggerInstance.CreateLogger<LoggerMetricsReporter>();
 
-  public IFilterMetrics Filter { get; set; }
+  public IFilterMetrics? Filter { get; set; }
   public TimeSpan FlushInterval { get; set; }
   public IMetricsOutputFormatter Formatter { get; set; }
 
@@ -102,56 +101,83 @@ public class CompactMetricsFormatter : IMetricsOutputFormatter
   }
 }
 
-public static class MetricsRegistry
+public interface IMetricsRegistry
 {
-  public static readonly IMetricsRoot Metrics = new MetricsBuilder()
+  IMetricsRoot Metrics { get; }
+  HistogramOptions DispatchDelay { get; }
+  HistogramOptions LambdaOpenDelay { get; }
+  CounterOptions RequestCount { get; }
+  HistogramOptions IncomingRequestDuration { get; }
+  HistogramOptions IncomingRequestDurationAfterDispatch { get; }
+  TimerOptions LambdaRequestTimer { get; }
+  CounterOptions ImmediateDispatchCount { get; }
+  CounterOptions QueuedRequests { get; }
+  CounterOptions RunningRequests { get; }
+  CounterOptions PendingDispatchCount { get; }
+  CounterOptions PendingDispatchForegroundCount { get; }
+  CounterOptions PendingDispatchBackgroundCount { get; }
+  CounterOptions LambdaInvokeCount { get; }
+  GaugeOptions LambdaInstanceStartingCount { get; }
+  GaugeOptions IncomingRequestRPS { get; }
+  GaugeOptions IncomingRequestDurationEWMA { get; }
+  GaugeOptions LambdaInstanceStoppingCount { get; }
+  GaugeOptions LambdaInstanceRunningCount { get; }
+  GaugeOptions LambdaInstanceDesiredCount { get; }
+  CounterOptions LambdaConnectionRejectedCount { get; }
+  HistogramOptions LambdaInstanceOpenConnections { get; }
+  HistogramOptions LambdaInstanceRunningRequests { get; }
+  MeterOptions IncomingRequestsMeter { get; }
+  void Reset();
+  Task PrintMetrics();
+}
+
+
+public class MetricsRegistry : IMetricsRegistry
+{
+  public IMetricsRoot Metrics { get; } = new MetricsBuilder()
     .Report.Using<LoggerMetricsReporter>()
     .Build();
 
-  static MetricsRegistry()
-  {
-  }
-
-  public static void Reset()
+  public void Reset()
   {
     Metrics.Manage.Reset();
   }
 
-  public static readonly HistogramOptions DispatchDelay = new()
+  public HistogramOptions DispatchDelay { get; } = new()
   {
     Name = "DispatchDelay",
     MeasurementUnit = Unit.Custom("ms"),
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
-  public static readonly HistogramOptions LambdaOpenDelay = new()
+  public HistogramOptions LambdaOpenDelay { get; } = new()
   {
     Name = "LambdaOpenDelay",
     MeasurementUnit = Unit.Custom("ms"),
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
-  public static readonly CounterOptions RequestCount = new()
+  public CounterOptions RequestCount { get; } = new()
   {
     Name = "RequestCount",
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly HistogramOptions IncomingRequestDuration = new()
+  public HistogramOptions IncomingRequestDuration { get; } = new()
   {
     Name = "IncomingRequestDuration",
     MeasurementUnit = Unit.Custom("ms"),
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
-  public static readonly HistogramOptions IncomingRequestDurationAfterDispatch = new()
+  public HistogramOptions IncomingRequestDurationAfterDispatch { get; } = new()
   {
     Name = "IncomingRequestDurationAfterDispatch",
     MeasurementUnit = Unit.Custom("ms"),
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
-  public static readonly TimerOptions LambdaRequestTimer = new()
+  public TimerOptions LambdaRequestTimer { get; } = new()
   {
     Name = "LambdaRequestTimer",
     MeasurementUnit = Unit.Custom("ms"),
@@ -159,37 +185,37 @@ public static class MetricsRegistry
     RateUnit = TimeUnit.Milliseconds,
   };
 
-  public static readonly CounterOptions ImmediateDispatchCount = new()
+  public CounterOptions ImmediateDispatchCount { get; } = new()
   {
     Name = "ImmediateDispatchCount",
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly CounterOptions QueuedRequests = new()
+  public CounterOptions QueuedRequests { get; } = new()
   {
     Name = "QueuedRequests",
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly CounterOptions RunningRequests = new()
+  public CounterOptions RunningRequests { get; } = new()
   {
     Name = "RunningRequests",
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly CounterOptions PendingDispatchCount = new()
+  public CounterOptions PendingDispatchCount { get; } = new()
   {
     Name = "PendingDispatchCount",
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly CounterOptions PendingDispatchForegroundCount = new()
+  public CounterOptions PendingDispatchForegroundCount { get; } = new()
   {
     Name = "PendingDispatchForegroundCount",
     MeasurementUnit = Unit.Requests
   };
 
-  public static readonly CounterOptions PendingDispatchBackgroundCount = new()
+  public CounterOptions PendingDispatchBackgroundCount { get; } = new()
   {
     Name = "PendingDispatchBackgroundCount",
     MeasurementUnit = Unit.Requests
@@ -198,81 +224,148 @@ public static class MetricsRegistry
   /// <summary>
   /// Number of Lambda.InvokeAsync calls outstanding
   /// </summary>
-  public static readonly CounterOptions LambdaInvokeCount = new()
+  public CounterOptions LambdaInvokeCount { get; } = new()
   {
     Name = "LambdaInvokeCount",
     MeasurementUnit = Unit.Items,
   };
 
-  public static readonly GaugeOptions LambdaInstanceStartingCount = new()
+  public GaugeOptions LambdaInstanceStartingCount { get; } = new()
   {
     Name = "LambdaInstanceStartingCount",
     MeasurementUnit = Unit.Items,
   };
 
-  public static readonly GaugeOptions IncomingRequestRPS = new()
+  public GaugeOptions IncomingRequestRPS { get; } = new()
   {
     Name = "IncomingRequestRPS",
     MeasurementUnit = Unit.Requests,
   };
 
-  public static readonly GaugeOptions IncomingRequestDurationEWMA = new()
+  public GaugeOptions IncomingRequestDurationEWMA { get; } = new()
   {
     Name = "IncomingRequestDurationEWMA",
     MeasurementUnit = Unit.Custom("ms"),
   };
 
-  public static readonly GaugeOptions LambdaInstanceStoppingCount = new()
+  public GaugeOptions LambdaInstanceStoppingCount { get; } = new()
   {
     Name = "LambdaInstanceStoppingCount",
     MeasurementUnit = Unit.Items,
   };
 
-  public static readonly GaugeOptions LambdaInstanceRunningCount = new()
+  public GaugeOptions LambdaInstanceRunningCount { get; } = new()
   {
     Name = "LambdaInstanceRunningCount",
     MeasurementUnit = Unit.Items,
   };
 
-  public static readonly GaugeOptions LambdaInstanceDesiredCount = new()
+  public GaugeOptions LambdaInstanceDesiredCount { get; } = new()
   {
     Name = "LambdaInstanceDesiredCount",
     MeasurementUnit = Unit.Items,
   };
 
-  public static readonly CounterOptions LambdaConnectionRejectedCount = new()
+  public CounterOptions LambdaConnectionRejectedCount { get; } = new()
   {
     Name = "LambdaConnectionRejectedCount",
     MeasurementUnit = Unit.Connections,
   };
 
-  public static readonly HistogramOptions LambdaInstanceOpenConnections = new()
+  public HistogramOptions LambdaInstanceOpenConnections { get; } = new()
   {
     Name = "LambdaInstanceOpenConnections",
     MeasurementUnit = Unit.Requests,
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
-  public static readonly HistogramOptions LambdaInstanceRunningRequests = new()
+  public HistogramOptions LambdaInstanceRunningRequests { get; } = new()
   {
     Name = "LambdaInstanceRunningRequests",
     MeasurementUnit = Unit.Requests,
     Reservoir = () => new DefaultAlgorithmRReservoir(),
   };
 
-  public static readonly MeterOptions IncomingRequestsMeter = new()
+  public MeterOptions IncomingRequestsMeter { get; } = new()
   {
     Name = "IncomingRequests",
     MeasurementUnit = Unit.Requests,
     RateUnit = TimeUnit.Seconds,
   };
 
-  public static async Task PrintMetrics()
+  public async Task PrintMetrics()
   {
     while (true)
     {
-      await Task.WhenAll(MetricsRegistry.Metrics.ReportRunner.RunAllAsync()).ConfigureAwait(false);
+      await Task.WhenAll(this.Metrics.ReportRunner.RunAllAsync()).ConfigureAwait(false);
       await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
     }
+  }
+}
+
+
+public static class MetricsRegistrySingleton
+{
+  private static IMetricsRegistry _instance = new MetricsRegistry();
+
+  public static IMetricsRoot Metrics => _instance.Metrics;
+
+  public static void Reset()
+  {
+    Metrics.Manage.Reset();
+  }
+
+  public static HistogramOptions DispatchDelay => _instance.DispatchDelay;
+
+  public static HistogramOptions LambdaOpenDelay => _instance.LambdaOpenDelay;
+
+  public static CounterOptions RequestCount => _instance.RequestCount;
+
+  public static HistogramOptions IncomingRequestDuration => _instance.IncomingRequestDuration;
+
+  public static HistogramOptions IncomingRequestDurationAfterDispatch => _instance.IncomingRequestDurationAfterDispatch;
+
+  public static TimerOptions LambdaRequestTimer => _instance.LambdaRequestTimer;
+
+  public static CounterOptions ImmediateDispatchCount => _instance.ImmediateDispatchCount;
+
+  public static CounterOptions QueuedRequests => _instance.QueuedRequests;
+
+  public static CounterOptions RunningRequests => _instance.RunningRequests;
+
+  public static CounterOptions PendingDispatchCount => _instance.PendingDispatchCount;
+
+  public static CounterOptions PendingDispatchForegroundCount => _instance.PendingDispatchForegroundCount;
+
+  public static CounterOptions PendingDispatchBackgroundCount => _instance.PendingDispatchBackgroundCount;
+
+  /// <summary>
+  /// Number of Lambda.InvokeAsync calls outstanding
+  /// </summary>
+  public static CounterOptions LambdaInvokeCount => _instance.LambdaInvokeCount;
+
+  public static GaugeOptions LambdaInstanceStartingCount => _instance.LambdaInstanceStartingCount;
+
+  public static GaugeOptions IncomingRequestRPS => _instance.IncomingRequestRPS;
+
+  public static GaugeOptions IncomingRequestDurationEWMA => _instance.IncomingRequestDurationEWMA;
+
+  public static GaugeOptions LambdaInstanceStoppingCount => _instance.LambdaInstanceStoppingCount;
+
+  public static GaugeOptions LambdaInstanceRunningCount => _instance.LambdaInstanceRunningCount;
+
+  public static GaugeOptions LambdaInstanceDesiredCount => _instance.LambdaInstanceDesiredCount;
+
+  public static CounterOptions LambdaConnectionRejectedCount => _instance.LambdaConnectionRejectedCount;
+
+  public static HistogramOptions LambdaInstanceOpenConnections => _instance.LambdaInstanceOpenConnections;
+
+  public static HistogramOptions LambdaInstanceRunningRequests => _instance.LambdaInstanceRunningRequests;
+
+  public static MeterOptions IncomingRequestsMeter => _instance.IncomingRequestsMeter;
+
+  public static async Task PrintMetrics()
+  {
+    await _instance.PrintMetrics();
   }
 }

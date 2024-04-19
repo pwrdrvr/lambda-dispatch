@@ -20,7 +20,7 @@ public class PoolOptions : IPoolOptions
 {
   public void Setup(string lambdaName, string poolId)
   {
-    if (LambdaName != null || PoolId != null)
+    if (!string.IsNullOrEmpty(LambdaName) || !string.IsNullOrEmpty(PoolId))
     {
       throw new InvalidOperationException("PoolOptions has already been setup");
     }
@@ -29,7 +29,7 @@ public class PoolOptions : IPoolOptions
     PoolId = poolId;
   }
 
-  public string LambdaName { get; private set; }
+  public string LambdaName { get; private set; } = string.Empty;
 
-  public string PoolId { get; private set; }
+  public string PoolId { get; private set; } = string.Empty;
 }

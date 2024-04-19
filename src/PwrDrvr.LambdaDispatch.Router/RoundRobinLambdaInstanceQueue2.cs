@@ -29,7 +29,7 @@ public class RoundRobinLambdaInstanceQueue2() : ILambdaInstanceQueue
     }
   }
 
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
+  public bool TryGetConnection([NotNullWhen(true)] out ILambdaConnection? connection, bool tentative = false)
   {
     connection = null;
 

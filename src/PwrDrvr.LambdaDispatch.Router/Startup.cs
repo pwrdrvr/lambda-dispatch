@@ -37,6 +37,9 @@ public class Startup
 
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue>();
         // services.AddSingleton<ILambdaInstanceQueue, RoundRobinLambdaInstanceQueue2>();
+        var metricsRegistry = new MetricsRegistry();
+        services.AddSingleton<IMetricsRegistry>(metricsRegistry);
+        services.AddSingleton<ILambdaClientConfig, LambdaClientConfig>();
         services.AddScoped<IPoolOptions, PoolOptions>();
         services.AddScoped<ILambdaInstanceQueue, LeastOutstandingQueue>();
         services.AddScoped<ILambdaInstanceManager, LambdaInstanceManager>();
@@ -44,7 +47,7 @@ public class Startup
         services.AddSingleton<IPoolManager, PoolManager>();
         services.AddSingleton<IShutdownSignal>(_shutdownSignal);
 
-        Task.Run(MetricsRegistry.PrintMetrics).ConfigureAwait(false);
+        Task.Run(metricsRegistry.PrintMetrics).ConfigureAwait(false);
     }
 
     public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IConfig config, IHostApplicationLifetime applicationLifetime)

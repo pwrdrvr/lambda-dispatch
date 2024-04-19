@@ -19,7 +19,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var result = pool.Dispatcher;
 
       // Assert
-      Assert.AreEqual(mockDispatcher.Object, result);
+      Assert.That(result, Is.EqualTo(mockDispatcher.Object));
     }
 
     [Test]
@@ -34,7 +34,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var result = pool.PoolId;
 
       // Assert
-      Assert.AreEqual(poolId, result);
+      Assert.That(result, Is.EqualTo(poolId));
     }
   }
 }

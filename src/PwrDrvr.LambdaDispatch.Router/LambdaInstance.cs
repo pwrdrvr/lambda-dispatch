@@ -64,7 +64,7 @@ public struct AddConnectionResult
 {
   public bool WasRejected { get; set; }
   public bool CanUseNow { get; set; }
-  public LambdaConnection? Connection { get; set; }
+  public ILambdaConnection? Connection { get; set; }
 }
 
 public interface ILambdaInstance
@@ -167,13 +167,13 @@ public interface ILambdaInstance
   /// <returns>Whether the transition was successful</returns>
   TransitionResult TransitionToDraining();
 
-  bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false);
+  bool TryGetConnection([NotNullWhen(true)] out ILambdaConnection? connection, bool tentative = false);
 
-  void TryGetConnectionWillUse(LambdaConnection connection);
+  void TryGetConnectionWillUse(ILambdaConnection connection);
 
   Task<AddConnectionResult> AddConnection(HttpRequest request, HttpResponse response, string channelId, AddConnectionDispatchMode dispatchMode);
 
-  void ReenqueueUnusedConnection(LambdaConnection connection);
+  void ReenqueueUnusedConnection(ILambdaConnection connection);
 }
 
 /// <summary>
@@ -278,7 +278,7 @@ public class LambdaInstance : ILambdaInstance
   /// If a connection closes we change it's state and decrement the available connection count
   /// But we do not remove it from the queue, it just gets discarded later when removed from the queue
   /// </summary>
-  private readonly ConcurrentQueue<LambdaConnection> connectionQueue = new();
+  private readonly ConcurrentQueue<ILambdaConnection> connectionQueue = new();
 
   /// <summary>
   /// This count should be accurate: as connections finish or abort, this count should be updated
@@ -322,6 +322,8 @@ public class LambdaInstance : ILambdaInstance
 
   private readonly IBackgroundDispatcher dispatcher;
 
+  private readonly IMetricsRegistry metricsRegistry;
+
   /// <summary>
   /// 
   /// </summary>
@@ -332,7 +334,16 @@ public class LambdaInstance : ILambdaInstance
   /// <exception cref="ArgumentNullException"></exception>
   /// <exception cref="ArgumentException"></exception>
   /// <exception cref="ArgumentOutOfRangeException"></exception>
-  public LambdaInstance(int maxConcurrentCount, string functionName, string poolId, IGetCallbackIP getCallbackIP, IBackgroundDispatcher dispatcher, IAmazonLambda? lambdaClient = null, int channelCount = -1)
+  public LambdaInstance(
+    int maxConcurrentCount,
+    string functionName,
+    string poolId,
+    IGetCallbackIP getCallbackIP,
+    IBackgroundDispatcher dispatcher,
+    IMetricsRegistry metricsRegistry,
+    ILambdaClientConfig lambdaClientConfig,
+    IAmazonLambda? lambdaClient = null,
+    int channelCount = -1)
   {
     this.getCallbackIP = getCallbackIP;
     this.dispatcher = dispatcher;
@@ -343,6 +354,7 @@ public class LambdaInstance : ILambdaInstance
     }
     this.functionName = functionName;
     this.poolId = poolId;
+    this.metricsRegistry = metricsRegistry;
 
     if (maxConcurrentCount < 1)
     {
@@ -350,7 +362,7 @@ public class LambdaInstance : ILambdaInstance
     }
     this.maxConcurrentCount = maxConcurrentCount;
 
-    LambdaClient = lambdaClient ?? LambdaClientConfig.LambdaClient;
+    LambdaClient = lambdaClient ?? lambdaClientConfig.LambdaClient;
   }
 
   /// <summary>
@@ -394,14 +406,14 @@ public class LambdaInstance : ILambdaInstance
           firstConnectionForInstance = true;
           // Signal that we are open
           WasOpened = true;
-          MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
+          metricsRegistry.Metrics.Measure.Histogram.Update(metricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
           OnOpen?.Invoke(this);
         }
       }
     }
 
     Interlocked.Increment(ref openConnectionCount);
-    MetricsRegistry.Metrics.Measure.Histogram.Update(MetricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
+    metricsRegistry.Metrics.Measure.Histogram.Update(metricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
 
     var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
 
@@ -468,7 +480,7 @@ public class LambdaInstance : ILambdaInstance
     };
   }
 
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
+  public bool TryGetConnection([NotNullWhen(true)] out ILambdaConnection? connection, bool tentative = false)
   {
     connection = null;
 
@@ -536,7 +548,7 @@ public class LambdaInstance : ILambdaInstance
   /// and try to dispatch another request if there is one pending
   /// </summary>
   /// <param name="connection"></param>
-  public void TryGetConnectionWillUse(LambdaConnection connection)
+  public void TryGetConnectionWillUse(ILambdaConnection connection)
   {
     connection.Response.OnCompleted(Task () =>
     {
@@ -849,7 +861,7 @@ public class LambdaInstance : ILambdaInstance
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
-    MetricsRegistry.Metrics.Measure.Counter.Increment(MetricsRegistry.LambdaInvokeCount);
+    metricsRegistry.Metrics.Measure.Counter.Increment(metricsRegistry.LambdaInvokeCount);
 
     // Throw if the instance is already open or closed
     // There should only be a single call to this ever
@@ -893,7 +905,7 @@ public class LambdaInstance : ILambdaInstance
     // Handle completion of the task
     _ = invokeTask.ContinueWith(t =>
      {
-       MetricsRegistry.Metrics.Measure.Counter.Decrement(MetricsRegistry.LambdaInvokeCount);
+       metricsRegistry.Metrics.Measure.Counter.Decrement(metricsRegistry.LambdaInvokeCount);
 
        // NOTE: The Lambda will return via the callback to indicate that it's shutting down
        // but it will linger until we close the responses to it's requests
@@ -932,7 +944,7 @@ public class LambdaInstance : ILambdaInstance
     });
   }
 
-  public void ReenqueueUnusedConnection(LambdaConnection connection)
+  public void ReenqueueUnusedConnection(ILambdaConnection connection)
   {
     lock (requestCountLock)
     {

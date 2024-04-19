@@ -1,6 +1,6 @@
 public class TrailingAverage
 {
-  private readonly List<(DateTime timestamp, double sum, int count)> _data = new List<(DateTime, double, int)>();
+  private readonly List<(DateTime timestamp, double sum, int count)> _data = [];
   private double _totalSum = 0;
   private int _totalCount = 0;
 

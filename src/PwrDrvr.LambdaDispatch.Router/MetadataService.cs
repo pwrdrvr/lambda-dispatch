@@ -17,7 +17,7 @@ public class MetadataService : IMetadataService
   public string NetworkIP => _networkIP;
   public string? ClusterName => _clusterName;
 
-  public MetadataService(IHttpClientFactory? httpClientFactory = null, IConfig config = null)
+  public MetadataService(IConfig config, IHttpClientFactory? httpClientFactory = null)
   {
     var execEnvType = GetExecEnvType(config);
 

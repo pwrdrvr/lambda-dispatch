@@ -155,7 +155,7 @@ public class LeastOutstandingQueue : IDisposable, ILambdaInstanceQueue
   /// Note: this will perform some limited rebalancing of instances if wrong counts are encountered
   /// </summary>
   /// <returns></returns>
-  public bool TryGetConnection([NotNullWhen(true)] out LambdaConnection? connection, bool tentative = false)
+  public bool TryGetConnection([NotNullWhen(true)] out ILambdaConnection? connection, bool tentative = false)
   {
     connection = null;
 
