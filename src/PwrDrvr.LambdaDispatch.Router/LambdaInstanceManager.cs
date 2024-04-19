@@ -442,6 +442,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             // Schedule a scale in
             deferredScaleInNewDesiredInstanceCount = newDesiredInstanceCount;
             // This needs to be long enough for us to get a message from the background dispatcher
+            cts.Dispose();
             cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
           }
           // else if (deferredScaleInNewDesiredInstanceCount.GetValueOrDefault() > newDesiredInstanceCount)
@@ -457,6 +458,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       catch (OperationCanceledException)
       {
         // This was a timeout - Reset the timeout
+        cts.Dispose();
         cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _logger.LogDebug("ManageCapacity - Scale down check running");
 
