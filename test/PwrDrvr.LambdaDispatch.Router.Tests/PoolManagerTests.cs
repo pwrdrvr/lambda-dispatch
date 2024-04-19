@@ -21,6 +21,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
     {
       _mockServiceProvider = new Mock<IServiceProvider>();
       _mockConfig = new Mock<IConfig>();
+      _mockConfig.SetupGet(c => c.FunctionName).Returns("default");
 
       _mockServiceScope = new Mock<IServiceScope>();
       _mockServiceScopeFactory = new Mock<IServiceScopeFactory>();

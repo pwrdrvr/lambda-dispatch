@@ -14,8 +14,9 @@ public class PoolManager : IPoolManager
 {
   private readonly IServiceProvider _serviceProvider;
   private readonly IConfig _config;
-  private readonly ConcurrentDictionary<string, IPool> _poolsByLambdaArn = [];
-  private readonly ConcurrentDictionary<string, IPool> _poolsByPoolId = [];
+  private readonly Dictionary<string, IPool> _poolsByLambdaArn = [];
+  private readonly Dictionary<string, IPool> _poolsByPoolId = [];
+  private readonly ReaderWriterLockSlim _lock = new();
 
   public PoolManager(IServiceProvider serviceProvider, IConfig config)
   {
@@ -25,12 +26,45 @@ public class PoolManager : IPoolManager
 
   public IPool GetOrCreatePoolByLambdaName(string lambdaArn)
   {
-    return _poolsByLambdaArn.GetOrAdd(lambdaArn, _ => CreatePool(lambdaArn));
+    _lock.EnterUpgradeableReadLock();
+    try
+    {
+      if (!_poolsByLambdaArn.TryGetValue(lambdaArn, out var pool))
+      {
+        _lock.EnterWriteLock();
+        try
+        {
+          if (!_poolsByLambdaArn.TryGetValue(lambdaArn, out pool)) // Double-check locking
+          {
+            pool = CreatePool(lambdaArn);
+            _poolsByLambdaArn[lambdaArn] = pool;
+          }
+        }
+        finally
+        {
+          _lock.ExitWriteLock();
+        }
+      }
+
+      return pool;
+    }
+    finally
+    {
+      _lock.ExitUpgradeableReadLock();
+    }
   }
 
   public bool GetPoolByPoolId(string poolId, [NotNullWhen(true)] out IPool? pool)
   {
-    return _poolsByPoolId.TryGetValue(poolId, out pool);
+    _lock.EnterReadLock();
+    try
+    {
+      return _poolsByPoolId.TryGetValue(poolId, out pool);
+    }
+    finally
+    {
+      _lock.ExitReadLock();
+    }
   }
 
   /// <summary>
@@ -62,9 +96,17 @@ public class PoolManager : IPoolManager
 
   public void RemovePoolByArn(string lambdaArn)
   {
-    if (_poolsByLambdaArn.TryRemove(lambdaArn, out var pool))
+    _lock.EnterWriteLock();
+    try
     {
-      _poolsByPoolId.TryRemove(pool.PoolId, out _);
+      if (_poolsByLambdaArn.Remove(lambdaArn, out var pool))
+      {
+        _poolsByPoolId.Remove(pool.PoolId, out _);
+      }
+    }
+    finally
+    {
+      _lock.ExitWriteLock();
     }
   }
 }
