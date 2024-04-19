@@ -27,6 +27,8 @@ public interface IDispatcher
   Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId);
   Task CloseInstance(string instanceId, bool lambdaInitiated = false);
   bool PingInstance(string instanceId);
+  int PendingRequestCount { get; }
+  int RunningRequestCount { get; }
 }
 
 public class Dispatcher : IDispatcher, IBackgroundDispatcher
@@ -66,11 +68,18 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
   private readonly IMetricsRegistry _metricsRegistry;
 
+  private readonly IConfig _config;
+
+  public int RunningRequestCount => _runningRequestCount;
+
+  public int PendingRequestCount => _pendingRequestCount;
+
   public Dispatcher(ILogger<Dispatcher> logger,
     IMetricsLogger metricsLogger,
     ILambdaInstanceManager lambdaInstanceManager,
     IShutdownSignal shutdownSignal,
-    IMetricsRegistry metricsRegistry)
+    IMetricsRegistry metricsRegistry,
+    IConfig config)
   {
     _logger = logger;
     _metricsLogger = metricsLogger;
@@ -79,6 +88,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     _shutdownSignal = shutdownSignal;
     _lambdaInstanceManager.AddBackgroundDispatcherReference(this);
     _metricsRegistry = metricsRegistry;
+    _config = config;
 
     // Start the background task to process pending requests
     // This needs it's own thread because BlockingCollection will block the thread
@@ -135,6 +145,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
       try
       {
+        // TODO: If we want to cancel we need to pass a token in here
         await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
       }
       catch (Exception ex)
@@ -193,18 +204,24 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     _lambdaInstanceManager.UpdateDesiredCapacity(pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
     // Wait for the request to be dispatched or to timeout
-    // TODO: Get this timeout from the config
     try
     {
       //
       // This waits for the background dispatcher to, maybe, pickup the request
       //
-      await pendingRequest.ResponseFinishedTCS.Task.WaitAsync(TimeSpan.FromSeconds(120));
+      await pendingRequest.ResponseFinishedTCS.Task.WaitAsync(_config.IncomingRequestTimeoutTimeSpan);
     }
     catch (Exception ex)
     {
       // Mark the request as aborted
-      pendingRequest.Abort();
+      if (pendingRequest.Abort())
+      {
+        // We stopped waiting
+        // 1. If it was never dispatched, we decrement PendingRequestCount
+        // 2. If it was dispatched, the counts will be decremented elsewhere
+        Interlocked.Decrement(ref _pendingRequestCount);
+        _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.QueuedRequests);
+      }
 
       try
       {
@@ -445,8 +462,11 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
     try
     {
+      if (!pendingRequest.Dispatch(out var incomingRequest, out var incomingResponse))
+      {
+        throw new InvalidOperationException("PendingRequest.Dispatch returned false");
+      }
       startedRequest = true;
-      pendingRequest.RecordDispatchTime();
       _logger.LogDebug("Dispatching pending request");
       _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.DispatchDelay, (long)pendingRequest.DispatchDelay.TotalMilliseconds);
       _metricsLogger.PutMetric("DispatchDelay", Math.Round(pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
@@ -471,7 +491,10 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       _lambdaInstanceManager.UpdateDesiredCapacity(pendingRequestCount, runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
       // Do not await this, let it loop around
-      _ = lambdaConnection.RunRequest(pendingRequest.Request, pendingRequest.Response).ContinueWith(async Task (task) =>
+      // TODO: If we want to be able to cancel, we need to pass in a token here
+      // TODO: Get the Request and Response through a mutating call to the PendingRequest
+      // that only succeeds if the request is not already canceled
+      _ = lambdaConnection.RunRequest(incomingRequest, incomingResponse).ContinueWith(async Task (task) =>
       {
         Interlocked.Decrement(ref _runningRequestCount);
         _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.RunningRequests);
@@ -495,24 +518,24 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         {
           try
           {
-            pendingRequest.Response.ContentType = "text/plain";
-            pendingRequest.Response.Headers.Append("Server", "PwrDrvr.LambdaDispatch.Router");
+            incomingResponse.ContentType = "text/plain";
+            incomingResponse.Headers.Append("Server", "PwrDrvr.LambdaDispatch.Router");
 
             if (task.Exception.InnerExceptions.Any(e => e is TimeoutException))
             {
-              pendingRequest.Response.StatusCode = StatusCodes.Status504GatewayTimeout;
-              await pendingRequest.Response.WriteAsync("Gateway timeout");
+              incomingResponse.StatusCode = StatusCodes.Status504GatewayTimeout;
+              await incomingResponse.WriteAsync("Gateway timeout");
             }
             else
             {
-              pendingRequest.Response.StatusCode = StatusCodes.Status502BadGateway;
-              await pendingRequest.Response.WriteAsync("Bad gateway");
+              incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
+              await incomingResponse.WriteAsync("Bad gateway");
             }
           }
           catch
           {
             // This can throw if the request/response have already been sent/aborted
-            try { pendingRequest.Response.HttpContext.Abort(); } catch { }
+            try { incomingResponse.HttpContext.Abort(); } catch { }
           }
         }
       }).ConfigureAwait(false);

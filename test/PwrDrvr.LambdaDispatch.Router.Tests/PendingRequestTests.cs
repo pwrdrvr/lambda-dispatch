@@ -18,11 +18,18 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
       Assert.Multiple(() =>
       {
-        Assert.That(pendingRequest.Request, Is.EqualTo(mockRequest.Object));
-        Assert.That(pendingRequest.Response, Is.EqualTo(mockResponse.Object));
         Assert.That(pendingRequest.Dispatched, Is.False);
         Assert.That(pendingRequest.ResponseFinishedTCS, Is.Not.Null);
         Assert.That(pendingRequest.GatewayTimeoutCTS, Is.Not.Null);
+      });
+
+      // Dispatch the request
+      var dispatched = pendingRequest.Dispatch(out var incomingRequest, out var incomingResponse);
+      Assert.Multiple(() =>
+      {
+        Assert.That(dispatched, Is.True);
+        Assert.That(incomingRequest, Is.EqualTo(mockRequest.Object));
+        Assert.That(incomingResponse, Is.EqualTo(mockResponse.Object));
       });
     }
 
@@ -51,7 +58,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       Assert.That(pendingRequest.Dispatched, Is.False);
 
-      pendingRequest.RecordDispatchTime();
+      pendingRequest.Dispatch(out var _, out var _);
 
       Assert.That(pendingRequest.Dispatched, Is.True);
     }
@@ -64,7 +71,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.That(pendingRequest.DispatchDelay.TotalMilliseconds >= 0, Is.True);
+      Assert.That(pendingRequest.DispatchDelay.TotalMilliseconds, Is.GreaterThanOrEqualTo(0));
     }
 
     [Test]
@@ -75,7 +82,7 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.That(pendingRequest.Duration.TotalMilliseconds >= 0, Is.True);
+      Assert.That(pendingRequest.Duration.TotalMilliseconds, Is.GreaterThanOrEqualTo(0));
     }
 
     [Test]
@@ -87,11 +94,11 @@ namespace PwrDrvr.LambdaDispatch.Router.Tests
 
       var pendingRequest = new PendingRequest(mockRequest.Object, mockResponse.Object);
 
-      Assert.That(pendingRequest.DurationAfterDispatch.TotalMilliseconds >= 0, Is.True);
+      Assert.That(pendingRequest.DurationAfterDispatch.TotalMilliseconds, Is.GreaterThanOrEqualTo(0));
 
-      pendingRequest.RecordDispatchTime();
+      pendingRequest.Dispatch(out var incomingRequest, out var incomingResponse);
 
-      Assert.That(pendingRequest.DurationAfterDispatch.TotalMilliseconds >= 0, Is.True);
+      Assert.That(pendingRequest.DurationAfterDispatch.TotalMilliseconds, Is.GreaterThanOrEqualTo(0));
     }
   }
 }

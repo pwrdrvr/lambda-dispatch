@@ -83,6 +83,10 @@ public interface IConfig
   /// The environment variable to use to get the callback IP address
   /// </summary>
   public string EnvVarForCallbackIp { get; set; }
+
+  public string IncomingRequestTimeout { get; set; }
+
+  public TimeSpan IncomingRequestTimeoutTimeSpan { get; }
 }
 
 public class Config : IConfig
@@ -116,6 +120,10 @@ public class Config : IConfig
 
   public string EnvVarForCallbackIp { get; set; }
 
+  public string IncomingRequestTimeout { get; set; }
+
+  public TimeSpan IncomingRequestTimeoutTimeSpan { get; }
+
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
   /// </summary>
@@ -133,6 +141,8 @@ public class Config : IConfig
     PreferredControlChannelScheme = "https";
     InstanceCountMultiplier = 2;
     EnvVarForCallbackIp = "K8S_POD_IP";
+    IncomingRequestTimeout = "00:02:00";
+    IncomingRequestTimeoutTimeSpan = TimeSpan.Parse(IncomingRequestTimeout);
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)

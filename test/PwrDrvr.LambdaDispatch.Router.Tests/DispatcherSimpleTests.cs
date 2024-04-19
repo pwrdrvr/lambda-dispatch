@@ -15,6 +15,7 @@ public class DispatcherSimpleTests
   private Mock<ILambdaInstanceManager> _mockLambdaInstanceManager;
   private Mock<IShutdownSignal> _mockShutdownSignal;
   private Mock<IMetricsRegistry> _metricsRegistry;
+  private Mock<IConfig> _mockConfig;
 
   [SetUp]
   public void SetUp()
@@ -24,11 +25,15 @@ public class DispatcherSimpleTests
     _mockMetricsLogger = new Mock<IMetricsLogger>();
     _mockShutdownSignal = new Mock<IShutdownSignal>();
     _metricsRegistry = MetricsRegistryMockFactory.Create();
+    _mockConfig = new Mock<IConfig>();
+    _mockConfig.SetupGet(c => c.IncomingRequestTimeoutTimeSpan).Returns(TimeSpan.FromSeconds(10));
     _dispatcher = new Dispatcher(_mockLogger.Object,
           _mockMetricsLogger.Object,
           _mockLambdaInstanceManager.Object,
           _mockShutdownSignal.Object,
-          metricsRegistry: _metricsRegistry.Object);
+          metricsRegistry: _metricsRegistry.Object,
+          config: _mockConfig.Object
+          );
   }
 
   [Test]
