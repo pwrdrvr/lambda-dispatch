@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::{pin::Pin, sync::Arc};
 
@@ -114,7 +115,6 @@ impl LambdaRequest {
           self.compression,
           Arc::clone(&self.goaway_received),
           Arc::clone(&last_active),
-          self.rng.clone(),
           Arc::clone(&self.requests_in_flight),
           self.router_endpoint.clone(),
           self.app_endpoint.clone(),
@@ -122,6 +122,9 @@ impl LambdaRequest {
           sender.clone(),
           Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
+          uuid::Builder::from_random_bytes(self.rng.gen())
+            .into_uuid()
+            .to_string(),
         );
         tokio::spawn(async move { router_channel.start().await })
       })
