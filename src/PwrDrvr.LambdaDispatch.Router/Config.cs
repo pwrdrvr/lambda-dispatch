@@ -107,6 +107,8 @@ public interface IConfig
   public string ScalingAlgorithm { get; set; }
 
   public ScalingAlgorithms ScalingAlgorithmEnum { get; }
+
+  public bool CloudWatchMetricsEnabled { get; set; }
 }
 
 public class Config : IConfig
@@ -148,6 +150,8 @@ public class Config : IConfig
 
   public ScalingAlgorithms ScalingAlgorithmEnum { get; private set; }
 
+  public bool CloudWatchMetricsEnabled { get; set; }
+
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
   /// </summary>
@@ -169,6 +173,7 @@ public class Config : IConfig
     IncomingRequestTimeoutTimeSpan = TimeSpan.Parse(IncomingRequestTimeout);
     ScalingAlgorithm = "Simple";
     ScalingAlgorithmEnum = ScalingAlgorithms.Simple;
+    CloudWatchMetricsEnabled = false;
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)

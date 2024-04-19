@@ -3,11 +3,6 @@ using System.Threading.Channels;
 
 namespace PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
-public interface IMetricsLogger
-{
-  void PutMetric(string name, double value, Unit unit);
-}
-
 public class MetricsLogger : IMetricsLogger, IDisposable
 {
   private class Metric

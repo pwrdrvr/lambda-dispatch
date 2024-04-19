@@ -103,6 +103,7 @@ public class ConfigTests
   [TestCase("ControlChannelHTTP2Port", "-5004", typeof(ApplicationException))]
   [TestCase("ControlChannelHTTP2Port", "75004", typeof(ApplicationException))]
   [TestCase("AllowInsecureControlChannel", "not-a-boolean", typeof(InvalidOperationException))]
+  [TestCase("CloudWatchMetricsEnabled", "not-a-boolean", typeof(InvalidOperationException))]
   [TestCase("PreferredControlChannelScheme", "not-a-scheme", typeof(ApplicationException))]
   [TestCase("InstanceCountMultiplier", "-2", typeof(ApplicationException))]
   [TestCase("InstanceCountMultiplier", "11", typeof(ApplicationException))]
@@ -118,6 +119,34 @@ public class ConfigTests
         .Build();
     // Assert that CreateAndValidate throws the expected exception
     Assert.Throws(expectedExceptionType, () => Config.CreateAndValidate(configuration));
+  }
+
+  [TestCase("MaxConcurrentCount", "50")]
+  [TestCase("ChannelCount", "50")]
+  [TestCase("IncomingRequestHTTPPort", "15001")]
+  [TestCase("IncomingRequestHTTPSPort", "15002")]
+  [TestCase("ControlChannelInsecureHTTP2Port", "15003")]
+  [TestCase("ControlChannelHTTP2Port", "15004")]
+  [TestCase("AllowInsecureControlChannel", "true")]
+  [TestCase("AllowInsecureControlChannel", "false")]
+  [TestCase("CloudWatchMetricsEnabled", "true")]
+  [TestCase("CloudWatchMetricsEnabled", "false")]
+  [TestCase("PreferredControlChannelScheme", "https")]
+  [TestCase("InstanceCountMultiplier", "2")]
+  [TestCase("EnvVarForCallbackIp", "CALLBACK_IP")]
+  public void TestCreateAndValidate_ValidSettings(string settingKey, string settingValue)
+  {
+    var inMemorySettings = new Dictionary<string, string?> {
+        { "FunctionName", "my-function"},
+        {settingKey, settingValue},
+    };
+    IConfiguration configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(inMemorySettings)
+        .Build();
+
+    var config = Config.CreateAndValidate(configuration);
+
+    Assert.That(config.GetType().GetProperty(settingKey).GetValue(config).ToString().ToLower(), Is.EqualTo(settingValue.ToLower()));
   }
 
   [Test]
