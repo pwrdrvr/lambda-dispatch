@@ -122,6 +122,8 @@ impl LambdaRequest {
           sender.clone(),
           Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
+          // TODO: Do not create an RNG for each request as it takes a little time
+          // and will slow down single request processing
           uuid::Builder::from_random_bytes(self.rng.gen())
             .into_uuid()
             .to_string(),
