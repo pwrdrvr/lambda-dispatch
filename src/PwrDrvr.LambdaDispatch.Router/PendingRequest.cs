@@ -11,7 +11,7 @@ public enum PendingRequestState
   Aborted
 }
 
-public class PendingRequest
+public class PendingRequest : IDisposable
 {
   private PendingRequestState _state = PendingRequestState.Pending;
   private readonly object _stateLock = new();
@@ -122,5 +122,10 @@ public class PendingRequest
       _state = PendingRequestState.Dispatched;
       return true;
     }
+  }
+
+  public void Dispose()
+  {
+    GatewayTimeoutCTS.Dispose();
   }
 }

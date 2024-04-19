@@ -443,6 +443,8 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       // Check if the pending request is already canceled
       if (pendingRequest.GatewayTimeoutCTS.IsCancellationRequested)
       {
+        pendingRequest.Dispose();
+
         // The pending request at front of queue was canceled, we're removing it
         Interlocked.Decrement(ref _pendingRequestCount);
         _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.QueuedRequests);
@@ -457,6 +459,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       // We've got a good request and a good connection
       dispatchedRequest = true;
       TryBackgroundDispatchOne(pendingRequest, connection);
+      pendingRequest.Dispose();
       break;
     }
 
