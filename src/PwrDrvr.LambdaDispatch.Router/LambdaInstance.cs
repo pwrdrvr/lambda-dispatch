@@ -804,7 +804,6 @@ public class LambdaInstance : ILambdaInstance
   /// <returns></returns>
   public void StartInitOnly()
   {
-
     var initOnlyLambdaId = $"{Id}-initonly";
 
     var options = new JsonSerializerOptions
