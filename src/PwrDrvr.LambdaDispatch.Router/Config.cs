@@ -2,6 +2,22 @@ using System.Text.RegularExpressions;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
+public enum ScalingAlgorithms
+{
+  /// <summary>
+  /// Scales based on the number of running and pending (queued)
+  /// requests.
+  /// DEFAULT
+  /// </summary>
+  Simple,
+
+  /// <summary>
+  /// Calculation of RPS and avg response time
+  /// EXPERIMENTAL
+  /// </summary>
+  EWMA
+}
+
 public interface IConfig
 {
   /// <summary>
@@ -87,6 +103,10 @@ public interface IConfig
   public string IncomingRequestTimeout { get; set; }
 
   public TimeSpan IncomingRequestTimeoutTimeSpan { get; }
+
+  public string ScalingAlgorithm { get; set; }
+
+  public ScalingAlgorithms ScalingAlgorithmEnum { get; }
 }
 
 public class Config : IConfig
@@ -124,6 +144,10 @@ public class Config : IConfig
 
   public TimeSpan IncomingRequestTimeoutTimeSpan { get; }
 
+  public string ScalingAlgorithm { get; set; }
+
+  public ScalingAlgorithms ScalingAlgorithmEnum { get; private set; }
+
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
   /// </summary>
@@ -143,6 +167,8 @@ public class Config : IConfig
     EnvVarForCallbackIp = "K8S_POD_IP";
     IncomingRequestTimeout = "00:02:00";
     IncomingRequestTimeoutTimeSpan = TimeSpan.Parse(IncomingRequestTimeout);
+    ScalingAlgorithm = "Simple";
+    ScalingAlgorithmEnum = ScalingAlgorithms.Simple;
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)
@@ -151,6 +177,7 @@ public class Config : IConfig
     configuration.Bind(config);
     config.Validate();
     (config.FunctionNameOnly, config.FunctionNameQualifier) = LambdaArnParser.ParseFunctionName(config.FunctionName);
+    config.ScalingAlgorithmEnum = Enum.Parse<ScalingAlgorithms>(config.ScalingAlgorithm, true);
     return config;
   }
 
