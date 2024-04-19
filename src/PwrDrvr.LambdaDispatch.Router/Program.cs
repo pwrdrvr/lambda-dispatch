@@ -130,8 +130,10 @@ public class Program
                     metricsDimensions["ClusterName"] = "Local";
                 }
 
-                var metrics = new MetricsLogger("PwrDrvr", metricsDimensions);
-                services.AddSingleton<IMetricsLogger>(metrics);
+                IMetricsLogger metrics = config.CloudWatchMetricsEnabled
+                    ? metrics = new MetricsLogger("PwrDrvr", metricsDimensions)
+                    : metrics = new MetricsLoggerDummy();
+                services.AddSingleton(metrics);
                 metrics.PutMetric("Startup", 1, Unit.Count);
 
                 if (config.PreferredControlChannelScheme == "http")
