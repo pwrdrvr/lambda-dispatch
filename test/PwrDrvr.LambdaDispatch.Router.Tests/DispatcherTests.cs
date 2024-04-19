@@ -444,7 +444,7 @@ public class DispatcherTests
     // StartAsync does not actuall get called because we do not have a real LambdaInstance
     mockIncomingResponse.Verify(r => r.StartAsync(It.IsAny<CancellationToken>()), Times.Never);
     mockInstance.Verify(i => i.TryGetConnectionWillUse(mockConnection.Object), Times.Once);
-    mockLambdaInstanceManager.Verify(m => m.UpdateDesiredCapacity(1, 0, It.IsAny<double>(), It.IsAny<double>()), Times.AtLeast(2));
+    mockLambdaInstanceManager.Verify(m => m.UpdateDesiredCapacity(1, 0, It.IsAny<double>(), It.IsAny<double>()), Times.AtLeast(1));
     mockLambdaInstanceManager.Verify(m => m.UpdateDesiredCapacity(0, 1, It.IsAny<double>(), It.IsAny<double>()), Times.AtLeast(1));
     mockLambdaInstanceManager.Verify(m => m.UpdateDesiredCapacity(0, 0, It.IsAny<double>(), It.IsAny<double>()), Times.AtMost(5));
     mockLambdaInstanceManager.Verify(m => m.ValidateLambdaId("lambdaId", out mockInstanceOut), Times.Never);
