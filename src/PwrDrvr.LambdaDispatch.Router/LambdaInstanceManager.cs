@@ -149,7 +149,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
   /// </summary>
   /// <param name="instance"></param>
   /// <returns></returns>
-  public bool TryAddInstance(ILambdaInstance instance)
+  protected internal bool TryAddInstance(ILambdaInstance instance)
   {
     lock (_instanceCountLock)
     {
