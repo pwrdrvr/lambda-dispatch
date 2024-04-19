@@ -53,7 +53,10 @@ public class PoolManager : IPoolManager
     poolOptions.Setup(lambaArnToUse, poolId);
     var dispatcher = scope.ServiceProvider.GetRequiredService<IDispatcher>();
     var pool = new Pool(dispatcher, poolId);
-    _poolsByPoolId.TryAdd(poolId, pool);
+    if (!_poolsByPoolId.TryAdd(poolId, pool))
+    {
+      throw new InvalidOperationException("PoolId already exists");
+    }
     return pool;
   }
 
