@@ -163,3 +163,44 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
     Box::pin(async move { adapter.fetch_response(event).await })
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use tokio::test;
+
+  #[test]
+  async fn test_fetch_response() {
+    let options = Options::default();
+    let initialized = true;
+    let healthcheck_url: Uri = "http://localhost:8080/health".parse().unwrap();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      healthcheck_url,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: "http://localhost:8000".to_string(),
+      number_of_channels: 5,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    let response = service.fetch_response(event).await;
+
+    assert!(
+      response.is_ok(),
+      "fetch_response failed: {:?}",
+      response.err()
+    );
+    // Add more assertions based on your expected response
+  }
+}
