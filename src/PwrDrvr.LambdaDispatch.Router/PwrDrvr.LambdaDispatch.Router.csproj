@@ -8,6 +8,10 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(DebugLogging)' == 'true'">
+    <DefineConstants>$(DefineConstants);DEBUG</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(TestRunners)' == 'true'">
     <DefineConstants>$(DefineConstants);TEST_RUNNERS</DefineConstants>
   </PropertyGroup>

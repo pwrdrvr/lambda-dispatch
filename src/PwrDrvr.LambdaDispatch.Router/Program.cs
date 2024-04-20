@@ -170,6 +170,12 @@ public class Program
                 // 5004 - lambda interface HTTPS
                 webBuilder.ConfigureKestrel((context, serverOptions) =>
                 {
+                    // Turn off body size limits
+                    serverOptions.Limits.MaxRequestBodySize = null;
+
+                    // Remove the `Server: Kestrel` response header
+                    serverOptions.AddServerHeader = false;
+
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
                     //
