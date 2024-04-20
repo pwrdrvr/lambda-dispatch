@@ -142,6 +142,7 @@ public class ChunkedController : ControllerBase
 
         logger.LogDebug("Router.ChunkedController.Post - Connection from LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
+#if DEBUG
         // Print when we start the response
         Response.OnStarting(() =>
         {
@@ -155,15 +156,16 @@ public class ChunkedController : ControllerBase
           logger.LogDebug("Finished response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
           return Task.CompletedTask;
         });
+#endif
 
+        // If you set this it hangs... it's implied that the transfer-encoding is chunked
+        // and is already handled by the server
         // Response.Headers["Transfer-Encoding"] = "chunked";
         // This is our content type for the body that will contain a request
         // and (optional) request body
         Response.ContentType = "application/octet-stream";
         // This is our status code for the response
         Response.StatusCode = 200;
-        // If you set this it hangs... it's implied that the transfer-encoding is chunked
-        // and is already handled by the server
 
         // Register this Lambda with the Dispatcher
         if (poolManager.GetPoolByPoolId(poolId, out var pool))
@@ -201,7 +203,7 @@ public class ChunkedController : ControllerBase
         }
         else
         {
-          logger.LogDebug("Router.ChunkedController.Post - Pool not found for X-Pool-Id: {poolId}, closing", poolId);
+          logger.LogWarning("Router.ChunkedController.Post - Pool not found for X-Pool-Id: {poolId}, closing", poolId);
           Response.StatusCode = 409;
           Response.ContentType = "text/plain";
           await Response.StartAsync();

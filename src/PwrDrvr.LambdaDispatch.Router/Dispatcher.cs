@@ -247,6 +247,8 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     }
   }
 
+  private static DateTime lastWarningTime = DateTime.MinValue;
+
   // Add a new connection for a lambda, dispatch to it immediately if a request is waiting
   public async Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId)
   {
@@ -268,16 +270,34 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
     if (!_lambdaInstanceManager.ValidateLambdaId(lambdaId, out var instance))
     {
-      _logger.LogDebug("Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+#if DEBUG
+      _logger.LogDebug("AddConnectionForLambda - Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+#else
+      if ((DateTime.UtcNow - Dispatcher.lastWarningTime).TotalSeconds > 1)
+      {
+        _logger.LogWarning("AddConnectionForLambda - Unknown LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+        Dispatcher.lastWarningTime = DateTime.UtcNow;
+      }
+#endif
       return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
     }
 
     // Register the connection with the lambda
-    var addConnectionResult = await _lambdaInstanceManager.AddConnectionForLambda(request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch);
+    var addConnectionResult = await _lambdaInstanceManager.AddConnectionForLambda(
+      request, response, lambdaId, channelId, AddConnectionDispatchMode.TentativeDispatch
+      );
 
     if (addConnectionResult.WasRejected || addConnectionResult.Connection == null)
     {
-      _logger.LogDebug("Failed adding connection - Lambda not known or closed, LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+#if DEBUG
+      _logger.LogDebug("AddConnectionForLambda - Failed adding connection - Lambda not known or closed, LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+#else
+      if ((DateTime.UtcNow - Dispatcher.lastWarningTime).TotalSeconds > 1)
+      {
+        _logger.LogWarning("AddConnectionForLambda - Failed adding connection - Lambda not known or closed, LambdaId {lambdaId} ChannelId {channelId}, putting the request back in the queue", lambdaId, channelId);
+        Dispatcher.lastWarningTime = DateTime.UtcNow;
+      }
+#endif
       return new DispatcherAddConnectionResult { LambdaIDNotFound = true };
     }
 
