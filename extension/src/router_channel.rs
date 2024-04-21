@@ -295,7 +295,7 @@ impl RouterChannel {
           match app_req_tx.send(Ok(chunk.unwrap())).await {
             Ok(_) => {}
             Err(err) => {
-              log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
+              log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {}",
                             pool_id_clone,
                             lambda_id_clone,
                             channel_id_clone,
@@ -539,10 +539,26 @@ async fn connect_to_app(
     }
     Ok(Err(err)) => {
       // Connection error
+      log::error!(
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App TcpStream::connect error: {}, endpoint: {}",
+        pool_id,
+        lambda_id,
+        channel_id,
+        err,
+        app_endpoint
+      );
       return Err(anyhow::anyhow!("TcpStream::connect error: {}", err));
     }
     Err(err) => {
       // Timeout
+      log::error!(
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App TcpStream::connect timed out: {}, endpoint: {}",
+        pool_id,
+        lambda_id,
+        channel_id,
+        err,
+        app_endpoint
+      );
       return Err(anyhow::anyhow!("TcpStream::connect timed out: {}", err));
     }
   }
@@ -560,10 +576,25 @@ async fn connect_to_app(
       }
       Ok(Err(err)) => {
         // Readiness check returned an error
+        log::error!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App TCP connection readiness check failed: {}, endpoint: {}",
+          pool_id,
+          lambda_id,
+          channel_id,
+          err,
+          app_endpoint
+        );
         return Err(err.into());
       }
       Err(_) => {
         // Timeout
+        log::error!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App TCP connection readiness check timed out, endpoint: {}",
+          pool_id,
+          lambda_id,
+          channel_id,
+          app_endpoint
+        );
         return Err(anyhow::anyhow!("TCP connection readiness check timed out"));
       }
     }
@@ -580,23 +611,25 @@ async fn connect_to_app(
     Ok(Ok((sender, connection))) => (sender, connection), // Handshake completed successfully
     Ok(Err(err)) => {
       log::error!(
-        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App HTTP connection could not be established: {:?}",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App HTTP connection could not be established: {}, endpoint: {}",
         pool_id,
         lambda_id,
         channel_id,
-        err
+        err,
+        app_endpoint
       );
       return Err(anyhow::anyhow!(
-        "Contained App HTTP connection could not be established: {:?}",
+        "Contained App HTTP connection could not be established: {}",
         err
       ));
     }
     Err(_) => {
       log::error!(
-        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App HTTP connection timed out",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App HTTP connection timed out, endpoint: {}",
         pool_id,
         lambda_id,
-        channel_id
+        channel_id,
+        app_endpoint
       );
       return Err(anyhow::anyhow!("Contained App HTTP connection timed out"));
     }
@@ -632,7 +665,7 @@ async fn connect_to_app(
   tokio::task::spawn(async move {
     if let Err(err) = connection.await {
       log::error!(
-        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App HTTP connection failed: {:?}",
+        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App HTTP connection failed: {}",
         pool_id,
         lambda_id,
         channel_id,

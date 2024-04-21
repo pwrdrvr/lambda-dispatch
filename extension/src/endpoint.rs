@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use hyper::Uri;
 use rustls_pki_types::ServerName;
-use std::{borrow::Cow, str::FromStr, sync::Arc};
+use std::{borrow::Cow, fmt, str::FromStr, sync::Arc};
 
 /// An `Endpoint` type to extract and validate the interesting components from a hyper `Uri`, and
 /// make them relatively cheap to clone.
@@ -10,6 +10,12 @@ pub struct Endpoint {
   scheme: Scheme,
   host: Arc<str>,
   port: u16,
+}
+
+impl fmt::Display for Endpoint {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}://{}:{}", self.scheme.as_str(), self.host, self.port)
+  }
 }
 
 impl Endpoint {
