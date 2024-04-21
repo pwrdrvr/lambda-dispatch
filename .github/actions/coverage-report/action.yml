@@ -25,7 +25,7 @@ runs:
       if: github.event_name == 'pull_request'
       id: parse
       run: |
-        node scripts/parse-coverage.js ./lcov.info > coverage-summary.txt
+        node scripts/parse-coverage.js ${{ inputs.lcov-file }} > coverage-summary.txt
         echo "coverage-summary<<EOF" >> $GITHUB_OUTPUT
         cat coverage-summary.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
