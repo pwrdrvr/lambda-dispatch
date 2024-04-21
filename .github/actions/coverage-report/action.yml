@@ -1,0 +1,51 @@
+name: 'Parse Coverage and Post Comment'
+description: 'Parses a coverage report and posts a comment on a PR'
+inputs:
+  lcov-file:
+    description: 'Path to the lcov.info file'
+    required: true
+  title:
+    description: 'Title of the comment'
+    default: 'Code Coverage Report'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: "20"
+
+    - name: Install Dependencies
+      shell: bash
+      run: npm install lcov-parse
+
+    - name: Parse Coverage
+      shell: bash
+      if: github.event_name == 'pull_request'
+      id: parse
+      run: |
+        node scripts/parse-coverage.js ./lcov.info > coverage-summary.txt
+        echo "coverage-summary<<EOF" >> $GITHUB_OUTPUT
+        cat coverage-summary.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Find Coverage Comment
+      if: github.event_name == 'pull_request'
+      uses: peter-evans/find-comment@v3
+      id: fc
+      with:
+        issue-number: ${{ github.event.pull_request.number }}
+        comment-author: 'github-actions[bot]'
+        body-includes: '### 📊 ${{ inputs.title }}'
+
+    - name: Post Coverage Comment
+      if: github.event_name == 'pull_request'
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        comment-id: ${{ steps.fc.outputs.comment-id }}
+        edit-mode: replace
+        issue-number: ${{ github.event.pull_request.number }}
+        body: |
+          ### 📊 ${{ inputs.title }}
+          ${{ steps.parse.outputs.coverage-summary }}
