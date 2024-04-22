@@ -17,7 +17,7 @@ pub struct WaiterRequest {
   pub init_only: bool,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, PartialEq)]
 pub struct WaiterResponse {
   #[serde(rename = "PoolId")]
   pub pool_id: String,

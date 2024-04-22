@@ -217,11 +217,13 @@ mod tests {
     routing::{get, post},
     Router,
   };
+  use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
   use hyper::{body::Incoming, Request};
   use hyper_util::rt::{TokioExecutor, TokioIo};
   use tokio::net::TcpListener;
   use tokio::sync::oneshot;
+  use tokio_test::assert_ok;
 
   async fn start_mock_server() -> TcpListener {
     TcpListener::bind(("127.0.0.1", 0)).await.unwrap()
@@ -323,6 +325,52 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn test_lambda_service() {
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: "http://localhost:54321".to_string(),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: true,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Create the service
+    let options = Options::default();
+    let initialized = true;
+
+    let mut service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      "localhost:54321".parse().unwrap(),
+    );
+
+    // Ensure the service is ready
+    let waker = noop_waker();
+    let mut context = core::task::Context::from_waker(&waker);
+    let _ = service.poll_ready(&mut context);
+
+    // Call the service with the mock request
+    let result = service.call(event).await;
+
+    // Assert that the response is as expected
+    let response = assert_ok!(result);
+    assert_eq!(
+      response,
+      WaiterResponse {
+        pool_id: "test_pool".to_string(),
+        id: "test_id".to_string()
+      }
+    );
+  }
+
+  #[tokio::test]
   async fn test_not_initialized_healthcheck_200_ok() {
     // If you want to view logs during a test, uncomment this
     // let _ = env_logger::builder().is_test(true).try_init();
@@ -386,32 +434,37 @@ mod tests {
         }),
       );
 
-    let server = run_http2_app(app);
+    let mock_router_server = run_http2_app(app);
 
-    log::info!("Router server running on port: {}", server.addr.port());
+    log::info!(
+      "Router server running on port: {}",
+      mock_router_server.addr.port()
+    );
 
     // Start app server
-    let app_server = MockServer::start();
-    let app_healthcheck_mock = app_server.mock(|when, then| {
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
 
     let mut options = Options::default();
     // Tell the service the port of the mock contained app
-    options.port = server.addr.port();
+    options.port = mock_app_server.address().port();
     let initialized = false;
 
-    let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
+    let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
+      .parse()
+      .unwrap();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
-      app_healthcheck_url,
+      mock_app_healthcheck_url,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!("http://localhost:{}", server.addr.port()),
+      router_url: format!("http://localhost:{}", mock_router_server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -465,7 +518,7 @@ mod tests {
     );
 
     // Assert app server's healthcheck endpoint got called
-    app_healthcheck_mock.assert();
+    mock_app_healthcheck.assert();
   }
 
   #[tokio::test]
@@ -511,6 +564,93 @@ mod tests {
     assert!(
       duration <= std::time::Duration::from_secs(2),
       "Connection should take at most 2 seconds"
+    );
+  }
+
+  #[tokio::test]
+  async fn test_local_env_stale_request_reject() {
+    // If you want to view logs during a test, uncomment this
+    let _ = env_logger::builder().is_test(true).try_init();
+    let mut options = Options::default();
+    options.local_env = true;
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      // 192.0.2.0/24 (TEST-NET-1)
+      "http://192.0.2.0:54321/health".parse().unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      // 192.0.2.0/24 (TEST-NET-1)
+      router_url: format!("http://192.0.2.0:{}", 12345),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    // This only succeeds because we're rejecting the request without connecting to the router
+    assert!(response.is_ok(), "fetch_response success",);
+    assert!(
+      duration <= std::time::Duration::from_secs(1),
+      "Connection should take at most 1 seconds"
+    );
+  }
+
+  #[tokio::test]
+  async fn test_init_only_request_already_inited() {
+    // If you want to view logs during a test, uncomment this
+    let _ = env_logger::builder().is_test(true).try_init();
+    let options = Options::default();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      // 192.0.2.0/24 (TEST-NET-1)
+      "http://192.0.2.0:54321/health".parse().unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      // 192.0.2.0/24 (TEST-NET-1)
+      router_url: format!("http://192.0.2.0:{}", 12345),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: true,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    // This only succeeds because we're rejecting the request without connecting to the router
+    assert!(response.is_ok(), "fetch_response success",);
+    assert!(
+      duration <= std::time::Duration::from_secs(1),
+      "Connection should take at most 1 seconds"
     );
   }
 }
