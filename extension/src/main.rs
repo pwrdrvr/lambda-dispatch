@@ -26,6 +26,7 @@ mod options;
 mod ping;
 pub mod prelude;
 mod router_channel;
+mod test_http2_server;
 mod threads;
 mod time;
 
