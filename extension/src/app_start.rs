@@ -183,3 +183,91 @@ pub async fn health_check_contained_app(
   log::info!("Health check - Complete - Goaway received");
   false
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  use httpmock::{Method::GET, MockServer};
+  use tokio::time::timeout;
+  use tokio_test::assert_err;
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_success() {
+    // If you want to view logs during a test, uncomment this
+    // let _ = env_logger::builder().is_test(true).try_init();
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+
+    let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
+      .parse()
+      .unwrap();
+
+    let goaway_received = Arc::new(AtomicBool::new(false));
+
+    // Act
+    let result = health_check_contained_app(goaway_received, &mock_app_healthcheck_url).await;
+    assert!(result, "Health check failed");
+
+    // Assert app server's healthcheck endpoint got called
+    mock_app_healthcheck.assert();
+  }
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_blackhole() {
+    // 192.0.2.0/24 (TEST-NET-1)
+    let mock_app_healthcheck_url = "http://192.0.2.0:54321/health".parse().unwrap();
+
+    let goaway_received = Arc::new(AtomicBool::new(false));
+
+    // Act
+    let start = std::time::Instant::now();
+    let result = timeout(
+      Duration::from_secs(2),
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url),
+    )
+    .await;
+    let duration = start.elapsed();
+
+    assert_err!(result, "Health check should fail");
+    assert!(
+      duration >= std::time::Duration::from_secs(2),
+      "Connection should take at least 2 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(3),
+      "Connection should take at most 3 seconds"
+    );
+  }
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_error() {
+    let mock_app_healthcheck_url = "http://127.0.0.1:54321/health".parse().unwrap();
+
+    let goaway_received = Arc::new(AtomicBool::new(false));
+
+    // Act
+    let start = std::time::Instant::now();
+    let result = timeout(
+      Duration::from_secs(2),
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url),
+    )
+    .await;
+    let duration = start.elapsed();
+
+    assert_err!(result, "Health check should fail");
+    assert!(
+      duration >= std::time::Duration::from_secs(2),
+      "Connection should take at least 2 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(3),
+      "Connection should take at most 3 seconds"
+    );
+  }
+}
