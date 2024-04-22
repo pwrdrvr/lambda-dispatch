@@ -68,10 +68,11 @@ impl LambdaService {
     let app_endpoint = Endpoint::new(Scheme::Http, "127.0.0.1", self.options.port);
 
     if !self.initialized.load(Ordering::SeqCst) {
+      let fake_goaway_received = Arc::new(AtomicBool::new(false));
       let result = timeout(
         self.options.async_init_timeout,
         app_start::health_check_contained_app(
-          Arc::new(AtomicBool::new(false)),
+          Arc::clone(&fake_goaway_received),
           &self.healthcheck_url,
         ),
       )
@@ -85,9 +86,10 @@ impl LambdaService {
               pool_id,
               lambda_id
             );
-            return Err(anyhow::anyhow!(
-              "Health check returned false before timeout"
-            ));
+
+            // goaway_received is a private var above, it can't be set to false
+            // so this can never happen
+            panic!("Health check returned false before timeout");
           }
           self.initialized.store(success, Ordering::SeqCst);
         }
@@ -97,6 +99,11 @@ impl LambdaService {
             pool_id,
             lambda_id
           );
+
+          // Set goaway_received to true to the loop will exit
+          fake_goaway_received.store(true, Ordering::SeqCst);
+
+          // We'll panic in the tower service if this happens
           return Err(anyhow::anyhow!(
             "Health check returned false before timeout"
           ));
@@ -189,7 +196,14 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
 
   fn call(&mut self, event: LambdaEvent<WaiterRequest>) -> Self::Future {
     let adapter = self.clone();
-    Box::pin(async move { adapter.fetch_response(event).await })
+    Box::pin(async move {
+      match adapter.fetch_response(event).await {
+        Ok(response) => Ok(response),
+        Err(e) => {
+          panic!("Error fetching response: {}", e);
+        }
+      }
+    })
   }
 }
 
