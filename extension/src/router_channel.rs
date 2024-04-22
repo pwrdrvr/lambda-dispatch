@@ -128,9 +128,9 @@ impl RouterChannel {
       );
 
       self.sender
-                .ready()
-                .await
-                .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect")?;
+        .ready()
+        .await
+        .context(format!("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.pool_id, self.lambda_id, self.channel_id))?;
 
       let res = self.sender.send_request(req).await?;
       log::debug!(
