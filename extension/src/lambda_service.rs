@@ -6,6 +6,7 @@ use hyper::Uri;
 use lambda_runtime::LambdaEvent;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tower::Service;
 
 use crate::endpoint::{Endpoint, Scheme};
@@ -67,14 +68,42 @@ impl LambdaService {
     let app_endpoint = Endpoint::new(Scheme::Http, "127.0.0.1", self.options.port);
 
     if !self.initialized.load(Ordering::SeqCst) {
-      self.initialized.store(
+      let result = timeout(
+        self.options.async_init_timeout,
         app_start::health_check_contained_app(
           Arc::new(AtomicBool::new(false)),
           &self.healthcheck_url,
-        )
-        .await,
-        Ordering::SeqCst,
-      );
+        ),
+      )
+      .await;
+
+      match result {
+        Ok(success) => {
+          if !success {
+            log::error!(
+              "PoolId: {}, LambdaId: {} - Async init Health check returned false before timeout, bailing",
+              pool_id,
+              lambda_id
+            );
+            return Err(anyhow::anyhow!(
+              "Health check returned false before timeout"
+            ));
+          }
+          self.initialized.store(success, Ordering::SeqCst);
+        }
+        Err(_) => {
+          log::error!(
+            "PoolId: {}, LambdaId: {} - Async init Health check not ready before timeout, bailing",
+            pool_id,
+            lambda_id
+          );
+          return Err(anyhow::anyhow!(
+            "Health check returned false before timeout"
+          ));
+        }
+      }
+
+      self.initialized.store(true, Ordering::SeqCst);
     }
 
     // prepare the response
@@ -426,18 +455,18 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore]
   async fn test_spillover_healthcheck_blackhole_timeout() {
     // If you want to view logs during a test, uncomment this
     let _ = env_logger::builder().is_test(true).try_init();
-    let options = Options::default();
+    let mut options = Options::default();
+    options.async_init_timeout = std::time::Duration::from_millis(1000);
     let initialized = false;
 
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
-      "http://192.0.2.0:3000/health".parse().unwrap(),
+      "http://192.0.2.0:54321/health".parse().unwrap(),
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -455,16 +484,19 @@ mod tests {
       context,
     };
 
+    // Act
+    let start = std::time::Instant::now();
     let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
 
+    assert!(response.is_err(), "fetch_response should have failed",);
     assert!(
-      response.is_ok(),
-      "fetch_response failed: {:?}",
-      response.err()
+      duration >= std::time::Duration::from_secs(1),
+      "Connection should take at least 1 seconds"
     );
-    // Get the WaiterResponse out of the response
-    let resp = response.unwrap();
-    assert_eq!(resp.id, "test_id", "Lambda ID");
-    assert_eq!(resp.pool_id, "test_pool", "Pool ID");
+    assert!(
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds"
+    );
   }
 }

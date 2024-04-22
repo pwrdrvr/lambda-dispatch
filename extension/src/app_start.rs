@@ -180,6 +180,6 @@ pub async fn health_check_contained_app(
     }
   }
 
-  log::info!("Health check - Complete - Failed");
+  log::info!("Health check - Complete - Goaway received");
   false
 }
