@@ -219,10 +219,10 @@ mod tests {
   };
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
-  use tokio_test::assert_ok;
+  use tokio_test::{assert_err, assert_ok};
 
   #[tokio::test]
-  async fn test_lambda_service() {
+  async fn test_lambda_service_call() {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
@@ -268,7 +268,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_not_initialized_healthcheck_200_ok() {
+  async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok() {
     // If you want to view logs during a test, uncomment this
     // let _ = env_logger::builder().is_test(true).try_init();
 
@@ -419,9 +419,9 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_spillover_healthcheck_blackhole_timeout() {
+  async fn test_lambda_service_fetch_response_spillover_healthcheck_blackhole_timeout() {
     // If you want to view logs during a test, uncomment this
-    let _ = env_logger::builder().is_test(true).try_init();
+    // let _ = env_logger::builder().is_test(true).try_init();
     let mut options = Options::default();
     options.async_init_timeout = std::time::Duration::from_millis(1000);
     let initialized = false;
@@ -465,9 +465,9 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_local_env_stale_request_reject() {
+  async fn test_lambda_service_fetch_response_local_env_stale_request_reject() {
     // If you want to view logs during a test, uncomment this
-    let _ = env_logger::builder().is_test(true).try_init();
+    // let _ = env_logger::builder().is_test(true).try_init();
     let mut options = Options::default();
     options.local_env = true;
     let initialized = true;
@@ -501,7 +501,7 @@ mod tests {
 
     // Assert
     // This only succeeds because we're rejecting the request without connecting to the router
-    assert!(response.is_ok(), "fetch_response success",);
+    assert_ok!(response, "fetch_response success",);
     assert!(
       duration <= std::time::Duration::from_secs(1),
       "Connection should take at most 1 seconds"
@@ -509,9 +509,9 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_init_only_request_already_inited() {
+  async fn test_lambda_service_fetch_response_init_only_request_already_inited() {
     // If you want to view logs during a test, uncomment this
-    let _ = env_logger::builder().is_test(true).try_init();
+    // let _ = env_logger::builder().is_test(true).try_init();
     let options = Options::default();
     let initialized = true;
 
@@ -544,10 +544,58 @@ mod tests {
 
     // Assert
     // This only succeeds because we're rejecting the request without connecting to the router
-    assert!(response.is_ok(), "fetch_response success",);
+    assert_ok!(response, "fetch_response success");
     assert!(
       duration <= std::time::Duration::from_secs(1),
       "Connection should take at most 1 seconds"
+    );
+  }
+
+  #[tokio::test]
+  async fn test_request_already_inited_router_blackhole() {
+    // If you want to view logs during a test, uncomment this
+    // let _ = env_logger::builder().is_test(true).try_init();
+    let options = Options::default();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      // 192.0.2.0/24 (TEST-NET-1)
+      "http://192.0.2.0:54321/health".parse().unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      // 192.0.2.0/24 (TEST-NET-1)
+      router_url: format!("http://192.0.2.0:{}", 12345),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    // TODO: This actually should succeed with a response that indicates an error so the router
+    // can decide to backoff
+    assert_err!(response, "fetch_response error");
+    assert!(
+      duration > std::time::Duration::from_secs(5),
+      "Connection should take at least 5 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(6),
+      "Connection should take at most 6 seconds"
     );
   }
 }
