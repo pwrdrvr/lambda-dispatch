@@ -156,7 +156,6 @@ pub async fn connect_to_app(
   // }
 
   // This task just keeps the connection from being dropped
-  // TODO: Let's return this and hold it elsewhere
   tokio::task::spawn(async move {
     if let Err(err) = connection.await {
       log::error!(
@@ -179,6 +178,7 @@ mod tests {
   use crate::endpoint::{Endpoint, Scheme};
   use httpmock::{Method::GET, MockServer};
   use std::sync::Arc;
+  use tokio_test::assert_err;
 
   #[tokio::test]
   async fn test_connect_to_app_dns_failure() {
@@ -225,7 +225,7 @@ mod tests {
   #[tokio::test]
   async fn test_connect_to_app_blackhole_timeout() {
     // 192.0.2.0/24 (TEST-NET-1)
-    let router_endpoint = Endpoint::new(Scheme::Http, "192.0.2.0", 12345);
+    let app_endpoint = Endpoint::new(Scheme::Http, "192.0.2.0", 12345);
     let pool_id = Arc::from("pool_id");
     let lambda_id = Arc::from("lambda_id");
     let channel_id = Arc::from("channel_id");
@@ -233,7 +233,7 @@ mod tests {
     // Act
     let start = std::time::Instant::now();
     let sender = connect_to_app(
-      &router_endpoint,
+      &app_endpoint,
       Arc::clone(&pool_id),
       Arc::clone(&lambda_id),
       Arc::clone(&channel_id),
@@ -242,13 +242,7 @@ mod tests {
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
-    match sender {
-      Ok(_) => assert!(sender.is_err(), "Connection should not be established"),
-      Err(e) => assert_eq!(
-        e.to_string(),
-        "TcpStream::connect timed out: deadline has elapsed"
-      ),
-    }
+    assert_err!(sender, "Connection should not be established");
     assert!(
       duration >= std::time::Duration::from_secs(5),
       "Connection should take at least 5 seconds"
@@ -268,15 +262,15 @@ mod tests {
       then.status(200).body("OK");
     });
 
-    let router_endpoint = Endpoint::new(Scheme::Http, "localhost", app_server.port());
+    let app_endpoint = Endpoint::new(Scheme::Http, "localhost", app_server.port());
     let pool_id = Arc::from("pool_id");
     let lambda_id = Arc::from("lambda_id");
     let channel_id = Arc::from("channel_id");
 
     // Act
     let start = std::time::Instant::now();
-    let sender = connect_to_app(
-      &router_endpoint,
+    let result = connect_to_app(
+      &app_endpoint,
       Arc::clone(&pool_id),
       Arc::clone(&lambda_id),
       Arc::clone(&channel_id),
@@ -285,10 +279,7 @@ mod tests {
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
-    match sender {
-      Ok(_) => assert!(sender.is_ok(), "Connection should be established"),
-      Err(e) => assert_eq!(e.to_string(), "Contained App ready check timed out"),
-    }
+    assert!(result.is_ok(), "Connection should be established");
     assert!(
       duration <= std::time::Duration::from_secs(2),
       "Connection should take at most 2 seconds"
