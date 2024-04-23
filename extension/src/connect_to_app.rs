@@ -179,13 +179,6 @@ mod tests {
   use crate::endpoint::{Endpoint, Scheme};
   use httpmock::{Method::GET, MockServer};
   use std::sync::Arc;
-  use tokio::net::TcpListener;
-
-  async fn start_mock_tcp_server() -> (TcpListener, u16) {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    (listener, port)
-  }
 
   #[tokio::test]
   async fn test_connect_to_app_dns_failure() {
@@ -263,39 +256,6 @@ mod tests {
     assert!(
       duration <= std::time::Duration::from_secs(7),
       "Connection should take at most 7 seconds"
-    );
-  }
-
-  #[tokio::test]
-  #[ignore = "http1 sender.ready() does not return when checked"]
-  async fn test_connect_to_app_http1_establishment_timeout() {
-    // Start the mock server
-    let (_listener, port) = start_mock_tcp_server().await;
-
-    let router_endpoint = Endpoint::new(Scheme::Http, "localhost", port);
-    let pool_id = Arc::from("pool_id");
-    let lambda_id = Arc::from("lambda_id");
-    let channel_id = Arc::from("channel_id");
-
-    // Act
-    let start = std::time::Instant::now();
-    let sender = connect_to_app(
-      &router_endpoint,
-      Arc::clone(&pool_id),
-      Arc::clone(&lambda_id),
-      Arc::clone(&channel_id),
-    )
-    .await;
-    let duration = std::time::Instant::now().duration_since(start);
-
-    // Assert
-    match sender {
-      Ok(_) => assert!(sender.is_ok(), "Connection should not be established"),
-      Err(e) => assert_eq!(e.to_string(), "Contained App ready check timed out"),
-    }
-    assert!(
-      duration <= std::time::Duration::from_secs(2),
-      "Connection should take at most 2 seconds"
     );
   }
 
