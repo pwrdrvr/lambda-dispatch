@@ -57,3 +57,4 @@ pem = "3.0.4"
 rustls-pemfile = "2.1.2"
 tower-test = "0.4.0"
 tokio-test = "0.4.4"
+axum-extra = { version = "0.9.3", features = ["async-read-body"] }
