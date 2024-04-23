@@ -385,6 +385,8 @@ mod tests {
     let response = service.fetch_response(event).await;
 
     // Assert
+    // TODO: This should succeed but return an error indicating the router should backoff
+    // The reason is the response from the channel request is invalid: a 200 OK with no response body
     assert!(
       response.is_ok(),
       "fetch_response failed: {:?}",
@@ -555,7 +557,8 @@ mod tests {
   async fn test_request_already_inited_router_blackhole() {
     // If you want to view logs during a test, uncomment this
     // let _ = env_logger::builder().is_test(true).try_init();
-    let options = Options::default();
+    let mut options = Options::default();
+    options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
     let initialized = true;
 
     let service = LambdaService::new(
@@ -574,7 +577,8 @@ mod tests {
       init_only: false,
     };
     let mut context = lambda_runtime::Context::default();
-    context.deadline = current_time_millis() + 60 * 1000;
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000 * 1000;
     let event = LambdaEvent {
       payload: request,
       context,
