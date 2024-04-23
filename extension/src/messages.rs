@@ -23,12 +23,104 @@ pub struct WaiterResponse {
   pub pool_id: String,
   #[serde(rename = "Id")]
   pub id: String,
+  #[serde(rename = "RequestCount")]
+  pub request_count: u64, // Assuming it's an unsigned integer
+  #[serde(rename = "InvokeDuration")]
+  pub invoke_duration: u64, // Assuming it's an unsigned integer
+  #[serde(rename = "ExitReason")]
+  pub exit_reason: ExitReason,
+}
+
+#[derive(Serialize, Debug, PartialEq, Copy, Clone)]
+pub enum ExitReason {
+  #[serde(rename = "SelfDeadline")]
+  SelfDeadline,
+  #[serde(rename = "SelfLastActive")]
+  SelfLastActive,
+  #[serde(rename = "SelfInitOnly")]
+  SelfInitOnly,
+  #[serde(rename = "SelfStaleRequest")]
+  SelfStaleRequest,
+  #[serde(rename = "AppConnectionClosed")]
+  AppConnectionClosed,
+  #[serde(rename = "RouterConnectionError")]
+  RouterConnectionError,
+  #[serde(rename = "RouterUnreachable")]
+  RouterUnreachable,
+  #[serde(rename = "RouterGoaway")]
+  RouterGoaway,
+  #[serde(rename = "RouterStatus4xx")]
+  RouterStatus4xx,
+  #[serde(rename = "RouterStatus5xx")]
+  RouterStatus5xx,
+  #[serde(rename = "RouterStatusOther")]
+  RouterStatusOther,
+}
+
+impl ExitReason {
+  pub fn worse(self, other: Self) -> Self {
+    use ExitReason::*;
+
+    let ordered_reasons = [
+      RouterUnreachable,
+      RouterConnectionError,
+      AppConnectionClosed,
+      RouterStatus5xx,
+      RouterStatus4xx,
+      RouterStatusOther,
+      RouterGoaway,
+      SelfLastActive,
+      SelfDeadline,
+      SelfStaleRequest,
+      SelfInitOnly,
+    ];
+
+    for &reason in &ordered_reasons {
+      if self == reason || other == reason {
+        return reason;
+      }
+    }
+
+    self // If no match is found, return the current value
+  }
+}
+
+impl WaiterResponse {
+  pub fn new(pool_id: String, id: String) -> Self {
+    Self {
+      pool_id,
+      id,
+      request_count: 0,
+      invoke_duration: 0,
+      exit_reason: ExitReason::RouterGoaway,
+    }
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use serde_json::json;
+
+  #[test]
+  fn test_worse() {
+    assert_eq!(
+      ExitReason::SelfDeadline.worse(ExitReason::RouterUnreachable),
+      ExitReason::RouterUnreachable
+    );
+    assert_eq!(
+      ExitReason::RouterUnreachable.worse(ExitReason::SelfDeadline),
+      ExitReason::RouterUnreachable
+    );
+    assert_eq!(
+      ExitReason::SelfDeadline.worse(ExitReason::SelfStaleRequest),
+      ExitReason::SelfDeadline
+    );
+    assert_eq!(
+      ExitReason::SelfStaleRequest.worse(ExitReason::SelfDeadline),
+      ExitReason::SelfDeadline
+    );
+  }
 
   #[tokio::test]
   async fn test_waiter_request_deserialization() {
@@ -56,6 +148,9 @@ mod tests {
     let response = WaiterResponse {
       pool_id: "pool1".to_string(),
       id: "id1".to_string(),
+      request_count: 10,
+      invoke_duration: 20,
+      exit_reason: ExitReason::SelfDeadline,
     };
 
     let data = serde_json::to_value(&response).unwrap();
@@ -64,7 +159,10 @@ mod tests {
       data,
       json!({
           "PoolId": "pool1",
-          "Id": "id1"
+          "Id": "id1",
+          "RequestCount": 10,
+          "InvokeDuration": 20,
+          "ExitReason": "SelfDeadline"
       })
     );
   }
@@ -91,11 +189,14 @@ mod tests {
     let response = WaiterResponse {
       pool_id: "pool1".to_string(),
       id: "id1".to_string(),
+      request_count: 10,
+      invoke_duration: 20,
+      exit_reason: ExitReason::SelfDeadline,
     };
 
     assert_eq!(
       format!("{:?}", response),
-      "WaiterResponse { pool_id: \"pool1\", id: \"id1\" }"
+      "WaiterResponse { pool_id: \"pool1\", id: \"id1\", request_count: 10, invoke_duration: 20, exit_reason: SelfDeadline }"
     );
   }
 }

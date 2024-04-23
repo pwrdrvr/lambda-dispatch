@@ -11,6 +11,7 @@ use tower::Service;
 
 use crate::endpoint::{Endpoint, Scheme};
 use crate::lambda_request::LambdaRequest;
+use crate::messages::ExitReason;
 use crate::options::Options;
 use crate::prelude::*;
 use crate::time::current_time_millis;
@@ -49,6 +50,7 @@ impl LambdaService {
     &self,
     event: LambdaEvent<WaiterRequest>,
   ) -> Result<WaiterResponse, Error> {
+    let start_time = current_time_millis();
     // extract some useful info from the request
     let pool_id: PoolId = event
       .payload
@@ -114,10 +116,7 @@ impl LambdaService {
     }
 
     // prepare the response
-    let resp = WaiterResponse {
-      pool_id: pool_id.to_string(),
-      id: lambda_id.to_string(),
-    };
+    let mut resp = WaiterResponse::new(pool_id.to_string(), lambda_id.to_string());
 
     if event.payload.init_only {
       log::info!(
@@ -125,6 +124,8 @@ impl LambdaService {
         pool_id,
         lambda_id
       );
+      resp.invoke_duration = current_time_millis() - start_time;
+      resp.exit_reason = ExitReason::SelfInitOnly;
       return Ok(resp);
     }
 
@@ -142,6 +143,8 @@ impl LambdaService {
         pool_id,
         lambda_id
       );
+      resp.invoke_duration = current_time_millis() - start_time;
+      resp.exit_reason = ExitReason::SelfStaleRequest;
       return Ok(resp);
     }
 
@@ -170,13 +173,30 @@ impl LambdaService {
       app_endpoint,
       self.options.compression,
       pool_id,
-      lambda_id,
+      Arc::clone(&lambda_id),
       channel_count,
       router_endpoint,
       deadline_ms,
     );
-    lambda_request.start().await?;
 
+    //
+    // This is the main loop that runs until the deadline is about to be reached
+    //
+    lambda_request.start().await?;
+    // TODO: Don't just return an error here (the ?), return a response that indicates the router should backoff
+
+    // Print final stats
+    log::info!(
+      "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {} - Returning from run",
+      lambda_id,
+      lambda_request.count.load(Ordering::Acquire),
+      lambda_request.elapsed(),
+      lambda_request.rps()
+    );
+
+    resp.invoke_duration = current_time_millis() - start_time;
+    resp.request_count = lambda_request.count.load(Ordering::Acquire) as u64;
+    resp.exit_reason = ExitReason::RouterGoaway;
     Ok(resp)
   }
 }
@@ -262,7 +282,10 @@ mod tests {
       response,
       WaiterResponse {
         pool_id: "test_pool".to_string(),
-        id: "test_id".to_string()
+        id: "test_id".to_string(),
+        request_count: 0,
+        invoke_duration: 0,
+        exit_reason: ExitReason::SelfInitOnly,
       }
     );
   }
