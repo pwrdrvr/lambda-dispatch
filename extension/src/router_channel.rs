@@ -93,7 +93,6 @@ impl RouterChannel {
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
     loop {
-      // let requests_in_flight = Arc::clone(&requests_in_flight);
       let mut _decrement_on_drop = None;
 
       // Create the router request
@@ -237,7 +236,6 @@ impl RouterChannel {
       let pool_id_clone = self.pool_id.clone();
       let lambda_id_clone = self.lambda_id.clone();
       let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
-      // let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
       let relay_task = tokio::task::spawn(async move {
         let mut bytes_sent = 0;
 
