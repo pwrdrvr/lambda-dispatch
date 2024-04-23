@@ -10,6 +10,7 @@ use tokio::{
 use tokio_rustls::client::TlsStream;
 
 use crate::endpoint::Endpoint;
+use crate::lambda_request_error::LambdaRequestError;
 use crate::ping;
 use crate::prelude::*;
 use crate::router_channel::RouterChannel;
@@ -20,26 +21,6 @@ use crate::{connect_to_router, messages};
 pub trait Stream: AsyncRead + AsyncWrite + Send {}
 impl Stream for TlsStream<TcpStream> {}
 impl Stream for TcpStream {}
-
-#[derive(Debug, PartialEq)]
-pub enum LambdaRequestError {
-  RouterUnreachable,
-  SendRequestError,
-}
-
-impl std::fmt::Display for LambdaRequestError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      LambdaRequestError::RouterUnreachable => {
-        write!(f, "Failed to establish connection to router")
-      }
-      LambdaRequestError::SendRequestError => write!(f, "Failed to send request"),
-      // Other error variants...
-    }
-  }
-}
-
-impl std::error::Error for LambdaRequestError {}
 
 /// A `LambdaRequest` handles connecting back to the router, picking up requests, sending ping
 /// requests to the router, and sending the requests to the contained app When an invoke completes

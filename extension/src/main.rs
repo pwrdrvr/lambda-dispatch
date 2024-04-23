@@ -22,6 +22,7 @@ mod connect_to_router;
 mod counter_drop;
 mod endpoint;
 mod lambda_request;
+mod lambda_request_error;
 mod lambda_service;
 mod messages;
 mod options;

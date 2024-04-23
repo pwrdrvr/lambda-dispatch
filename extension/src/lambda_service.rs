@@ -12,6 +12,7 @@ use tower::Service;
 
 use crate::endpoint::{Endpoint, Scheme};
 use crate::lambda_request::LambdaRequest;
+use crate::lambda_request_error::LambdaRequestError;
 use crate::messages::ExitReason;
 use crate::options::Options;
 use crate::prelude::*;
@@ -203,9 +204,13 @@ impl LambdaService {
           e
         );
 
-        // Lump this in as a RouterConnectionError too?
-        // TODO: This might be a case where we want to exit
-        resp.exit_reason = ExitReason::RouterConnectionError;
+        if let Some(lambda_err) = e.downcast_ref::<LambdaRequestError>() {
+          resp.exit_reason = lambda_err.into();
+        } else {
+          // Lump this in as a RouterConnectionError too?
+          // TODO: This might be a case where we want to exit
+          resp.exit_reason = ExitReason::RouterConnectionError;
+        }
       }
     }
 
@@ -267,7 +272,7 @@ mod tests {
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
   use tokio::io::AsyncWriteExt;
-  use tokio_test::{assert_err, assert_ok};
+  use tokio_test::assert_ok;
 
   #[tokio::test]
   async fn test_lambda_service_call() {
@@ -642,9 +647,18 @@ mod tests {
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
-    // TODO: This actually should succeed with a response that indicates an error so the router
-    // can decide to backoff
-    assert_err!(response, "fetch_response error");
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterUnreachable,
+        );
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
     assert!(
       duration > std::time::Duration::from_secs(5),
       "Connection should take at least 5 seconds"
