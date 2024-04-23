@@ -50,6 +50,27 @@ LAMBDA_DISPATCH_RUNTIME=default_multi_thread LAMBDA_DISPATCH_FORCE_DEADLINE=60 A
 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap 2>&1 | tee extension.log
 ```
 
+## Rust Unit Tests
+
+- https://github.com/mozilla/grcov
+  - Runs into a problem with zip not being supported by the toolchain
+- https://github.com/taiki-e/cargo-llvm-cov
+  - 825 stars on github
+  - Can be run in CI
+- https://github.com/lee-orr/rusty-dev-containers
+  - `ghcr.io/lee-orr/rusty-dev-containers/cargo-llvm-cov:0`
+
+```sh
+# Need the Toolchain to build llvm-cov
+rustup toolchain install stable-aarch64-unknown-linux-gnu
+
+# Install llvm-cov from source
+cargo +stable install cargo-llvm-cov --locked
+
+# Run the tests
+cargo llvm-cov --all-features --workspace --html
+```
+
 ## Running Unit Tests
 
 https://medium.com/@nocgod/how-to-setup-your-dotnet-project-with-a-test-coverage-reporting-6ff1903f7240
@@ -57,10 +78,10 @@ https://medium.com/@nocgod/how-to-setup-your-dotnet-project-with-a-test-coverage
 ```sh
 dotnet test
 
-# Coverage Report with HTML
+# DotNet Coverage Report with HTML
 dotnet test --collect:"XPlat Code Coverage"
 
-# Convert to HTML
+# Convert DotNet Coverage Report to HTML
 reportgenerator "-reports:/Users/huntharo/pwrdrvr/lambda-dispatch/test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:/Users/huntharo/pwrdrvr/lambda-dispatch/test/coverage/html_report" -reporttypes:Html
 
 dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=lcov /p:CoverletOutput=./lcov.info /p:Include="[src.PwrDrvr.LambdaDispatch.Router.PwrDrvr.LambdaDispatch.Router]*"

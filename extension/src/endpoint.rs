@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use hyper::Uri;
 use rustls_pki_types::ServerName;
-use std::{borrow::Cow, str::FromStr, sync::Arc};
+use std::{borrow::Cow, fmt, str::FromStr, sync::Arc};
 
 /// An `Endpoint` type to extract and validate the interesting components from a hyper `Uri`, and
 /// make them relatively cheap to clone.
@@ -10,6 +10,12 @@ pub struct Endpoint {
   scheme: Scheme,
   host: Arc<str>,
   port: u16,
+}
+
+impl fmt::Display for Endpoint {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}://{}:{}", self.scheme.as_str(), self.host, self.port)
+  }
 }
 
 impl Endpoint {
@@ -157,6 +163,27 @@ mod tests {
   use super::*;
 
   #[test]
+  fn test_endpoint_debug() {
+    let endpoint = Endpoint::new(Scheme::Http, "localhost", 8000);
+    let debug_string = format!("{:?}", endpoint);
+    assert_eq!(
+      debug_string,
+      "Endpoint { scheme: Http, host: \"localhost\", port: 8000 }"
+    );
+  }
+
+  #[test]
+  fn test_endpoint_from_uri_error() {
+    let uri = "/hello/world".parse::<Uri>().unwrap();
+    let result = Endpoint::from_uri(&uri);
+    assert!(result.is_err());
+    assert_eq!(
+      format!("{}", result.unwrap_err()),
+      "'/hello/world' has an invalid scheme, only 'http' and 'https' are supported"
+    );
+  }
+
+  #[test]
   fn test_host_header_with_default_port() {
     let endpoint: Endpoint = "http://example.com:80".parse().unwrap();
 
@@ -178,5 +205,27 @@ mod tests {
       endpoint.host_header(),
       Cow::Owned::<String>("example.com:8080".to_string())
     )
+  }
+
+  #[test]
+  fn test_scheme_debug() {
+    let scheme = Scheme::Http;
+    assert_eq!(format!("{:?}", scheme), "Http");
+
+    let scheme = Scheme::Https;
+    assert_eq!(format!("{:?}", scheme), "Https");
+  }
+
+  #[test]
+  fn test_scheme_default() {
+    let scheme = Scheme::default();
+    assert_eq!(scheme, Scheme::Http);
+  }
+
+  #[test]
+  fn test_scheme_partial_eq() {
+    assert_eq!(Scheme::Http, Scheme::Http);
+    assert_eq!(Scheme::Https, Scheme::Https);
+    assert_ne!(Scheme::Http, Scheme::Https);
   }
 }

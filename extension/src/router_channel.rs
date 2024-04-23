@@ -1,4 +1,5 @@
 use crate::prelude::*;
+
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::SystemTime;
@@ -11,14 +12,12 @@ use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use httpdate::fmt_http_date;
 use hyper::{
   body::{Body, Bytes, Frame, Incoming},
-  client::conn::{http1, http2},
+  client::conn::http2,
   Request, Uri,
 };
-use hyper_util::rt::TokioIo;
-use mpsc::Receiver;
-use tokio::net::TcpStream;
 
 use crate::app_request;
+use crate::connect_to_app;
 use crate::counter_drop::DecrementOnDrop;
 use crate::endpoint::Endpoint;
 use crate::time;
@@ -84,7 +83,7 @@ impl RouterChannel {
   }
 
   pub async fn start(&mut self) -> Result<()> {
-    let mut app_sender = connect_to_app(
+    let mut app_sender = connect_to_app::connect_to_app(
       &self.app_endpoint,
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
@@ -127,9 +126,9 @@ impl RouterChannel {
       );
 
       self.sender
-                .ready()
-                .await
-                .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect")?;
+        .ready()
+        .await
+        .context(format!("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.pool_id, self.lambda_id, self.channel_id))?;
 
       let res = self.sender.send_request(req).await?;
       log::debug!(
@@ -294,7 +293,7 @@ impl RouterChannel {
           match app_req_tx.send(Ok(chunk.unwrap())).await {
             Ok(_) => {}
             Err(err) => {
-              log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {:?}",
+              log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {}",
                             pool_id_clone,
                             lambda_id_clone,
                             channel_id_clone,
@@ -517,28 +516,493 @@ impl RouterChannel {
   }
 }
 
-async fn connect_to_app(
-  app_endpoint: &Endpoint,
-  pool_id: PoolId,
-  lambda_id: LambdaId,
-  channel_id: ChannelId,
-) -> Result<http1::SendRequest<StreamBody<Receiver<Result<Frame<Bytes>>>>>> {
-  // Setup the contained app connection
-  // This is HTTP/1.1 so we need 1 connection for each worker
-  let tcp_stream = TcpStream::connect(app_endpoint.socket_addr_coercable()).await?;
-  let io = TokioIo::new(tcp_stream);
-  let (sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+#[cfg(test)]
+mod tests {
+  use super::*;
 
-  tokio::task::spawn(async move {
-    if let Err(err) = conn.await {
-      log::error!(
-        "PoolId: {}, LambdaId: {}, ChannelId: {} - Contained App connection failed: {:?}",
-        pool_id,
-        lambda_id,
-        channel_id,
-        err
-      );
-    }
-  });
-  Ok(sender)
+  use std::sync::Arc;
+
+  use crate::connect_to_router;
+  use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
+
+  use axum::response::Response;
+  use axum::{extract::Path, routing::post, Router};
+  use axum_extra::body::AsyncReadBody;
+  use futures::stream::StreamExt;
+  use httpmock::{Method::GET, MockServer};
+  use hyper::StatusCode;
+  use tokio::io::AsyncWriteExt;
+  use tokio_test::assert_ok;
+
+  #[tokio::test]
+  async fn test_channel_immediate_409() {
+    let lambda_id = "lambda_id".to_string();
+    let pool_id = "pool_id".to_string();
+    let channel_id = "channel_id".to_string();
+
+    // Start router server
+    // Use an arc int to count how many times the request endpoint was called
+    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let request_count_clone = Arc::clone(&request_count);
+    let app = Router::new().route(
+      "/api/chunked/request/:lambda_id/:channel_id",
+      post(
+        move |Path((lambda_id, channel_id)): Path<(String, String)>| {
+          let request_count = Arc::clone(&request_count_clone);
+          async move {
+            // Increment the request count
+            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            println!(
+              "LambdaID: {}, ChannelID: {}, Request count: {}",
+              lambda_id,
+              channel_id,
+              request_count.load(std::sync::atomic::Ordering::SeqCst)
+            );
+
+            // Return a 409
+            (StatusCode::CONFLICT, b"Request already made")
+          }
+        },
+      ),
+    );
+    let mock_router_server = run_http2_app(app);
+
+    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
+      .parse()
+      .unwrap();
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
+
+    let pool_id_arc: PoolId = pool_id.clone().into();
+    let lambda_id_arc: LambdaId = lambda_id.clone().into();
+
+    // Setup our connection to the router
+    let sender = connect_to_router::connect_to_router(
+      router_endpoint.clone(),
+      Arc::clone(&pool_id_arc),
+      Arc::clone(&lambda_id_arc),
+    )
+    .await
+    .unwrap();
+
+    // Declare the counts
+    let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let requests_in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    // Act
+    let mut channel = RouterChannel::new(
+      Arc::clone(&channel_request_count),
+      false,
+      Arc::clone(&goaway_received),
+      Arc::clone(&last_active),
+      Arc::clone(&requests_in_flight),
+      router_endpoint,
+      app_endpoint,
+      0,
+      sender,
+      pool_id.into(),
+      lambda_id.into(),
+      channel_id,
+    );
+    let channel_start_result = channel.start().await;
+
+    // Assert
+    assert_ok!(channel_start_result);
+    assert_eq!(channel.count.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(
+      channel
+        .requests_in_flight
+        .load(std::sync::atomic::Ordering::SeqCst),
+      0
+    );
+    assert_eq!(
+      channel
+        .last_active
+        .load(std::sync::atomic::Ordering::SeqCst),
+      0
+    );
+    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+      goaway_received.load(std::sync::atomic::Ordering::SeqCst),
+      true
+    );
+
+    // Assert app server's healthcheck endpoint did not get called
+    mock_app_healthcheck.assert_hits(0);
+  }
+
+  #[tokio::test]
+  async fn test_channel_read_request_send_to_app() {
+    let lambda_id = "lambda_id".to_string();
+    let pool_id = "pool_id".to_string();
+    let channel_id = "channel_id".to_string();
+
+    // Start router server
+    let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
+    // Use an arc int to count how many times the request endpoint was called
+    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let request_count_clone = Arc::clone(&request_count);
+    let app = Router::new().route(
+      "/api/chunked/request/:lambda_id/:channel_id",
+      post(
+        move |Path((_lambda_id, _channel_id)): Path<(String, String)>,
+              request: axum::extract::Request| {
+          let request_count = Arc::clone(&request_count_clone);
+          let release_request_rx = Arc::clone(&release_request_rx);
+
+          async move {
+            // Spawn a task to write to the stream
+            tokio::spawn(async move {
+              let parts = request.into_parts();
+
+              parts
+                .1
+                .into_data_stream()
+                .for_each(|chunk| async {
+                  let chunk = chunk.unwrap();
+                  println!("Chunk: {:?}", chunk);
+                })
+                .await;
+
+              println!(
+                "Router Channel - Request body (for contained app response) finished writing"
+              );
+            });
+
+            // Increment the request count
+            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            println!(
+              "Request count: {}",
+              request_count.load(std::sync::atomic::Ordering::SeqCst)
+            );
+
+            // Bail after 1st request
+            if request_count.load(std::sync::atomic::Ordering::SeqCst) > 1 {
+              let body = AsyncReadBody::new(tokio::io::empty());
+              let response = Response::builder()
+                .status(StatusCode::CONFLICT)
+                .body(body)
+                .unwrap();
+
+              return response;
+            }
+
+            // Create a channel for the stream
+            let (mut tx, rx) = tokio::io::duplex(65_536);
+
+            // Spawn a task to write to the stream
+            tokio::spawn(async move {
+              // Write some of the headers
+              let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
+              tx.write_all(data).await.unwrap();
+
+              // Wait for the release
+              release_request_rx.lock().await.recv().await;
+
+              // Write the rest of the headers
+              let data = b"Test-Headers: bar\r\nTest-Headerss: baz\r\nAccept-Encoding: gzip\r\n\r\nHELLO WORLD";
+              tx.write_all(data).await.unwrap();
+
+              // Close the stream
+              tx.shutdown().await.unwrap();
+
+              println!(
+                "Router Channel - Response body (for contained app request) finished reading"
+              );
+            });
+
+            let body = AsyncReadBody::new(rx);
+
+            let response = Response::builder()
+              .header("content-type", "application/octet-stream")
+              .body(body)
+              .unwrap();
+
+            response
+          }
+        },
+      ),
+    );
+
+    let mock_router_server = run_http2_app(app);
+
+    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
+      .parse()
+      .unwrap();
+
+    let pool_id_arc: PoolId = pool_id.clone().into();
+    let lambda_id_arc: LambdaId = lambda_id.clone().into();
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_bananas = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/bananas");
+      then
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .header("Connection", "close")
+        .header("Keep-Alive", "timeout=5")
+        .body("Bananas");
+    });
+    let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
+
+    // Setup our connection to the router
+    let sender = connect_to_router::connect_to_router(
+      router_endpoint.clone(),
+      Arc::clone(&pool_id_arc),
+      Arc::clone(&lambda_id_arc),
+    )
+    .await
+    .unwrap();
+
+    // Release the request after a few seconds
+    tokio::spawn(async move {
+      tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+      release_request_tx.send(()).await.unwrap();
+    });
+
+    let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let requests_in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    // Act
+    let mut channel = RouterChannel::new(
+      Arc::clone(&channel_request_count),
+      true, // compression
+      Arc::clone(&goaway_received),
+      Arc::clone(&last_active),
+      Arc::clone(&requests_in_flight),
+      router_endpoint,
+      app_endpoint,
+      0,
+      sender,
+      pool_id.into(),
+      lambda_id.into(),
+      channel_id,
+    );
+    let channel_start_result = channel.start().await;
+    // Assert
+    assert_ok!(channel_start_result);
+    assert_eq!(
+      channel.count.load(std::sync::atomic::Ordering::SeqCst),
+      1,
+      "channel should have finished a request"
+    );
+    assert_eq!(
+      channel
+        .requests_in_flight
+        .load(std::sync::atomic::Ordering::SeqCst),
+      0
+    );
+    assert_ne!(
+      channel
+        .last_active
+        .load(std::sync::atomic::Ordering::SeqCst),
+      0,
+      "last active should not be 0"
+    );
+    // last active should be close to current_time_millis
+    assert!(
+      time::current_time_millis()
+        - channel
+          .last_active
+          .load(std::sync::atomic::Ordering::SeqCst)
+        < 1000,
+      "last active should be close to current_time_millis"
+    );
+    assert_eq!(
+      request_count.load(std::sync::atomic::Ordering::SeqCst),
+      2,
+      "router channel requests received should be 2"
+    );
+    assert_eq!(
+      goaway_received.load(std::sync::atomic::Ordering::SeqCst),
+      true,
+      "goaway received should be true"
+    );
+
+    // Assert app server's healthcheck endpoint did not get called
+    mock_app_healthcheck.assert_hits(0);
+
+    // Assert that the test route did get called
+    mock_app_bananas.assert_hits(1);
+  }
+
+  #[tokio::test]
+  async fn test_channel_goaway_on_body() {
+    let lambda_id = "lambda_id".to_string();
+    let pool_id = "pool_id".to_string();
+    let channel_id = "channel_id".to_string();
+
+    // Start router server
+    let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
+    // Use an arc int to count how many times the request endpoint was called
+    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let request_count_clone = Arc::clone(&request_count);
+    let app = Router::new().route(
+      "/api/chunked/request/:lambda_id/:channel_id",
+      post(
+        move |Path((_lambda_id, _channel_id)): Path<(String, String)>| {
+          let request_count = Arc::clone(&request_count_clone);
+          let release_request_rx = Arc::clone(&release_request_rx);
+
+          async move {
+            // Increment the request count
+            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            println!(
+              "Request count: {}",
+              request_count.load(std::sync::atomic::Ordering::SeqCst)
+            );
+
+            // Create a channel for the stream
+            let (mut tx, rx) = tokio::io::duplex(65_536);
+
+            // Spawn a task to write to the stream
+            tokio::spawn(async move {
+              // Write some of the headers
+              let data =
+                b"GET /_lambda_dispatch/goaway HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
+              tx.write_all(data).await.unwrap();
+
+              // Wait for the release
+              // This is panicing on unwrapping the () from the channel
+              // Fix it
+              release_request_rx.lock().await.recv().await;
+
+              // Write the rest of the headers
+              let data = b"Test-Headers: bar\r\nTest-Headerss: baz\r\n\r\nHELLO WORLD";
+              tx.write_all(data).await.unwrap();
+
+              // Close the stream
+              tx.shutdown().await.unwrap();
+
+              println!(
+                "Router Channel - Response body (for contained app request) finished reading"
+              );
+            });
+
+            let body = AsyncReadBody::new(rx);
+
+            let response = Response::builder()
+              .header("content-type", "application/octet-stream")
+              .body(body)
+              .unwrap();
+
+            response
+          }
+        },
+      ),
+    );
+
+    let mock_router_server = run_http2_app(app);
+
+    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
+      .parse()
+      .unwrap();
+
+    let pool_id_arc: PoolId = pool_id.clone().into();
+    let lambda_id_arc: LambdaId = lambda_id.clone().into();
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
+
+    // Setup our connection to the router
+    let sender = connect_to_router::connect_to_router(
+      router_endpoint.clone(),
+      Arc::clone(&pool_id_arc),
+      Arc::clone(&lambda_id_arc),
+    )
+    .await
+    .unwrap();
+
+    // Release the request after a few seconds
+    tokio::spawn(async move {
+      tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+      release_request_tx.send(()).await.unwrap();
+    });
+
+    let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let requests_in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    // Act
+    let mut channel = RouterChannel::new(
+      Arc::clone(&channel_request_count),
+      false, // compression
+      Arc::clone(&goaway_received),
+      Arc::clone(&last_active),
+      Arc::clone(&requests_in_flight),
+      router_endpoint,
+      app_endpoint,
+      0,
+      sender,
+      pool_id.into(),
+      lambda_id.into(),
+      channel_id,
+    );
+    let channel_start_result = channel.start().await;
+    // Assert
+    assert_ok!(channel_start_result);
+    assert_eq!(
+      channel.count.load(std::sync::atomic::Ordering::SeqCst),
+      0,
+      "channel handled request count"
+    );
+    assert_eq!(
+      channel
+        .requests_in_flight
+        .load(std::sync::atomic::Ordering::SeqCst),
+      0
+    );
+    assert_ne!(
+      channel
+        .last_active
+        .load(std::sync::atomic::Ordering::SeqCst),
+      0,
+      "last active should not be 0"
+    );
+    // last active should be close to current_time_millis
+    assert!(
+      time::current_time_millis()
+        - channel
+          .last_active
+          .load(std::sync::atomic::Ordering::SeqCst)
+        < 2000,
+      "last active should be close to current_time_millis"
+    );
+    assert_eq!(
+      request_count.load(std::sync::atomic::Ordering::SeqCst),
+      1,
+      "router channel requests received"
+    );
+    assert_eq!(
+      goaway_received.load(std::sync::atomic::Ordering::SeqCst),
+      true,
+      "goaway received should be true"
+    );
+
+    // Assert app server's healthcheck endpoint did not get called
+    mock_app_healthcheck.assert_hits(0);
+  }
 }

@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,6 +7,7 @@ use std::time::Duration;
 use http_body_util::Empty;
 use hyper::{
   body::{Bytes, Incoming},
+  client::conn::http1,
   Request, Uri,
 };
 use hyper_util::rt::TokioIo;
@@ -12,42 +15,83 @@ use tokio::net::TcpStream;
 
 async fn create_connection(
   healthcheck_addr: &str,
-) -> Option<(
-  hyper::client::conn::http1::SendRequest<Empty<Bytes>>,
-  hyper::client::conn::http1::Connection<TokioIo<TcpStream>, Empty<Bytes>>,
+) -> Result<(
+  http1::SendRequest<Empty<Bytes>>,
+  http1::Connection<TokioIo<TcpStream>, Empty<Bytes>>,
 )> {
-  let tcp_stream = match TcpStream::connect(healthcheck_addr).await {
-    Err(err) => {
-      log::debug!(
-        "Health check - Failed to connect to contained app: {:?}",
-        err
+  // Setup the contained app connection
+  // This is HTTP/1.1 so we need 1 connection for each worker
+  // The endpoint is within the lambda so this should be very fast
+  let timeout_duration = tokio::time::Duration::from_millis(500);
+  let tcp_stream_result =
+    tokio::time::timeout(timeout_duration, TcpStream::connect(healthcheck_addr)).await;
+  let tcp_stream = match tcp_stream_result {
+    Ok(Ok(stream)) => {
+      stream.set_nodelay(true)?;
+      Some(stream)
+    }
+    Ok(Err(err)) => {
+      // Connection error
+      log::error!(
+        "Health check - Contained App TcpStream::connect error: {}, endpoint: {}",
+        err,
+        healthcheck_addr
       );
-      return None;
-    }
-    Ok(tcp_stream) => {
-      log::debug!("Health check - Connected to contained app");
-      tcp_stream
-    }
-  };
-  tcp_stream.set_nodelay(true).unwrap();
-  let io = TokioIo::new(tcp_stream);
-  match hyper::client::conn::http1::handshake(io).await {
-    Err(err) => {
-      log::debug!(
-        "Health check - Failed to handshake with contained app: {:?}",
+      return Err(anyhow::anyhow!(
+        "Health check - TcpStream::connect error: {}",
         err
-      );
-      None
+      ));
     }
-    Ok((sender, conn)) => {
-      log::info!("Health check - Handshake with contained app success");
-      Some((sender, conn))
+    Err(err) => {
+      // Timeout
+      log::error!(
+        "Health check - Contained App TcpStream::connect timed out: {}, endpoint: {}",
+        err,
+        healthcheck_addr
+      );
+      return Err(anyhow::anyhow!(
+        "Health check - TcpStream::connect timed out: {}",
+        err
+      ));
     }
   }
+  .expect("Health check - Failed to create TCP stream");
+
+  let io: TokioIo<TcpStream> = TokioIo::new(tcp_stream);
+  let http1_handshake_future = hyper::client::conn::http1::handshake(io);
+
+  // Wait for the HTTP1 handshake to complete or timeout
+  let timeout_duration = tokio::time::Duration::from_secs(2);
+  let (sender, connection) =
+    match tokio::time::timeout(timeout_duration, http1_handshake_future).await {
+      Ok(Ok((sender, connection))) => (sender, connection), // Handshake completed successfully
+      Ok(Err(err)) => {
+        log::error!(
+          "Health check - Contained App HTTP connection could not be established: {}, endpoint: {}",
+          err,
+          healthcheck_addr
+        );
+        return Err(anyhow::anyhow!(
+          "Health check - Contained App HTTP connection could not be established: {}",
+          err
+        ));
+      }
+      Err(_) => {
+        log::error!(
+          "Health check - Contained App HTTP connection timed out, endpoint: {}",
+          healthcheck_addr
+        );
+        return Err(anyhow::anyhow!(
+          "Health check - Contained App HTTP connection timed out"
+        ));
+      }
+    };
+
+  Ok((sender, connection))
 }
 
 async fn send_request(
-  sender: &mut hyper::client::conn::http1::SendRequest<Empty<Bytes>>,
+  sender: &mut http1::SendRequest<Empty<Bytes>>,
 ) -> Option<hyper::Response<Incoming>> {
   let req = Request::builder()
     .method("GET")
@@ -59,7 +103,7 @@ async fn send_request(
   match sender.send_request(req).await {
     Err(err) => {
       log::debug!(
-        "Health check - Failed to send request to contained app: {:?}",
+        "Health check - Failed to send request to contained app: {}",
         err
       );
       None
@@ -91,16 +135,20 @@ pub async fn health_check_contained_app(
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     if sender.is_none() || conn.is_none() {
-      let connection = create_connection(&healthcheck_addr).await;
-      if let Some((s, c)) = connection {
-        sender = Some(s);
-        conn = Some(tokio::task::spawn(async move {
-          if let Err(err) = c.await {
-            log::error!("Health check - Connection failed: {:?}", err);
-          }
-        }));
+      match create_connection(&healthcheck_addr).await {
+        Ok((s, c)) => {
+          sender = Some(s);
+          conn = Some(tokio::task::spawn(async move {
+            if let Err(err) = c.await {
+              log::error!("Health check - Connection failed: {}", err);
+            }
+          }));
+        }
+        Err(e) => {
+          log::error!("Failed to create connection: {}", e);
+          continue;
+        }
       }
-      continue;
     }
 
     let usable_sender = sender.as_mut().unwrap();
@@ -132,6 +180,94 @@ pub async fn health_check_contained_app(
     }
   }
 
-  log::info!("Health check - Complete - Failed");
+  log::info!("Health check - Complete - Goaway received");
   false
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  use httpmock::{Method::GET, MockServer};
+  use tokio::time::timeout;
+  use tokio_test::assert_err;
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_success() {
+    // If you want to view logs during a test, uncomment this
+    // let _ = env_logger::builder().is_test(true).try_init();
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+
+    let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
+      .parse()
+      .unwrap();
+
+    let goaway_received = Arc::new(AtomicBool::new(false));
+
+    // Act
+    let result = health_check_contained_app(goaway_received, &mock_app_healthcheck_url).await;
+    assert!(result, "Health check failed");
+
+    // Assert app server's healthcheck endpoint got called
+    mock_app_healthcheck.assert();
+  }
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_blackhole() {
+    // 192.0.2.0/24 (TEST-NET-1)
+    let mock_app_healthcheck_url = "http://192.0.2.0:54321/health".parse().unwrap();
+
+    let goaway_received = Arc::new(AtomicBool::new(false));
+
+    // Act
+    let start = std::time::Instant::now();
+    let result = timeout(
+      Duration::from_secs(2),
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url),
+    )
+    .await;
+    let duration = start.elapsed();
+
+    assert_err!(result, "Health check should fail");
+    assert!(
+      duration >= std::time::Duration::from_secs(2),
+      "Connection should take at least 2 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(3),
+      "Connection should take at most 3 seconds"
+    );
+  }
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_error() {
+    let mock_app_healthcheck_url = "http://127.0.0.1:54321/health".parse().unwrap();
+
+    let goaway_received = Arc::new(AtomicBool::new(false));
+
+    // Act
+    let start = std::time::Instant::now();
+    let result = timeout(
+      Duration::from_secs(2),
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url),
+    )
+    .await;
+    let duration = start.elapsed();
+
+    assert_err!(result, "Health check should fail");
+    assert!(
+      duration >= std::time::Duration::from_secs(2),
+      "Connection should take at least 2 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(3),
+      "Connection should take at most 3 seconds"
+    );
+  }
 }

@@ -1,23 +1,16 @@
 use rand::Rng;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
-use http_body_util::combinators::BoxBody;
-use hyper::{
-  body::Bytes,
-  client::conn::http2::{self, SendRequest},
-};
-use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::SeedableRng;
-use rustls_pki_types::ServerName;
 use tokio::{
   io::{AsyncRead, AsyncWrite},
   net::TcpStream,
 };
-use tokio_rustls::{client::TlsStream, TlsConnector};
+use tokio_rustls::client::TlsStream;
 
-use crate::cert::AcceptAnyServerCert;
-use crate::endpoint::{Endpoint, Scheme};
+use crate::connect_to_router;
+use crate::endpoint::Endpoint;
 use crate::ping;
 use crate::prelude::*;
 use crate::router_channel::RouterChannel;
@@ -84,7 +77,7 @@ impl LambdaRequest {
   pub async fn start(&mut self) -> Result<(), Error> {
     let start_time = current_time_millis();
 
-    let sender = connect_to_router(
+    let sender = connect_to_router::connect_to_router(
       self.router_endpoint.clone(),
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
@@ -122,8 +115,6 @@ impl LambdaRequest {
           sender.clone(),
           Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
-          // TODO: Do not create an RNG for each request as it takes a little time
-          // and will slow down single request processing
           uuid::Builder::from_random_bytes(self.rng.gen())
             .into_uuid()
             .to_string(),
@@ -165,55 +156,4 @@ impl LambdaRequest {
 
     Ok(())
   }
-}
-
-async fn connect_to_router(
-  router_endpoint: Endpoint,
-  pool_id: PoolId,
-  lambda_id: LambdaId,
-) -> Result<SendRequest<BoxBody<Bytes, Error>>, Error> {
-  let tcp_stream = TcpStream::connect(router_endpoint.socket_addr_coercable()).await?;
-  tcp_stream.set_nodelay(true)?;
-
-  let stream: Box<dyn Stream + Unpin> = match router_endpoint.scheme() {
-    Scheme::Https => {
-      let mut root_cert_store = rustls::RootCertStore::empty();
-      for cert in rustls_native_certs::load_native_certs()? {
-        root_cert_store.add(cert).ok(); // ignore error
-      }
-      let mut config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_cert_store)
-        .with_no_client_auth();
-      // We're going to accept non-validatable certificates
-      config
-        .dangerous()
-        .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
-      // Advertise http2
-      config.alpn_protocols = vec![b"h2".to_vec()];
-      let connector = TlsConnector::from(Arc::new(config));
-      let domain = ServerName::try_from(router_endpoint)?;
-      let tls_stream = connector.connect(domain, tcp_stream).await?;
-      Box::new(tls_stream)
-    }
-    Scheme::Http => Box::new(tcp_stream),
-  };
-
-  let io = TokioIo::new(Pin::new(stream));
-
-  // Setup the HTTP2 connection
-  let (sender, conn) = http2::handshake(TokioExecutor::new(), io)
-    .await
-    .context("failed to setup HTTP2 connection to the router")?;
-
-  tokio::task::spawn(async move {
-    if let Err(err) = conn.await {
-      log::error!(
-        "PoolId: {}, LambdaId: {} - Router HTTP2 connection failed: {:?}",
-        pool_id,
-        lambda_id,
-        err
-      );
-    }
-  });
-  Ok(sender)
 }

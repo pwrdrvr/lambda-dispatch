@@ -43,6 +43,7 @@ pub struct Options {
   pub runtime: Runtime,
   pub local_env: bool,
   pub force_deadline_secs: Option<Duration>,
+  pub async_init_timeout: Duration,
 }
 
 impl Options {
@@ -51,6 +52,11 @@ impl Options {
       .get_var("LAMBDA_DISPATCH_FORCE_DEADLINE")
       .ok()
       .and_then(|d| d.parse::<u64>().map(Duration::from_secs).ok());
+    let async_init_timeout = provider
+      .get_var("LAMBDA_DISPATCH_ASYNC_INIT_TIMEOUT")
+      .ok()
+      .and_then(|d| d.parse::<u64>().map(Duration::from_secs).ok())
+      .unwrap_or(Duration::from_secs(10));
 
     Options {
       port: provider
@@ -74,6 +80,7 @@ impl Options {
         .map_or(Runtime::CurrentThread, |v| v.into()),
       local_env: provider.get_var("LAMBDA_DISPATCH_FORCE_DEADLINE").is_ok(),
       force_deadline_secs,
+      async_init_timeout,
     }
   }
 }
@@ -115,6 +122,8 @@ mod tests {
       compression: false,
       runtime: Runtime::MultiThread,
       local_env: true,
+      force_deadline_secs: Some(Duration::from_secs(6)),
+      async_init_timeout: Duration::from_secs(11),
       ..Default::default()
     };
 
@@ -123,7 +132,8 @@ mod tests {
     assert!(!options.compression);
     assert_eq!(options.runtime, Runtime::MultiThread);
     assert!(options.local_env);
-    assert_eq!(options.force_deadline_secs, None);
+    assert_eq!(options.force_deadline_secs, Some(Duration::from_secs(6)));
+    assert_eq!(options.async_init_timeout, Duration::from_secs(11));
   }
 
   #[test]
@@ -144,6 +154,10 @@ mod tests {
           "LAMBDA_DISPATCH_FORCE_DEADLINE".to_string(),
           "60".to_string(),
         ),
+        (
+          "LAMBDA_DISPATCH_ASYNC_INIT_TIMEOUT".to_string(),
+          "13".to_string(),
+        ),
       ]
       .into_iter()
       .collect(),
@@ -157,6 +171,7 @@ mod tests {
     assert_eq!(options.runtime, Runtime::CurrentThread);
     assert!(options.local_env);
     assert_eq!(options.force_deadline_secs, Some(Duration::from_secs(60)));
+    assert_eq!(options.async_init_timeout, Duration::from_secs(13));
   }
 
   #[test]
@@ -177,6 +192,10 @@ mod tests {
           "LAMBDA_DISPATCH_FORCE_DEADLINE".to_string(),
           "invalid".to_string(),
         ),
+        (
+          "LAMBDA_DISPATCH_ASYNC_INIT_TIMEOUT".to_string(),
+          "invalid".to_string(),
+        ),
       ]
       .into_iter()
       .collect(),
@@ -190,5 +209,6 @@ mod tests {
     assert_eq!(options.runtime, Runtime::CurrentThread); // Default value
     assert!(options.local_env); // Default value
     assert_eq!(options.force_deadline_secs, None);
+    assert_eq!(options.async_init_timeout, Duration::from_secs(10));
   }
 }
