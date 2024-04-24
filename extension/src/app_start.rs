@@ -32,11 +32,6 @@ async fn create_connection(
     }
     Ok(Err(err)) => {
       // Connection error
-      log::error!(
-        "Health check - Contained App TcpStream::connect error: {}, endpoint: {}",
-        err,
-        healthcheck_addr
-      );
       return Err(anyhow::anyhow!(
         "Health check - TcpStream::connect error: {}",
         err
@@ -44,11 +39,6 @@ async fn create_connection(
     }
     Err(err) => {
       // Timeout
-      log::error!(
-        "Health check - Contained App TcpStream::connect timed out: {}, endpoint: {}",
-        err,
-        healthcheck_addr
-      );
       return Err(anyhow::anyhow!(
         "Health check - TcpStream::connect timed out: {}",
         err
@@ -144,8 +134,7 @@ pub async fn health_check_contained_app(
             }
           }));
         }
-        Err(e) => {
-          log::error!("Failed to create connection: {}", e);
+        Err(_) => {
           continue;
         }
       }
