@@ -40,8 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        run: rustup update stable
+      - uses: moonrepo/setup-rust@v1
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -260,6 +259,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - uses: moonrepo/setup-rust@v1
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -324,6 +325,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - uses: moonrepo/setup-rust@v1
 
       - name: Docker meta
         id: meta
