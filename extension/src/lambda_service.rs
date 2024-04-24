@@ -51,22 +51,27 @@ impl LambdaService {
   async fn fetch_response(
     &self,
     event: LambdaEvent<WaiterRequest>,
-  ) -> Result<WaiterResponse, Error> {
+  ) -> Result<WaiterResponse, LambdaRequestError> {
     let start_time = current_time_millis();
-    // extract some useful info from the request
-    let pool_id: PoolId = event
-      .payload
-      .pool_id
-      .unwrap_or_else(|| "default".to_string())
-      .into();
-    let lambda_id: LambdaId = event.payload.id.into();
-    let channel_count: u8 = event.payload.number_of_channels;
-    let router_endpoint = event.payload.router_url.parse()?;
+    let payload = event.payload.clone();
+    let request = match event.payload.validate() {
+      Ok(request) => request,
+      Err(_) => {
+        let mut resp = WaiterResponse::new(
+          payload.pool_id.unwrap_or("default".to_string()),
+          payload.id.to_string(),
+        );
+        resp.exit_reason = ExitReason::RouterLambdaInvokeInvalid;
+        return Ok(resp);
+      }
+    };
+    let channel_count: u8 = request.number_of_channels;
+    let mut resp = WaiterResponse::new(request.pool_id.to_string(), request.lambda_id.to_string());
 
     log::info!(
       "PoolId: {}, LambdaId: {} - Received request",
-      pool_id,
-      lambda_id
+      request.pool_id,
+      request.lambda_id
     );
 
     let app_endpoint = Endpoint::new(Scheme::Http, "127.0.0.1", self.options.port);
@@ -87,44 +92,39 @@ impl LambdaService {
           if !success {
             log::error!(
               "PoolId: {}, LambdaId: {} - Async init Health check returned false before timeout, bailing",
-              pool_id,
-              lambda_id
+              request.pool_id,
+              request.lambda_id
             );
 
             // goaway_received is a private var above, it can't be set to false
             // so this can never happen
-            panic!("Health check returned false before timeout");
+            return Err(LambdaRequestError::AppConnectionUnreachable);
           }
           self.initialized.store(success, Ordering::SeqCst);
         }
         Err(_) => {
           log::error!(
             "PoolId: {}, LambdaId: {} - Async init Health check not ready before timeout, bailing",
-            pool_id,
-            lambda_id
+            request.pool_id,
+            request.lambda_id
           );
 
           // Set goaway_received to true to the loop will exit
           fake_goaway_received.store(true, Ordering::SeqCst);
 
           // We'll panic in the tower service if this happens
-          return Err(anyhow::anyhow!(
-            "Health check returned false before timeout"
-          ));
+          return Err(LambdaRequestError::AppConnectionUnreachable);
         }
       }
 
       self.initialized.store(true, Ordering::SeqCst);
     }
 
-    // prepare the response
-    let mut resp = WaiterResponse::new(pool_id.to_string(), lambda_id.to_string());
-
-    if event.payload.init_only {
+    if request.init_only {
       log::info!(
         "PoolId: {}, LambdaId: {} - Returning from init-only request",
-        pool_id,
-        lambda_id
+        request.pool_id,
+        request.lambda_id
       );
       resp.invoke_duration = current_time_millis() - start_time;
       resp.exit_reason = ExitReason::SelfInitOnly;
@@ -135,15 +135,13 @@ impl LambdaService {
     // This is mostly needed locally where requests get stuck in the queue
     // Do not do this in a deployed env because an app that takes > 5 seconds to start
     // will get much longer initial request times
-    let sent_time = chrono::DateTime::parse_from_rfc3339(&event.payload.sent_time)
-      .context("unable to parse sent_time in lambda event payload")?;
     if self.options.local_env
-      && sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
+      && request.sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
     {
       log::info!(
         "PoolId: {}, LambdaId: {} - Returning from stale request",
-        pool_id,
-        lambda_id
+        request.pool_id,
+        request.lambda_id
       );
       resp.invoke_duration = current_time_millis() - start_time;
       resp.exit_reason = ExitReason::SelfStaleRequest;
@@ -152,8 +150,8 @@ impl LambdaService {
 
     log::info!(
       "PoolId: {}, LambdaId: {}, Timeout: {}s - Invoked",
-      pool_id,
-      lambda_id,
+      request.pool_id,
+      request.lambda_id,
       (event.context.deadline - current_time_millis()) / 1000
     );
     let mut deadline_ms = event.context.deadline;
@@ -176,10 +174,10 @@ impl LambdaService {
     let mut lambda_request = LambdaRequest::new(
       app_endpoint,
       self.options.compression,
-      Arc::clone(&pool_id),
-      Arc::clone(&lambda_id),
+      Arc::clone(&request.pool_id),
+      Arc::clone(&request.lambda_id),
       channel_count,
-      router_endpoint,
+      request.router_endpoint,
       deadline_ms,
     );
 
@@ -191,27 +189,31 @@ impl LambdaService {
       Ok(exit_reason) => {
         log::info!(
           "PoolId: {}, LambdaId: {} - Lambda request completed, exit reason: {:?}",
-          pool_id,
-          lambda_id,
+          request.pool_id,
+          request.lambda_id,
           exit_reason
         );
 
         resp.exit_reason = exit_reason;
       }
-      Err(e) => {
+      Err(err) => {
         log::error!(
           "PoolId: {}, LambdaId: {} - Lambda request failed: {}",
-          pool_id,
-          lambda_id,
-          e
+          request.pool_id,
+          request.lambda_id,
+          err
         );
 
-        if let Some(lambda_err) = e.downcast_ref::<LambdaRequestError>() {
-          resp.exit_reason = lambda_err.into();
+        if err.is_fatal() {
+          log::error!(
+            "PoolId: {}, LambdaId: {} - FATAL ERROR - Exiting",
+            request.pool_id,
+            request.lambda_id
+          );
+          return Err(err);
         } else {
-          // Lump this in as a RouterConnectionError too?
-          // TODO: This might be a case where we want to exit
-          resp.exit_reason = ExitReason::RouterConnectionError;
+          // Set the exit reason for non-fatal errors
+          resp.exit_reason = resp.exit_reason.worse(err.into());
         }
       }
     }
@@ -219,7 +221,7 @@ impl LambdaService {
     // Print final stats
     log::info!(
       "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {:.1} - Returning from run",
-      lambda_id,
+      request.lambda_id,
       lambda_request.count.load(Ordering::Acquire),
       lambda_request.elapsed(),
       lambda_request.rps()
@@ -250,7 +252,7 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
       match adapter.fetch_response(event).await {
         Ok(response) => Ok(response),
         Err(e) => {
-          panic!("Error fetching response: {}", e);
+          panic!("Fatal error processing LambdaEvent: {}", e);
         }
       }
     })
@@ -261,12 +263,7 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
 mod tests {
   use super::*;
 
-  use crate::{messages, test_http2_server::test_http2_server::run_http2_app, test_mock_router};
-  use axum::{
-    extract::Path,
-    routing::{get, post},
-    Router,
-  };
+  use crate::{messages, test_mock_router};
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
   use tokio_test::assert_ok;
@@ -321,71 +318,87 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn test_lambda_service_fetch_response_invalid_router_url() {
+    test_fixture_invalid_router_payload(WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: "catz 'n dogz".to_string(),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    })
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_fetch_response_invalid_sent_time() {
+    test_fixture_invalid_router_payload(WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: "http://127.0.0.1:3001".to_string(),
+      number_of_channels: 1,
+      sent_time: "catz 'n dogz".to_string(),
+      init_only: false,
+    })
+    .await;
+  }
+
+  async fn test_fixture_invalid_router_payload(request: WaiterRequest) {
+    let options = Options::default();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      // blackhole the healthcheck
+      "http://192.0.2.0:54321/health".parse().unwrap(),
+    );
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    // It should not be possible to get past this unless the service
+    // has decided to exit itself
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    // This should succeed with a WaiterResponse that indicates the error
+
+    assert!(
+      response.is_ok(),
+      "fetch_response failed: {:?}",
+      response.err()
+    );
+    let response = response.unwrap();
+    // Get the WaiterResponse out of the response
+    assert_eq!(response.id, "test_id", "Lambda ID");
+    assert_eq!(response.pool_id, "test_pool", "Pool ID");
+    assert_eq!(
+      response.exit_reason,
+      messages::ExitReason::RouterLambdaInvokeInvalid
+    );
+  }
+
+  #[tokio::test]
   async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok() {
-    // Start router server
-    let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let ping_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let ping_count_clone = Arc::clone(&ping_count);
-    let close_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let close_count_clone = Arc::clone(&close_count);
-    let app = Router::new()
-      .route(
-        "/api/chunked/request/:lambda_id/:channel_id",
-        post(
-          move |Path((lambda_id, channel_id)): Path<(String, String)>| {
-            let request_count = Arc::clone(&request_count_clone);
-            let release_request_rx = Arc::clone(&release_request_rx);
-            async move {
-              log::info!(
-                "Request! LambdaID: {}, ChannelID: {}",
-                lambda_id,
-                channel_id
-              );
-
-              // Increment the request count
-              request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-              // Wait for the release signal
-              let mut release_request_rx = release_request_rx.lock().await;
-              release_request_rx.recv().await.unwrap();
-              format!(
-                "Request! LambdaID: {}, ChannelID: {}",
-                lambda_id, channel_id
-              )
-            }
-          },
-        ),
-      )
-      .route(
-        "/api/chunked/ping/:lambda_id",
-        get(|Path(lambda_id): Path<String>| async move {
-          let ping_count = Arc::clone(&ping_count_clone);
-          // Increment
-          ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          log::info!("Ping! LambdaID: {}", lambda_id);
-          format!("Ping! LambdaID: {}", lambda_id)
-        }),
-      )
-      .route(
-        "/api/chunked/close/:lambda_id",
-        get(|Path(lambda_id): Path<String>| async move {
-          let close_count = Arc::clone(&close_count_clone);
-          // Increment
-          close_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          log::info!("Close! LambdaID: {}", lambda_id);
-          format!("Close! LambdaID: {}", lambda_id)
-        }),
-      );
-
-    let mock_router_server = run_http2_app(app);
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: 0,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
 
     log::info!(
       "Router server running on port: {}",
-      mock_router_server.addr.port()
+      mock_router_server.mock_router_server.addr.port()
     );
 
     // Start app server
@@ -411,7 +424,10 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!("http://localhost:{}", mock_router_server.addr.port()),
+      router_url: format!(
+        "http://localhost:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -426,7 +442,11 @@ mod tests {
     // Release the request after a few seconds
     tokio::spawn(async move {
       tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      release_request_tx.send(()).await.unwrap();
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
     });
 
     // Act
@@ -447,21 +467,27 @@ mod tests {
     assert_eq!(resp.id, "test_id", "Lambda ID");
     assert_eq!(resp.pool_id, "test_pool", "Pool ID");
     assert_eq!(
-      request_count.load(std::sync::atomic::Ordering::SeqCst),
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
       1,
       "Request count"
     );
     // The ping count will be 0 because we do not start the response stream and leave
     // it open, which allows the pings to start
     assert_eq!(
-      ping_count.load(std::sync::atomic::Ordering::SeqCst),
+      mock_router_server
+        .ping_count
+        .load(std::sync::atomic::Ordering::SeqCst),
       0,
       "Ping count"
     );
     // The close count will be 0 because the router response indicated we should
     // close so we do not need to call back asking to close
     assert_eq!(
-      close_count.load(std::sync::atomic::Ordering::SeqCst),
+      mock_router_server
+        .close_count
+        .load(std::sync::atomic::Ordering::SeqCst),
       0,
       "Close count"
     );
@@ -474,6 +500,7 @@ mod tests {
   async fn test_lambda_service_fetch_response_spillover_healthcheck_blackhole_timeout() {
     let mut options = Options::default();
     options.async_init_timeout = std::time::Duration::from_millis(1000);
+    options.async_init = true;
     let initialized = false;
 
     let service = LambdaService::new(
@@ -503,7 +530,11 @@ mod tests {
     let response = service.fetch_response(event).await;
     let duration = std::time::Instant::now().duration_since(start);
 
-    assert!(response.is_err(), "fetch_response should have failed",);
+    assert!(response.is_err(), "fetch_response should have failed");
+    assert_eq!(
+      response.err(),
+      Some(LambdaRequestError::AppConnectionUnreachable)
+    );
     assert!(
       duration >= std::time::Duration::from_secs(1),
       "Connection should take at least 1 seconds"
@@ -655,7 +686,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_request_router_connects_ping_panics() {
+  async fn test_lambda_service_router_connects_ping_panics() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -760,7 +791,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_request_router_connects_ping_panics_channel_stays_open() {
+  async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -863,7 +894,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_request_loop_100_normal_requests() {
+  async fn test_lambda_service_loop_100_normal_requests() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -962,7 +993,7 @@ mod tests {
 
   #[tokio::test]
   #[ignore = "Issue-178 - This test fails because we do not re-establish the contained app connections"]
-  async fn test_lambda_request_loop_100_requests_contained_app_connection_close_header() {
+  async fn test_lambda_service_loop_100_requests_contained_app_connection_close_header() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -1061,7 +1092,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_request_router_connects_channel_request_panics() {
+  async fn test_lambda_service_router_connects_channel_request_panics() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -1163,7 +1194,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_request_router_connects_channel_response_panics() {
+  async fn test_lambda_service_router_connects_channel_response_panics() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -1261,6 +1292,68 @@ mod tests {
     assert!(
       mock_app_bananas.hits() < 100,
       "Bananas should not be called 100 times"
+    );
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_initialized_app_blackhole_timeout() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: 100,
+        channel_panic_response_from_extension_on_count: 1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    let mut options = Options::default();
+    options.async_init_timeout = std::time::Duration::from_millis(1000);
+    options.async_init = true;
+    // App port is a blackhole
+    options.port = 54321;
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      // 192.0.2.0/24 (TEST-NET-1)
+      // App is a blackhole
+      "http://192.0.2.0:54321/health".parse().unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    assert!(response.is_err(), "fetch_response should have failed");
+    assert_eq!(
+      response.err(),
+      Some(LambdaRequestError::AppConnectionUnreachable),
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(1),
+      "Connection should take at most 1 seconds"
     );
   }
 }

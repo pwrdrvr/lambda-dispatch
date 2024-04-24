@@ -77,7 +77,7 @@ impl LambdaRequest {
   }
 
   /// Executes a task with a specified deadline.
-  pub async fn start(&mut self) -> Result<messages::ExitReason, Error> {
+  pub async fn start(&mut self) -> Result<messages::ExitReason, LambdaRequestError> {
     let sender = match connect_to_router::connect_to_router(
       self.router_endpoint.clone(),
       Arc::clone(&self.pool_id),
@@ -86,7 +86,7 @@ impl LambdaRequest {
     .await
     {
       Ok(sender) => sender,
-      Err(_) => return Err(LambdaRequestError::RouterUnreachable.into()),
+      Err(_) => return Err(LambdaRequestError::RouterUnreachable),
     };
 
     // Send the ping requests in background
@@ -167,6 +167,11 @@ impl LambdaRequest {
                 err
               );
 
+              if err.is_fatal() {
+                return Err(err.into());
+              }
+
+              // Error is not fatal so just use it as an exit reason
               exit_reason = exit_reason.worse(err.into());
             }
           }
@@ -256,20 +261,12 @@ mod tests {
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
-    if let Err(err) = &result {
-      assert!(
-        err.downcast_ref::<LambdaRequestError>().is_some(),
-        "Expected LambdaRequestError"
+    if let Err(err) = result {
+      assert_eq!(
+        err,
+        LambdaRequestError::RouterUnreachable,
+        "Expected LambdaRequestError::RouterUnreachable"
       );
-      if let Some(lambda_err) = err.downcast_ref::<LambdaRequestError>() {
-        assert_eq!(
-          *lambda_err,
-          LambdaRequestError::RouterUnreachable,
-          "Expected LambdaRequestError::RouterUnreachable"
-        );
-      } else {
-        assert!(false, "Expected LambdaRequestError");
-      }
     } else {
       assert!(false, "Expected an error result");
     }

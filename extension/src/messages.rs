@@ -1,7 +1,14 @@
+use crate::prelude::*;
+
+use chrono::DateTime;
+use chrono::Utc;
+use hyper::Uri;
 use serde::Deserialize;
 use serde::Serialize;
 
-#[derive(Deserialize, Debug)]
+use crate::endpoint::Endpoint;
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct WaiterRequest {
   #[serde(rename = "PoolId")]
   pub pool_id: Option<String>,
@@ -132,6 +139,48 @@ impl WaiterResponse {
   }
 }
 
+impl WaiterRequest {
+  pub fn validate(self) -> Result<ValidatedWaiterRequest, ValidationError> {
+    let router_url = self
+      .router_url
+      .parse::<Uri>()
+      .map_err(|_| ValidationError::InvalidRouterUrl)?;
+
+    let router_endpoint =
+      Endpoint::try_from(&router_url).map_err(|_| ValidationError::InvalidRouterUrl)?;
+
+    let sent_time = DateTime::parse_from_rfc3339(&self.sent_time)
+      .map_err(|_| ValidationError::InvalidSentTime)?
+      .with_timezone(&Utc);
+    Ok(ValidatedWaiterRequest {
+      pool_id: self.pool_id.unwrap_or_else(|| "default".to_string()).into(),
+      lambda_id: self.id.into(),
+      router_endpoint,
+      router_url,
+      number_of_channels: self.number_of_channels,
+      sent_time,
+      init_only: self.init_only,
+    })
+  }
+}
+
+#[derive(Debug)]
+pub enum ValidationError {
+  InvalidRouterUrl,
+  InvalidSentTime,
+}
+
+#[derive(Debug)]
+pub struct ValidatedWaiterRequest {
+  pub pool_id: PoolId,
+  pub lambda_id: LambdaId,
+  pub router_url: Uri,
+  pub router_endpoint: Endpoint,
+  pub number_of_channels: u8,
+  pub sent_time: DateTime<Utc>,
+  pub init_only: bool,
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -233,5 +282,62 @@ mod tests {
       format!("{:?}", response),
       "WaiterResponse { pool_id: \"pool1\", id: \"id1\", request_count: 10, invoke_duration: 20, exit_reason: SelfDeadline }"
     );
+  }
+
+  #[test]
+  fn test_validate_success() {
+    let request = WaiterRequest {
+      pool_id: Some("pool1".to_string()),
+      id: "id1".to_string(),
+      router_url: "http://example.com".to_string(),
+      number_of_channels: 5,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+
+    let validated_request = request.validate().unwrap();
+
+    assert_eq!(
+      validated_request.router_url,
+      "http://example.com".parse::<Uri>().unwrap()
+    );
+    assert_eq!(
+      validated_request.sent_time,
+      DateTime::parse_from_rfc3339("2022-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc)
+    );
+  }
+
+  #[test]
+  fn test_validate_invalid_router_url() {
+    let request = WaiterRequest {
+      pool_id: Some("pool1".to_string()),
+      id: "id1".to_string(),
+      router_url: "invalid_url".to_string(),
+      number_of_channels: 5,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+
+    let result = request.validate();
+
+    assert!(matches!(result, Err(ValidationError::InvalidRouterUrl)));
+  }
+
+  #[test]
+  fn test_validate_invalid_sent_time() {
+    let request = WaiterRequest {
+      pool_id: Some("pool1".to_string()),
+      id: "id1".to_string(),
+      router_url: "http://example.com".to_string(),
+      number_of_channels: 5,
+      sent_time: "invalid_time".to_string(),
+      init_only: false,
+    };
+
+    let result = request.validate();
+
+    assert!(matches!(result, Err(ValidationError::InvalidSentTime)));
   }
 }

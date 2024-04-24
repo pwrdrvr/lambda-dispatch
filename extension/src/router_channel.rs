@@ -91,7 +91,7 @@ impl RouterChannel {
       Arc::clone(&self.channel_id),
     )
     .await
-    .map_err(|_| LambdaRequestError::AppConnectionError)?;
+    .map_err(|_| LambdaRequestError::AppConnectionUnreachable)?;
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
     // If the pinger or another channel sets the goaway we will stop looping
