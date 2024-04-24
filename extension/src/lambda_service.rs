@@ -218,7 +218,7 @@ impl LambdaService {
 
     // Print final stats
     log::info!(
-      "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {} - Returning from run",
+      "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {:.1} - Returning from run",
       lambda_id,
       lambda_request.count.load(Ordering::Acquire),
       lambda_request.elapsed(),
@@ -1061,7 +1061,6 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore = "Issue-178 - This test fails because 1 channel exiting does not cause the other channels to exit and because there is no propagation of the error"]
   async fn test_lambda_request_router_connects_channel_request_panics() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
@@ -1164,7 +1163,6 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore = "Issue-178 - This test fails because 1 channel exiting does not cause the other channels to exit and because there is no propagation of the error"]
   async fn test_lambda_request_router_connects_channel_response_panics() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(

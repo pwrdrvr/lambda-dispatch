@@ -41,6 +41,8 @@ pub enum ExitReason {
   SelfInitOnly,
   #[serde(rename = "SelfStaleRequest")]
   SelfStaleRequest,
+  #[serde(rename = "AppConnectionError")]
+  AppConnectionError,
   #[serde(rename = "AppConnectionClosed")]
   AppConnectionClosed,
   #[serde(rename = "RouterConnectionError")]
@@ -55,6 +57,8 @@ pub enum ExitReason {
   RouterStatus5xx,
   #[serde(rename = "RouterStatusOther")]
   RouterStatusOther,
+  #[serde(rename = "ChannelErrorOther")]
+  ChannelErrorOther,
 }
 
 impl ExitReason {
@@ -64,6 +68,8 @@ impl ExitReason {
     let ordered_reasons = [
       RouterUnreachable,
       RouterConnectionError,
+      ChannelErrorOther,
+      AppConnectionError,
       AppConnectionClosed,
       RouterStatus5xx,
       RouterStatus4xx,
@@ -75,13 +81,38 @@ impl ExitReason {
       SelfInitOnly,
     ];
 
-    for &reason in &ordered_reasons {
+    for reason in ordered_reasons {
       if self == reason || other == reason {
         return reason;
       }
     }
 
     self // If no match is found, return the current value
+  }
+
+  // This function will cause a compile-time error if a new variant is added to the enum
+  // but not added to the match expression.
+  #[allow(dead_code)]
+  fn ensure_all_variants_handled(variant: Self) {
+    use ExitReason::*;
+
+    match variant {
+      // HEY - If you add here you need to add to the `worse` function array above
+      RouterUnreachable => {}
+      RouterConnectionError => {}
+      ChannelErrorOther => {}
+      AppConnectionError => {}
+      AppConnectionClosed => {}
+      RouterStatus5xx => {}
+      RouterStatus4xx => {}
+      RouterStatusOther => {}
+      RouterGoaway => {}
+      SelfLastActive => {}
+      SelfDeadline => {}
+      SelfStaleRequest => {}
+      SelfInitOnly => {}
+    }
+    // HEY - If you add here you need to add to the `worse` function array above
   }
 }
 

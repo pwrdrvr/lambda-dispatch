@@ -124,26 +124,66 @@ impl LambdaRequest {
             .into_uuid()
             .to_string(),
         );
-        tokio::spawn(async move { router_channel.start().await })
+        let goaway_received = Arc::clone(&self.goaway_received);
+        tokio::spawn(async move {
+          let result = router_channel.start().await;
+
+          // Tell the other channels to stop
+          goaway_received.store(true, Ordering::Release);
+
+          println!(
+            "Channel {} finished with result: {:?}",
+            channel_number, result
+          );
+
+          result
+        })
       })
       .collect::<Vec<_>>();
 
     let mut exit_reason = messages::ExitReason::RouterGoaway;
 
-    tokio::select! {
-        result = futures::future::try_join_all(channel_futures) => {
-            match result {
-                Ok(_) => {
-                  // All tasks completed successfully
+    // `try_join_all` says all futures will be immediately canceled if one of them returns an error
+    // However, this "cancelation" is cooperative and has to be checked by the tasks themselves
+    // As a result, this just waits for all tasks to complete
+    // In addition, `try_join_all` says it will return an error when a future returns an error,
+    // but it's returning `Ok` even when there are `Err` in the vector (this may be because
+    // try_join_all is looking for an error on the future not the task?)
+    match futures::future::try_join_all(channel_futures).await {
+      Ok(results) => {
+        // All tasks completed successfully
+        log::debug!(
+          "LambdaId: {} - run - All channel tasks completed successfully",
+          self.lambda_id
+        );
 
-                  // TODO: Check the channel exit reasons (most likely a goaway)
-                }
-                Err(_) => {
-                  // TODO: Capture the channel exit error and return the worst one we find
-                  panic!("LambdaId: {} - run - Error in futures::future::try_join_all", self.lambda_id);
-                }
+        for result in results {
+          match result {
+            Ok(_) => {}
+            Err(err) => {
+              log::error!(
+                "LambdaId: {} - run - Error in channel task: {:?}",
+                self.lambda_id,
+                err
+              );
+
+              exit_reason = exit_reason.worse(err.into());
             }
+          }
         }
+      }
+      Err(err) => {
+        log::error!(
+          "LambdaId: {} - run - Error in futures::future::try_join_all: {:?}",
+          self.lambda_id,
+          err
+        );
+        // TODO: Capture the channel exit error and return the worst one we find
+        panic!(
+          "LambdaId: {} - run - Error in futures::future::try_join_all: {}",
+          self.lambda_id, err
+        );
+      }
     }
 
     // Wait for the ping loop to exit
