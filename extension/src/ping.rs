@@ -294,14 +294,14 @@ pub async fn send_ping_requests(
   let count = count.load(Ordering::Acquire);
   let elapsed = time::current_time_millis() - start_time;
   log::info!(
-    "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Exiting",
+    "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {:.1} - Ping Loop - Exiting",
     pool_id,
     lambda_id,
     count,
     goaway_received.load(Ordering::Acquire),
     requests_in_flight.load(Ordering::Acquire),
     elapsed,
-    format!("{:.1}", count as f64 / (elapsed as f64 / 1000.0))
+    count as f64 / (elapsed as f64 / 1000.0)
   );
 
   result
