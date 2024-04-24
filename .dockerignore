@@ -1,4 +1,5 @@
 target/
+!target/*-unknown-linux-musl/release/extension
 **/bin/
 **/obj/
 out*/

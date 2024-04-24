@@ -248,18 +248,37 @@ jobs:
 
   build-extension-arm64:
     env:
+      ARCH: aarch64
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     permissions:
       contents: read
       id-token: write
 
-    runs-on: [self-hosted, arm64]
+    runs-on: ubuntu-latest
+
+    # Using cross compiler now, can run on x64
+    # runs-on: [self-hosted, arm64]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install aarch64-unknown-linux-musl-gcc
+        run: |
+          curl -LO https://musl.cc/${{ env.ARCH }}-linux-musl-cross.tgz
+          tar -xzf ${{ env.ARCH }}-linux-musl-cross.tgz
+          echo "$(pwd)/${{ env.ARCH }}-linux-musl-cross/bin" >> $GITHUB_PATH
+          rm ${{ env.ARCH }}-linux-musl-cross.tgz
+
       - uses: moonrepo/setup-rust@v1
+        with:
+          targets: "${{ env.ARCH }}-unknown-linux-musl"
+
+      - name: Build extension
+        env:
+          CC: ${{ env.ARCH }}-linux-musl-gcc
+        run: |
+          cargo build --release --target ${{ env.ARCH }}-unknown-linux-musl
 
       - name: Docker meta
         id: meta
@@ -290,7 +309,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./DockerfileExtension
+          file: ./DockerfileExtensionCross
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
@@ -326,7 +345,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install x86_64-linux-musl-gcc
+        run: |
+          curl -LO https://musl.cc/${{ env.ARCH }}-linux-musl-cross.tgz
+          tar -xzf ${{ env.ARCH }}-linux-musl-cross.tgz
+          echo "$(pwd)/${{ env.ARCH }}-linux-musl-cross/bin" >> $GITHUB_PATH
+          rm ${{ env.ARCH }}-linux-musl-cross.tgz
+
       - uses: moonrepo/setup-rust@v1
+        with:
+          targets: "${{ env.ARCH }}-unknown-linux-musl"
+
+      - name: Build extension
+        env:
+          CC: ${{ env.ARCH }}-linux-musl-gcc
+        run: |
+          cargo build --release --target ${{ env.ARCH }}-unknown-linux-musl
 
       - name: Docker meta
         id: meta
@@ -357,7 +391,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./DockerfileExtension
+          file: ./DockerfileExtensionCross
           build-args: |
             ARCH=x86_64
             TARGET_PLATFORM=linux/amd64
