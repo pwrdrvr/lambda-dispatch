@@ -2,6 +2,7 @@ use crate::messages::ExitReason;
 
 #[derive(Debug, PartialEq)]
 pub enum LambdaRequestError {
+  RouterLambdaInvokeInvalid,
   RouterUnreachable,
   RouterConnectionError,
   AppConnectionUnreachable,
@@ -12,6 +13,9 @@ pub enum LambdaRequestError {
 impl std::fmt::Display for LambdaRequestError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
+      LambdaRequestError::RouterLambdaInvokeInvalid => {
+        write!(f, "Router Lambda Invoke had invalid payload")
+      }
       LambdaRequestError::RouterUnreachable => {
         write!(f, "Failed to establish connection to router")
       }
@@ -48,6 +52,7 @@ impl From<LambdaRequestError> for ExitReason {
 impl From<&LambdaRequestError> for ExitReason {
   fn from(error: &LambdaRequestError) -> Self {
     match *error {
+      LambdaRequestError::RouterLambdaInvokeInvalid => ExitReason::RouterLambdaInvokeInvalid,
       LambdaRequestError::RouterUnreachable => ExitReason::RouterUnreachable,
       LambdaRequestError::RouterConnectionError => ExitReason::RouterConnectionError,
       LambdaRequestError::AppConnectionUnreachable => ExitReason::AppConnectionError,
@@ -58,10 +63,22 @@ impl From<&LambdaRequestError> for ExitReason {
 }
 
 impl LambdaRequestError {
+  pub fn is_fatal(&self) -> bool {
+    use LambdaRequestError::*;
+
+    let fatal_errors = [
+      // Add other fatal errors here
+      AppConnectionUnreachable,
+    ];
+
+    fatal_errors.contains(self)
+  }
+
   pub fn worse(self, other: Self) -> Self {
     use LambdaRequestError::*;
 
     let ordered_reasons = [
+      RouterLambdaInvokeInvalid,
       RouterUnreachable,
       RouterConnectionError,
       AppConnectionUnreachable,
@@ -86,6 +103,7 @@ impl LambdaRequestError {
 
     match variant {
       // HEY - If you add here you need to add to the `worse` function array above
+      RouterLambdaInvokeInvalid => {}
       RouterUnreachable => {}
       RouterConnectionError => {}
       AppConnectionUnreachable => {}
@@ -164,5 +182,30 @@ mod tests {
     let error1 = ChannelErrorOther;
     let error2 = ChannelErrorOther;
     assert_eq!(error1.worse(error2), ChannelErrorOther);
+  }
+
+  #[test]
+  fn test_is_fatal() {
+    use LambdaRequestError::*;
+
+    // Test that AppConnectionUnreachable is considered fatal
+    let error = AppConnectionUnreachable;
+    assert!(error.is_fatal());
+
+    // Test that RouterUnreachable is not considered fatal
+    let error = RouterUnreachable;
+    assert!(!error.is_fatal());
+
+    // Test that RouterConnectionError is not considered fatal
+    let error = RouterConnectionError;
+    assert!(!error.is_fatal());
+
+    // Test that AppConnectionError is not considered fatal
+    let error = AppConnectionError;
+    assert!(!error.is_fatal());
+
+    // Test that ChannelErrorOther is not considered fatal
+    let error = ChannelErrorOther;
+    assert!(!error.is_fatal());
   }
 }

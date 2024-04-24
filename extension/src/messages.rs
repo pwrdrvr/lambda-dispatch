@@ -45,6 +45,8 @@ pub enum ExitReason {
   AppConnectionError,
   #[serde(rename = "AppConnectionClosed")]
   AppConnectionClosed,
+  #[serde(rename = "RouterLambdaInvokeInvalid")]
+  RouterLambdaInvokeInvalid,
   #[serde(rename = "RouterConnectionError")]
   RouterConnectionError,
   #[serde(rename = "RouterUnreachable")]
@@ -66,6 +68,7 @@ impl ExitReason {
     use ExitReason::*;
 
     let ordered_reasons = [
+      RouterLambdaInvokeInvalid,
       RouterUnreachable,
       RouterConnectionError,
       ChannelErrorOther,
@@ -98,6 +101,7 @@ impl ExitReason {
 
     match variant {
       // HEY - If you add here you need to add to the `worse` function array above
+      RouterLambdaInvokeInvalid => {}
       RouterUnreachable => {}
       RouterConnectionError => {}
       ChannelErrorOther => {}
