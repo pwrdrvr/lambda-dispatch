@@ -129,6 +129,7 @@ impl RouterChannel {
         .await
         .context(format!("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.pool_id, self.lambda_id, self.channel_id))?;
 
+      // FIXME: This will exit the entire channel when one request errors
       let res = self.sender.send_request(req).await?;
       log::debug!(
         "PoolId: {}, LambdaId: {}, ChannelId: {} - got response: {:?}",
@@ -180,6 +181,7 @@ impl RouterChannel {
         &self.lambda_id,
         &self.channel_id,
       )
+      // FIXME: This will exit the entire channel when one request errors
       .await?;
 
       // Check if the request has an Accept-Encoding header with gzip
@@ -219,6 +221,7 @@ impl RouterChannel {
       // Make the request to the contained app
       //
       let (mut app_req_tx, app_req_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+      // FIXME: This will exit the entire channel when one request errors
       let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
 
       if app_sender.ready().await.is_err() {
@@ -236,7 +239,7 @@ impl RouterChannel {
       let pool_id_clone = self.pool_id.clone();
       let lambda_id_clone = self.lambda_id.clone();
       let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
-      let relay_task = tokio::task::spawn(async move {
+      let relay_request_task = tokio::task::spawn(async move {
         let mut bytes_sent = 0;
 
         // Send any overflow body bytes to the contained app
@@ -319,6 +322,7 @@ impl RouterChannel {
       //
       // Send the request
       //
+      // FIXME: This will exit the entire channel when one request errors
       let app_res = app_sender.send_request(app_req).await?;
       let (app_res_parts, mut app_res_stream) = app_res.into_parts();
 
@@ -415,6 +419,7 @@ impl RouterChannel {
           header_buffer.extend(header_bytes);
         } else {
           // If the header_buffer is full, send it and create a new header_buffer
+          // FIXME: This will exit the entire channel when one request errors
           tx.send(Ok(Frame::data(header_buffer.into()))).await?;
 
           header_buffer = Vec::new();
@@ -424,6 +429,7 @@ impl RouterChannel {
 
       // End the headers
       header_buffer.extend(b"\r\n");
+      // FIXME: This will exit the entire channel when one request errors
       tx.send(Ok(Frame::data(header_buffer.into()))).await?;
 
       let mut encoder: Option<GzEncoder<Writer<BytesMut>>> = None;
@@ -434,6 +440,8 @@ impl RouterChannel {
         ));
       }
 
+      // TODO: This also needs to be a task so we can await the request relay
+      // and the response relay at the same time
       // Rip the bytes back to the caller
       let channel_id_clone = self.channel_id.clone();
       let mut app_error_reading = false;
@@ -463,13 +471,18 @@ impl RouterChannel {
 
         if let Some(ref mut encoder) = encoder {
           let chunk_data = chunk.as_ref().unwrap().data_ref().unwrap();
+          // FIXME: This will exit the entire channel when one request errors
           encoder.write_all(chunk_data)?;
+          // FIXME: This will exit the entire channel when one request errors
           encoder.flush()?;
 
           let writer = encoder.get_mut();
           let bytes = writer.get_mut().split().into();
+
+          // FIXME: This will exit the entire channel when one request errors
           tx.send(Ok(Frame::data(bytes))).await?;
         } else {
+          // FIXME: This will exit the entire channel when one request errors
           tx.send(Ok(chunk.unwrap())).await?;
         }
       }
@@ -495,7 +508,7 @@ impl RouterChannel {
 
       // Wait for both to finish
       tokio::select! {
-          result = futures::future::try_join_all([relay_task, close_router_tx_task]) => {
+          result = futures::future::try_join_all([relay_request_task, close_router_tx_task]) => {
               match result {
                   Ok(_) => {
                       // All tasks completed successfully
