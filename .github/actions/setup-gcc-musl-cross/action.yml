@@ -1,0 +1,39 @@
+name: 'setup-gcc-musl-cross'
+description: 'Installs and caches gcc musl cross-compiler'
+
+inputs:
+  arch:
+    description: 'Architecture of the target system (aarch, x86_64, etc.)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Print values
+      shell: bash
+      run: |
+        echo "inputs.arch: ${{ inputs.arch }}"
+        echo "runner.os: ${{ runner.os }}"
+        echo "runner.arch: ${{ runner.arch }}"
+
+    - name: Restore gcc Cross Compiler from Cache
+      id: cache-gcc-musl-cross
+      uses: actions/cache@v3
+      with:
+        path: |
+          ${{ inputs.arch }}-linux-musl-cross/
+        key: gcc-musl-cross-${{ inputs.arch }}-${{ runner.os }}-${{ runner.arch }}
+        lookup-only: ${{ inputs.lookup-only }}
+
+    - name: Install ARCH-unknown-linux-musl-gcc
+      if: steps.cache-gcc-musl-cross.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -LO https://musl.cc/${{ inputs.arch }}-linux-musl-cross.tgz
+        tar -xzf ${{ inputs.arch }}-linux-musl-cross.tgz
+        rm ${{ inputs.arch }}-linux-musl-cross.tgz
+
+    - name: Add cross-compiler to the path
+      shell: bash
+      run: |
+        echo "$(pwd)/${{ inputs.arch }}-linux-musl-cross/bin" >> $GITHUB_PATH

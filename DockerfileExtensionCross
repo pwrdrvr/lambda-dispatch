@@ -1,0 +1,4 @@
+FROM scratch AS package-stage
+# ARG ARCH=x86_64
+ARG ARCH=aarch64
+COPY ./target/${ARCH}-unknown-linux-musl/release/extension /lambda-dispatch
