@@ -636,12 +636,6 @@ mod tests {
           async move {
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "LambdaID: {}, ChannelID: {}, Request count: {}",
-              lambda_id,
-              channel_id,
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Return a 409
             (StatusCode::CONFLICT, b"Request already made")
@@ -752,22 +746,14 @@ mod tests {
                 .1
                 .into_data_stream()
                 .for_each(|chunk| async {
-                  let chunk = chunk.unwrap();
-                  println!("Chunk: {:?}", chunk);
+                  let _chunk = chunk.unwrap();
+                  // println!("Chunk: {:?}", chunk);
                 })
                 .await;
-
-              println!(
-                "Router Channel - Request body (for contained app response) finished writing"
-              );
             });
 
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Bail after 1st request
             if request_count.load(std::sync::atomic::Ordering::SeqCst) > 1 {
@@ -798,10 +784,6 @@ mod tests {
 
               // Close the stream
               tx.shutdown().await.unwrap();
-
-              println!(
-                "Router Channel - Response body (for contained app request) finished reading"
-              );
             });
 
             let body = AsyncReadBody::new(rx);
@@ -948,10 +930,6 @@ mod tests {
           async move {
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Create a channel for the stream
             let (mut tx, rx) = tokio::io::duplex(65_536);
@@ -974,10 +952,6 @@ mod tests {
 
               // Close the stream
               tx.shutdown().await.unwrap();
-
-              println!(
-                "Router Channel - Response body (for contained app request) finished reading"
-              );
             });
 
             let body = AsyncReadBody::new(rx);

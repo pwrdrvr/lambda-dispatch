@@ -56,10 +56,6 @@ pub mod test_mock_router {
           // Increment the request count
           request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
           let request_count = request_count.load(std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Request count: {}",
-            request_count
-          );
 
           // Spawn a task to read from the request (receiving response from extension)
           // We do not do anything with the response other than log it
@@ -76,14 +72,10 @@ pub mod test_mock_router {
               .1
               .into_data_stream()
               .for_each(|chunk| async {
-                let chunk = chunk.unwrap();
-                println!("Chunk: {:?}", chunk);
+                let _chunk = chunk.unwrap();
+                // println!("Chunk: {:?}", chunk);
               })
               .await;
-
-            println!(
-              "Router Channel - Request body (for contained app response) finished reading"
-            );
           });
 
           // Bail after request count if desired
@@ -131,10 +123,6 @@ pub mod test_mock_router {
 
             // Close the body stream
             tx.shutdown().await.unwrap();
-
-            println!(
-              "Router Channel - Response body (for contained app request) finished reading"
-            );
           });
 
           let body = AsyncReadBody::new(rx);

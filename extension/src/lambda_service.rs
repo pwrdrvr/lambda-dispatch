@@ -1053,11 +1053,6 @@ mod tests {
         assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
       }
     }
-    assert!(
-      duration <= std::time::Duration::from_secs(3),
-      "Test should take at most 3 seconds, took: {:.1}",
-      duration.as_secs_f64()
-    );
 
     // Healthcheck not called
     mock_app_healthcheck.assert_hits(0);

@@ -440,10 +440,6 @@ mod tests {
           let ping_count = Arc::clone(&ping_count_clone);
           // Increment
           ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Ping count: {}",
-            ping_count.load(std::sync::atomic::Ordering::SeqCst)
-          );
           format!("Ping! LambdaID: {}", lambda_id)
         }),
       )
@@ -685,10 +681,6 @@ mod tests {
           let ping_count = Arc::clone(&ping_count_clone);
           // Increment
           ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Ping count: {}",
-            ping_count.load(std::sync::atomic::Ordering::SeqCst)
-          );
           (status_code, format!("Ping! LambdaID: {}", lambda_id))
         }),
       )
@@ -799,11 +791,6 @@ mod tests {
           let ping_count = Arc::clone(&ping_count_clone);
           // Increment
           ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Ping count: {}",
-            ping_count.load(std::sync::atomic::Ordering::SeqCst)
-          );
-
           panic!("Connection closed")
         }),
       )
