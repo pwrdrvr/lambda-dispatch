@@ -263,12 +263,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install aarch64-unknown-linux-musl-gcc
-        run: |
-          curl -LO https://musl.cc/${{ env.ARCH }}-linux-musl-cross.tgz
-          tar -xzf ${{ env.ARCH }}-linux-musl-cross.tgz
-          echo "$(pwd)/${{ env.ARCH }}-linux-musl-cross/bin" >> $GITHUB_PATH
-          rm ${{ env.ARCH }}-linux-musl-cross.tgz
+      - name: Install gcc musl cross-compiler
+        uses: ./.github/actions/setup-gcc-musl-cross
+        with:
+          arch: ${{ env.ARCH }}
 
       - uses: moonrepo/setup-rust@v1
         with:
@@ -346,12 +344,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install x86_64-linux-musl-gcc
-        run: |
-          curl -LO https://musl.cc/${{ env.ARCH }}-linux-musl-cross.tgz
-          tar -xzf ${{ env.ARCH }}-linux-musl-cross.tgz
-          echo "$(pwd)/${{ env.ARCH }}-linux-musl-cross/bin" >> $GITHUB_PATH
-          rm ${{ env.ARCH }}-linux-musl-cross.tgz
+      - name: Install gcc musl cross-compiler
+        uses: ./.github/actions/setup-gcc-musl-cross
+        with:
+          arch: ${{ env.ARCH }}
 
       - uses: moonrepo/setup-rust@v1
         with:
