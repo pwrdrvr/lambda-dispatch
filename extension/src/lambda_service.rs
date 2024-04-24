@@ -759,9 +759,7 @@ mod tests {
     mock_app_bananas.assert_hits(1);
   }
 
-  // This test is reporting that the app connection has errored
   #[tokio::test]
-  #[ignore = "Issue-178 - This test fails because we don't try to send a close to the router or configure a timeout if the ping loop exits"]
   async fn test_lambda_request_router_connects_ping_panics_channel_stays_open() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(

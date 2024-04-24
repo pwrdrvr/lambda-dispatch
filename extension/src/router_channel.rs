@@ -92,7 +92,11 @@ impl RouterChannel {
     .await?;
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
-    loop {
+    // If the pinger or another channel sets the goaway we will stop looping
+    while !self
+      .goaway_received
+      .load(std::sync::atomic::Ordering::Acquire)
+    {
       let mut _decrement_on_drop = None;
 
       // Create the router request
