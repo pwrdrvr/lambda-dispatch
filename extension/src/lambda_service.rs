@@ -661,7 +661,7 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         channel_conflict_after_count: 1,
         channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: 0,
@@ -768,7 +768,7 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         channel_conflict_after_count: -1,
         channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: 0,
@@ -871,7 +871,7 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         channel_conflict_after_count: 100,
         channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
@@ -970,7 +970,7 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         channel_conflict_after_count: 100,
         channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
@@ -1072,7 +1072,110 @@ mod tests {
         // The 2nd channel should not finish all 100 requests after the 1st channel panics
         channel_conflict_after_count: 100,
         channel_panic_response_from_extension_on_count: 1,
-        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_bananas = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/bananas");
+      then
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .body("Bananas");
+    });
+
+    // Release the request
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.base_url())
+        .parse()
+        .unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 2,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterConnectionError,
+        );
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+    assert!(
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds"
+    );
+
+    // Healthcheck not called
+    mock_app_healthcheck.assert_hits(0);
+    // Bananas called less than 100 times
+    assert!(
+      mock_app_bananas.hits() < 100,
+      "Bananas should not be called 100 times"
+    );
+  }
+
+  #[tokio::test]
+  #[ignore = "Issue-178 - This test fails because 1 channel exiting does not cause the other channels to exit and because there is no propagation of the error"]
+  async fn test_lambda_request_router_connects_channel_response_panics() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        // We have 2 channels
+        // The 2nd channel should not finish all 100 requests after the 1st channel panics
+        channel_conflict_after_count: 100,
+        channel_panic_response_from_extension_on_count: 1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
