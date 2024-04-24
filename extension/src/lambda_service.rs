@@ -264,16 +264,11 @@ mod tests {
   use crate::{messages, test_http2_server::test_http2_server::run_http2_app, test_mock_router};
   use axum::{
     extract::Path,
-    response::Response,
     routing::{get, post},
     Router,
   };
-  use axum_extra::body::AsyncReadBody;
-  use futures::stream::StreamExt;
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
-  use hyper::StatusCode;
-  use tokio::io::AsyncWriteExt;
   use tokio_test::assert_ok;
 
   #[tokio::test]
@@ -327,9 +322,6 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok() {
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
-
     // Start router server
     let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
     let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
@@ -480,8 +472,6 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_fetch_response_spillover_healthcheck_blackhole_timeout() {
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
     let mut options = Options::default();
     options.async_init_timeout = std::time::Duration::from_millis(1000);
     let initialized = false;
@@ -526,9 +516,6 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_fetch_response_local_env_stale_request_reject() {
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
-
     let mut options = Options::default();
     options.local_env = true;
     let initialized = true;
@@ -571,8 +558,6 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_fetch_response_init_only_request_already_inited() {
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
     let options = Options::default();
     let initialized = true;
 
@@ -614,8 +599,6 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_request_already_inited_router_blackhole() {
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
     let mut options = Options::default();
     options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
     let initialized = true;
@@ -677,7 +660,7 @@ mod tests {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
         channel_conflict_after_count: 1,
-        channel_panic_response_from_extension: false,
+        channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start: false,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
@@ -712,10 +695,113 @@ mod tests {
         .unwrap();
     });
 
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
     let mut options = Options::default();
-    // options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
+
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.base_url())
+        .parse()
+        .unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterConnectionError,
+        );
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+    assert!(
+      duration > std::time::Duration::from_secs(6),
+      "Connection should take at least 6 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(7),
+      "Connection should take at most 7 seconds"
+    );
+
+    // Healthcheck not called
+    mock_app_healthcheck.assert_hits(0);
+    // Bananas called once
+    mock_app_bananas.assert_hits(1);
+  }
+
+  // This test is reporting that the app connection has errored
+  #[tokio::test]
+  #[ignore = "Issue-178 - This test fails because we don't try to send a close to the router or configure a timeout if the ping loop exits"]
+  async fn test_lambda_request_router_connects_ping_panics_channel_stays_open() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: -1,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: 0,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_bananas = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/bananas");
+      then
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .body("Bananas");
+    });
+
+    // Blow up the mock router server
+    // Release the request after a few seconds
+    tokio::spawn(async move {
+      tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+
     options.port = mock_app_server.address().port();
     let initialized = true;
 
@@ -779,13 +865,12 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore]
-  async fn test_lambda_request_router_connects_channel_request_panics() {
+  async fn test_lambda_request_loop_100_normal_requests() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 1,
-        channel_panic_response_from_extension: true,
+        channel_conflict_after_count: 100,
+        channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start: false,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
@@ -804,15 +889,11 @@ mod tests {
       then
         .status(200)
         .header("Content-Type", "text/plain")
-        .header("Connection", "close")
-        .header("Keep-Alive", "timeout=5")
         .body("Bananas");
     });
 
-    // Blow up the mock router server
-    // Release the request after a few seconds
+    // Let the router run wild
     tokio::spawn(async move {
-      tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
       mock_router_server
         .release_request_tx
         .send(())
@@ -820,10 +901,8 @@ mod tests {
         .unwrap();
     });
 
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
     let mut options = Options::default();
-    // options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
+
     options.port = mock_app_server.address().port();
     let initialized = true;
 
@@ -864,6 +943,207 @@ mod tests {
       Ok(waiter_response) => {
         assert_eq!(
           waiter_response.exit_reason,
+          messages::ExitReason::RouterGoaway,
+        );
+        assert_eq!(waiter_response.request_count, 100);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+    assert!(
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds"
+    );
+
+    // Healthcheck not called
+    mock_app_healthcheck.assert_hits(0);
+    // Bananas called 100 times
+    mock_app_bananas.assert_hits(100);
+  }
+
+  #[tokio::test]
+  #[ignore = "Issue-178 - This test fails because we do not re-establish the contained app connections"]
+  async fn test_lambda_request_loop_100_requests_contained_app_connection_close_header() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: 100,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_bananas = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/bananas");
+      then
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .header("Connection", "close")
+        .body("Bananas");
+    });
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.base_url())
+        .parse()
+        .unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoaway,
+        );
+        assert_eq!(waiter_response.request_count, 100);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+    assert!(
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds"
+    );
+
+    // Healthcheck not called
+    mock_app_healthcheck.assert_hits(0);
+    // Bananas called 100 times
+    mock_app_bananas.assert_hits(100);
+  }
+
+  #[tokio::test]
+  #[ignore = "Issue-178 - This test fails because 1 channel exiting does not cause the other channels to exit and because there is no propagation of the error"]
+  async fn test_lambda_request_router_connects_channel_request_panics() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        // We have 2 channels
+        // The 2nd channel should not finish all 100 requests after the 1st channel panics
+        channel_conflict_after_count: 100,
+        channel_panic_response_from_extension_on_count: 1,
+        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_bananas = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/bananas");
+      then
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .body("Bananas");
+    });
+
+    // Release the request
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.base_url())
+        .parse()
+        .unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 2,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
           messages::ExitReason::RouterConnectionError,
         );
       }
@@ -872,17 +1152,16 @@ mod tests {
       }
     }
     assert!(
-      duration > std::time::Duration::from_secs(6),
-      "Connection should take at least 6 seconds"
-    );
-    assert!(
-      duration <= std::time::Duration::from_secs(7),
-      "Connection should take at most 7 seconds"
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds"
     );
 
     // Healthcheck not called
     mock_app_healthcheck.assert_hits(0);
-    // Bananas called once
-    mock_app_bananas.assert_hits(1);
+    // Bananas called less than 100 times
+    assert!(
+      mock_app_bananas.hits() < 100,
+      "Bananas should not be called 100 times"
+    );
   }
 }

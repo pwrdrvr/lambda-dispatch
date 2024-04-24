@@ -17,7 +17,7 @@ pub mod test_mock_router {
   #[derive(Clone, Copy)]
   pub struct RouterParams {
     pub channel_conflict_after_count: isize,
-    pub channel_panic_response_from_extension: bool,
+    pub channel_panic_response_from_extension_on_count: isize,
     pub channel_panic_request_to_extension_before_start: bool,
     pub channel_panic_request_to_extension_after_start: bool,
     pub channel_panic_request_to_extension_before_close: bool,
@@ -50,6 +50,7 @@ pub mod test_mock_router {
          move |Path((_lambda_id, _channel_id)): Path<(String, String)>,
              request: axum::extract::Request| {
          let request_count = Arc::clone(&request_count_clone);
+         let request_count_response = Arc::clone(&request_count_clone);
          let release_request_rx = Arc::clone(&release_request_rx);
 
          async move {
@@ -59,7 +60,8 @@ pub mod test_mock_router {
            tokio::spawn(async move {
              let parts = request.into_parts();
 
-             if params.channel_panic_response_from_extension {
+             if params.channel_panic_response_from_extension_on_count == 0
+                || request_count_response.load(std::sync::atomic::Ordering::SeqCst) == params.channel_panic_response_from_extension_on_count as usize {
                panic!("Panic! Response from extension");
              }
 
