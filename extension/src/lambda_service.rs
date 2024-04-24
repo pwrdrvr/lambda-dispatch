@@ -189,9 +189,11 @@ impl LambdaService {
     let result = lambda_request.start().await;
     match result {
       Ok(exit_reason) => {
-        println!(
+        log::info!(
           "PoolId: {}, LambdaId: {} - Lambda request completed, exit reason: {:?}",
-          pool_id, lambda_id, exit_reason
+          pool_id,
+          lambda_id,
+          exit_reason
         );
 
         resp.exit_reason = exit_reason;
@@ -259,7 +261,7 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
 mod tests {
   use super::*;
 
-  use crate::{messages, test_http2_server::test_http2_server::run_http2_app};
+  use crate::{messages, test_http2_server::test_http2_server::run_http2_app, test_mock_router};
   use axum::{
     extract::Path,
     response::Response,
@@ -671,130 +673,16 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_request_router_connects_ping_panics() {
-    // If you want to view logs during a test, uncomment this
-    let _ = env_logger::builder().is_test(true).try_init();
-
     // Start router server
-    let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let ping_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let ping_count_clone = Arc::clone(&ping_count);
-    let close_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let close_count_clone = Arc::clone(&close_count);
-    let app = Router::new()
-      .route(
-        "/api/chunked/request/:lambda_id/:channel_id",
-        post(
-          move |Path((_lambda_id, _channel_id)): Path<(String, String)>,
-              request: axum::extract::Request| {
-          let request_count = Arc::clone(&request_count_clone);
-          let release_request_rx = Arc::clone(&release_request_rx);
-
-          async move {
-            // Spawn a task to write to the stream
-            tokio::spawn(async move {
-              let parts = request.into_parts();
-
-              parts
-                .1
-                .into_data_stream()
-                .for_each(|chunk| async {
-                  let chunk = chunk.unwrap();
-                  println!("Chunk: {:?}", chunk);
-                })
-                .await;
-
-              println!(
-                "Router Channel - Request body (for contained app response) finished writing"
-              );
-            });
-
-            // Increment the request count
-            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
-
-            // Bail after 1st request
-            if request_count.load(std::sync::atomic::Ordering::SeqCst) > 1 {
-              let body = AsyncReadBody::new(tokio::io::empty());
-              let response = Response::builder()
-                .status(StatusCode::CONFLICT)
-                .body(body)
-                .unwrap();
-
-              return response;
-            }
-
-            // Create a channel for the stream
-            let (mut tx, rx) = tokio::io::duplex(65_536);
-
-            // Spawn a task to write to the stream
-            tokio::spawn(async move {
-              //
-              // Tell extension to GOAWAY
-              //
-              let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
-              tx.write_all(data).await.unwrap();
-
-              // Write the rest of the headers
-              let data = b"Test-Headers: bar\r\nTest-Headerss: baz\r\nAccept-Encoding: gzip\r\n\r\nHELLO WORLD";
-              tx.write_all(data).await.unwrap();
-
-              // Wait for the release
-              release_request_rx.lock().await.recv().await;
-
-              // Close the body stream
-              tx.shutdown().await.unwrap();
-
-              println!(
-                "Router Channel - Response body (for contained app request) finished reading"
-              );
-            });
-
-            let body = AsyncReadBody::new(rx);
-
-            let response = Response::builder()
-              .header("content-type", "application/octet-stream")
-              .body(body)
-              .unwrap();
-
-            response
-          }
-        },
-        ),
-      )
-      .route(
-        "/api/chunked/ping/:lambda_id",
-        get(|Path(lambda_id): Path<String>| async move {
-          let ping_count = Arc::clone(&ping_count_clone);
-          // Increment
-          ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-          // Panic so the stream closes
-          panic!("Ping! LambdaID: {}", lambda_id);
-        }),
-      )
-      .route(
-        "/api/chunked/close/:lambda_id",
-        get(|Path(lambda_id): Path<String>| async move {
-          let close_count = Arc::clone(&close_count_clone);
-          // Increment
-          close_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          log::info!("Close! LambdaID: {}", lambda_id);
-          format!("Close! LambdaID: {}", lambda_id)
-        }),
-      );
-
-    let mock_router_server = run_http2_app(app);
-    let mock_router_endpoint = Endpoint::new(
-      crate::endpoint::Scheme::Http,
-      "127.0.0.1",
-      mock_router_server.addr.port(),
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: 1,
+        channel_panic_response_from_extension: false,
+        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: 0,
+      },
     );
 
     // Start app server
@@ -817,7 +705,11 @@ mod tests {
     // Release the request after a few seconds
     tokio::spawn(async move {
       tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
-      release_request_tx.send(()).await.unwrap();
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
     });
 
     // If you want to view logs during a test, uncomment this
@@ -837,7 +729,118 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!("http://127.0.0.1:{}", mock_router_server.addr.port()),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let start = std::time::Instant::now();
+    let response = service.fetch_response(event).await;
+    let duration = std::time::Instant::now().duration_since(start);
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterConnectionError,
+        );
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+    assert!(
+      duration > std::time::Duration::from_secs(6),
+      "Connection should take at least 6 seconds"
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(7),
+      "Connection should take at most 7 seconds"
+    );
+
+    // Healthcheck not called
+    mock_app_healthcheck.assert_hits(0);
+    // Bananas called once
+    mock_app_bananas.assert_hits(1);
+  }
+
+  #[tokio::test]
+  #[ignore]
+  async fn test_lambda_request_router_connects_channel_request_panics() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: 1,
+        channel_panic_response_from_extension: true,
+        channel_panic_request_to_extension_before_start: false,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_bananas = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/bananas");
+      then
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .header("Connection", "close")
+        .header("Keep-Alive", "timeout=5")
+        .body("Bananas");
+    });
+
+    // Blow up the mock router server
+    // Release the request after a few seconds
+    tokio::spawn(async move {
+      tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    // If you want to view logs during a test, uncomment this
+    // let _ = env_logger::builder().is_test(true).try_init();
+    let mut options = Options::default();
+    // options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.base_url())
+        .parse()
+        .unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
