@@ -273,6 +273,7 @@ jobs:
       - uses: moonrepo/setup-rust@v1
         with:
           targets: "${{ env.ARCH }}-unknown-linux-musl"
+          cache-target: release
 
       - name: Build extension
         env:
@@ -355,6 +356,7 @@ jobs:
       - uses: moonrepo/setup-rust@v1
         with:
           targets: "${{ env.ARCH }}-unknown-linux-musl"
+          cache-target: release
 
       - name: Build extension
         env:
