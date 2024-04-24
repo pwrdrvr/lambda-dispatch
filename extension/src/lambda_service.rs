@@ -251,8 +251,10 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
     Box::pin(async move {
       match adapter.fetch_response(event).await {
         Ok(response) => Ok(response),
+        // We only get here if the error is fatal
         Err(e) => {
-          panic!("Fatal error processing LambdaEvent: {}", e);
+          log::error!("Fatal error in LambdaService.call: {}", e);
+          Err(e.into())
         }
       }
     })
@@ -269,7 +271,7 @@ mod tests {
   use tokio_test::assert_ok;
 
   #[tokio::test]
-  async fn test_lambda_service_call() {
+  async fn test_lambda_service_tower_service_call_init_only_already_initialized() {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
@@ -315,6 +317,77 @@ mod tests {
         exit_reason: ExitReason::SelfInitOnly,
       }
     );
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_tower_service_call_fatal_error_app_unreachable() {
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_conflict_after_count: 0,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    log::info!(
+      "Router server running on port: {}",
+      mock_router_server.mock_router_server.addr.port()
+    );
+
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://localhost:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Create the service
+    let options = Options::default();
+    let initialized = true;
+
+    let mut service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      "localhost:54321".parse().unwrap(),
+    );
+
+    // Ensure the service is ready
+    let waker = noop_waker();
+    let mut context = core::task::Context::from_waker(&waker);
+    let _ = service.poll_ready(&mut context);
+
+    // Call the service with the mock request
+    let result = service.call(event.clone()).await;
+
+    // Assert that the response is as expected
+    assert!(result.is_err());
+    if let Err(err) = &result {
+      if let Some(lambda_err) = err.downcast_ref::<LambdaRequestError>() {
+        assert_eq!(
+          *lambda_err,
+          LambdaRequestError::AppConnectionUnreachable,
+          "Expected LambdaRequestError::AppConnectionUnreachable"
+        );
+      } else {
+        assert!(false, "Expected LambdaRequestError");
+      }
+    } else {
+      assert!(false, "Expected an error result");
+    }
   }
 
   #[tokio::test]
