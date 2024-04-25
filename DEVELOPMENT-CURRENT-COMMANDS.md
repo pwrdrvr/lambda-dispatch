@@ -1,8 +1,13 @@
 # stress
 
 curl -v http://localhost:5001/ping
+
 TOKIO_WORKER_THREADS=1 oha -c 20 -z 60s http://127.0.0.1:5001/ping
+
+TOKIO_WORKER_THREADS=1 oha -c 20 -z 60s -D target/release/extension -T application/octet-stream -m POST http://127.0.0.1:5001/echo
+
 k6 run k6/ping-dispatch-local.js
+
 curl -X POST -H "Content-Type: text/markdown" --data-binary @README.md http://localhost:5001/echo --compressed -o README2.md -v
 
 # node

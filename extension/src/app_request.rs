@@ -116,10 +116,6 @@ mod tests {
           async move {
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             if request_count.load(std::sync::atomic::Ordering::SeqCst) == 1 {
               let req =
@@ -235,10 +231,6 @@ mod tests {
             async move {
               // Increment the request count
               request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-              println!(
-                "Request count: {}",
-                request_count.load(std::sync::atomic::Ordering::SeqCst)
-              );
 
               if request_count.load(std::sync::atomic::Ordering::SeqCst) == 1 {
                 let req =
@@ -357,10 +349,6 @@ mod tests {
           async move {
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Create a channel for the stream
             let (mut tx, rx) = tokio::io::duplex(65_536);
@@ -485,10 +473,6 @@ mod tests {
           async move {
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Create a channel for the stream
             let (mut tx, rx) = tokio::io::duplex(65_536);

@@ -1,4 +1,5 @@
-use crate::prelude::*;
+use crate::lambda_request_error::LambdaRequestError;
+use crate::{messages, prelude::*};
 
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -10,6 +11,7 @@ use futures::channel::mpsc;
 use futures::SinkExt;
 use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use httpdate::fmt_http_date;
+use hyper::StatusCode;
 use hyper::{
   body::{Body, Bytes, Frame, Incoming},
   client::conn::http2,
@@ -23,6 +25,25 @@ use crate::endpoint::Endpoint;
 use crate::time;
 
 use flate2::write::GzEncoder;
+
+#[derive(PartialEq, Debug)]
+pub enum ChannelResult {
+  GoAwayReceived,
+  RouterStatus5xx,
+  RouterStatus4xx,
+  RouterStatusOther,
+}
+
+impl From<ChannelResult> for messages::ExitReason {
+  fn from(result: ChannelResult) -> Self {
+    match result {
+      ChannelResult::GoAwayReceived => messages::ExitReason::RouterGoAway,
+      ChannelResult::RouterStatus5xx => messages::ExitReason::RouterStatus5xx,
+      ChannelResult::RouterStatus4xx => messages::ExitReason::RouterStatus4xx,
+      ChannelResult::RouterStatusOther => messages::ExitReason::RouterStatusOther,
+    }
+  }
+}
 
 #[derive(Clone)]
 pub struct RouterChannel {
@@ -82,18 +103,23 @@ impl RouterChannel {
     }
   }
 
-  pub async fn start(&mut self) -> Result<()> {
+  pub async fn start(&mut self) -> Result<Option<ChannelResult>, LambdaRequestError> {
+    let mut channel_result = None;
     let mut app_sender = connect_to_app::connect_to_app(
       &self.app_endpoint,
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
       Arc::clone(&self.channel_id),
     )
-    .await?;
+    .await
+    .map_err(|_| LambdaRequestError::AppConnectionUnreachable)?;
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
-    loop {
-      // let requests_in_flight = Arc::clone(&requests_in_flight);
+    // If the pinger or another channel sets the goaway we will stop looping
+    while !self
+      .goaway_received
+      .load(std::sync::atomic::Ordering::Acquire)
+    {
       let mut _decrement_on_drop = None;
 
       // Create the router request
@@ -112,7 +138,8 @@ impl RouterChannel {
         .header("X-Pool-Id", self.pool_id.as_ref())
         .header("X-Lambda-Id", self.lambda_id.as_ref())
         .header("X-Channel-Id", self.channel_id.as_ref())
-        .body(boxed_body)?;
+        .body(boxed_body)
+        .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
       //
       // Make the request to the router
@@ -125,12 +152,19 @@ impl RouterChannel {
         self.channel_id
       );
 
-      self.sender
+      // Bail if the router connection is not ready
+      self
+        .sender
         .ready()
         .await
-        .context(format!("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect", self.pool_id, self.lambda_id, self.channel_id))?;
+        .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
-      let res = self.sender.send_request(req).await?;
+      // FIXME: This will exit the entire channel when one request errors
+      let res = self
+        .sender
+        .send_request(req)
+        .await
+        .map_err(|_| LambdaRequestError::RouterConnectionError)?;
       log::debug!(
         "PoolId: {}, LambdaId: {}, ChannelId: {} - got response: {:?}",
         self.pool_id,
@@ -148,11 +182,12 @@ impl RouterChannel {
 
       // If the router returned a 409 when we opened the channel
       // then we close the channel
-      if parts.status == 409 {
+      if parts.status == StatusCode::CONFLICT {
         if !self
           .goaway_received
           .load(std::sync::atomic::Ordering::Acquire)
         {
+          channel_result.get_or_insert(ChannelResult::GoAwayReceived);
           log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
                   self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
@@ -160,6 +195,24 @@ impl RouterChannel {
             .store(true, std::sync::atomic::Ordering::Release);
         }
         tx.close().await.unwrap_or(());
+        break;
+      }
+
+      if parts.status != StatusCode::OK {
+        if parts.status.is_server_error() {
+          channel_result.get_or_insert(ChannelResult::RouterStatus5xx);
+        } else if parts.status.is_client_error() {
+          channel_result.get_or_insert(ChannelResult::RouterStatus4xx);
+        } else {
+          channel_result.get_or_insert(ChannelResult::RouterStatusOther);
+        }
+        log::info!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - Channel Loop - non-200 received on ping, exiting: {:?}",
+          self.pool_id,
+          self.lambda_id,
+          self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
+          parts.status);
+        self.goaway_received.store(true, Ordering::Release);
         break;
       }
 
@@ -181,7 +234,9 @@ impl RouterChannel {
         &self.lambda_id,
         &self.channel_id,
       )
-      .await?;
+      // FIXME: This will exit the entire channel when one request errors
+      .await
+      .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
       // Check if the request has an Accept-Encoding header with gzip
       // If it does, we *can* gzip the response
@@ -197,6 +252,7 @@ impl RouterChannel {
           .goaway_received
           .load(std::sync::atomic::Ordering::Acquire)
         {
+          channel_result.get_or_insert(ChannelResult::GoAwayReceived);
           log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                     self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
@@ -220,13 +276,16 @@ impl RouterChannel {
       // Make the request to the contained app
       //
       let (mut app_req_tx, app_req_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
-      let app_req = app_req_builder.body(StreamBody::new(app_req_recv))?;
+      // FIXME: This will exit the entire channel when one request errors
+      let app_req = app_req_builder
+        .body(StreamBody::new(app_req_recv))
+        .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
-      if app_sender.ready().await.is_err() {
-        // This gets hit when the app connection faults
-        panic!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {} - App connection ready check threw error - connection has disconnected, should reconnect",
-                  self.pool_id, self.lambda_id, self.channel_id, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
-      }
+      // This gets hit when the app connection faults
+      app_sender
+        .ready()
+        .await
+        .map_err(|_| LambdaRequestError::AppConnectionError)?;
 
       // Relay the request body to the contained app
       // We start a task for this because we need to relay the bytes
@@ -237,8 +296,7 @@ impl RouterChannel {
       let pool_id_clone = self.pool_id.clone();
       let lambda_id_clone = self.lambda_id.clone();
       let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
-      // let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
-      let relay_task = tokio::task::spawn(async move {
+      let relay_request_task = tokio::task::spawn(async move {
         let mut bytes_sent = 0;
 
         // Send any overflow body bytes to the contained app
@@ -254,15 +312,16 @@ impl RouterChannel {
           app_req_tx
             .send(Ok(Frame::data(left_over_buf.into())))
             .await
-            .unwrap();
+            .map_err(|_| LambdaRequestError::AppConnectionError)?;
         }
 
         //
         // Handle incoming POST request by relaying the body
         //
+        // Reads from: Router response body stream (containing request from client)
+        // Writes to: App request body stream
         // Source: res_stream
         // Sink: app_req_tx
-        let mut router_error_reading = false;
         while let Some(chunk) =
           futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut res_stream), cx)).await
         {
@@ -273,8 +332,7 @@ impl RouterChannel {
                           requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
                           bytes_sent,
                           chunk.err());
-            router_error_reading = true;
-            break;
+            return Err(LambdaRequestError::RouterConnectionError);
           }
 
           let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
@@ -301,27 +359,33 @@ impl RouterChannel {
                             bytes_sent,
                             chunk_len,
                             err);
-              break;
+              return Err(LambdaRequestError::AppConnectionError);
             }
           }
           bytes_sent += chunk_len;
         }
 
-        // Close the post body stream
-        if router_error_reading {
-          log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {} - Error reading from res_stream, dropping app_req_tx", pool_id_clone, lambda_id_clone, channel_id_clone, bytes_sent);
-          return;
-        }
-
         // This may error if the router closed the connection
-        let _ = app_req_tx.flush().await;
-        let _ = app_req_tx.close().await;
+        app_req_tx
+          .flush()
+          .await
+          .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+        app_req_tx
+          .close()
+          .await
+          .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+
+        Ok(())
       });
 
       //
       // Send the request
       //
-      let app_res = app_sender.send_request(app_req).await?;
+      // FIXME: This will exit the entire channel when one request errors
+      let app_res = app_sender
+        .send_request(app_req)
+        .await
+        .map_err(|_| LambdaRequestError::AppConnectionError)?;
       let (app_res_parts, mut app_res_stream) = app_res.into_parts();
 
       //
@@ -363,7 +427,9 @@ impl RouterChannel {
 
       let app_res_content_type =
         if let Some(content_type) = app_res_parts.headers.get("content-type") {
-          content_type.to_str().unwrap()
+          content_type
+            .to_str()
+            .map_err(|_| LambdaRequestError::ChannelErrorOther)?
         } else {
           ""
         };
@@ -394,7 +460,10 @@ impl RouterChannel {
       // Send the headers to the caller
       for header in app_res_parts.headers.iter() {
         let header_name = header.0.as_str();
-        let header_value = header.1.to_str().unwrap();
+        let header_value = header
+          .1
+          .to_str()
+          .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
         // Skip the connection and keep-alive headers
         if header_name == "connection" {
@@ -417,7 +486,10 @@ impl RouterChannel {
           header_buffer.extend(header_bytes);
         } else {
           // If the header_buffer is full, send it and create a new header_buffer
-          tx.send(Ok(Frame::data(header_buffer.into()))).await?;
+          // FIXME: This will exit the entire channel when one request errors
+          tx.send(Ok(Frame::data(header_buffer.into())))
+            .await
+            .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
           header_buffer = Vec::new();
           header_buffer.extend(header_bytes);
@@ -426,7 +498,10 @@ impl RouterChannel {
 
       // End the headers
       header_buffer.extend(b"\r\n");
-      tx.send(Ok(Frame::data(header_buffer.into()))).await?;
+      // FIXME: This will exit the entire channel when one request errors
+      tx.send(Ok(Frame::data(header_buffer.into())))
+        .await
+        .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
       let mut encoder: Option<GzEncoder<Writer<BytesMut>>> = None;
       if app_res_will_compress {
@@ -436,74 +511,123 @@ impl RouterChannel {
         ));
       }
 
-      // Rip the bytes back to the caller
+      // Reads from: App response body stream
+      // Writes to: Router request body stream
       let channel_id_clone = self.channel_id.clone();
-      let mut app_error_reading = false;
-      let mut bytes_read = 0;
-      while let Some(chunk) =
-        futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut app_res_stream), cx)).await
-      {
-        if chunk.is_err() {
-          log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
-            self.pool_id,
-            self.lambda_id,
-            self.channel_id,
-            self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
+      let pool_id_clone = self.pool_id.clone();
+      let lambda_id_clone = self.lambda_id.clone();
+      let requests_in_flight_clone = Arc::clone(&self.requests_in_flight);
+      let relay_response_to_router_task = tokio::task::spawn(async move {
+        let mut bytes_read = 0;
+        while let Some(chunk) =
+          futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut app_res_stream), cx))
+            .await
+        {
+          if chunk.is_err() {
+            log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+            pool_id_clone,
+            lambda_id_clone,
+            channel_id_clone,
+            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
             bytes_read,
             chunk.err());
-          app_error_reading = true;
-          break;
+            return Err(LambdaRequestError::AppConnectionError);
+          }
+
+          let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
+          // If chunk_len is zero the response
+          if chunk_len == 0 {
+            break;
+          }
+
+          bytes_read += chunk_len;
+
+          if let Some(ref mut encoder) = encoder {
+            let chunk_data = chunk.as_ref().unwrap().data_ref().unwrap();
+            // FIXME: This will exit the entire channel when one request errors
+            encoder
+              .write_all(chunk_data)
+              .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+            // FIXME: This will exit the entire channel when one request errors
+            encoder
+              .flush()
+              .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+
+            let writer = encoder.get_mut();
+            let bytes = writer.get_mut().split().into();
+
+            // FIXME: This will exit the entire channel when one request errors
+            match tx.send(Ok(Frame::data(bytes))).await {
+              Ok(_) => {}
+              Err(err) => {
+                log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
+                            pool_id_clone,
+                            lambda_id_clone,
+                            channel_id_clone,
+                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            bytes_read,
+                            err);
+                return Err(LambdaRequestError::RouterConnectionError);
+              }
+            }
+          } else {
+            // FIXME: This will exit the entire channel when one request errors
+            match tx.send(Ok(chunk.unwrap())).await {
+              Ok(_) => {}
+              Err(err) => {
+                log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
+                            pool_id_clone,
+                            lambda_id_clone,
+                            channel_id_clone,
+                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            bytes_read,
+                            err);
+                return Err(LambdaRequestError::RouterConnectionError);
+              }
+            }
+          }
         }
 
-        let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
-        // If chunk_len is zero the channel has closed
-        if chunk_len == 0 {
-          break;
-        }
-
-        bytes_read += chunk_len;
-
-        if let Some(ref mut encoder) = encoder {
-          let chunk_data = chunk.as_ref().unwrap().data_ref().unwrap();
-          encoder.write_all(chunk_data)?;
-          encoder.flush()?;
-
-          let writer = encoder.get_mut();
-          let bytes = writer.get_mut().split().into();
-          tx.send(Ok(Frame::data(bytes))).await?;
-        } else {
-          tx.send(Ok(chunk.unwrap())).await?;
-        }
-      }
-      if app_error_reading {
-        log::debug!(
-          "PoolId: {}, LambdaId: {}, ChannelId: {} - Error reading from app_res_stream, dropping tx",
-          self.pool_id,
-          self.lambda_id,
-          self.channel_id
-        );
-      }
-
-      let close_router_tx_task = tokio::task::spawn(async move {
         if let Some(encoder) = encoder.take() {
           let writer = encoder.finish().unwrap();
           let bytes = writer.into_inner().into();
 
-          tx.send(Ok(Frame::data(bytes))).await.unwrap();
+          tx.send(Ok(Frame::data(bytes)))
+            .await
+            .map_err(|_| LambdaRequestError::RouterConnectionError)?;
         }
-        let _ = tx.flush().await;
-        let _ = tx.close().await;
+        tx.flush()
+          .await
+          .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+        tx.close()
+          .await
+          .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+
+        Ok(())
       });
 
       // Wait for both to finish
       tokio::select! {
-          result = futures::future::try_join_all([relay_task, close_router_tx_task]) => {
+          result = futures::future::try_join_all([relay_request_task, relay_response_to_router_task]) => {
               match result {
-                  Ok(_) => {
-                      // All tasks completed successfully
+                  Ok(result) => {
+                      // Find the worst error, if any
+                      let mut worst_error = None;
+
+                      // This case can have errors in the vector
+                      for res in result {
+                          if let Err(err) = res {
+                              log::error!("PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all: {}", self.pool_id, self.lambda_id, self.channel_id, err);
+                              worst_error = Some(err.worse(worst_error.unwrap_or(LambdaRequestError::ChannelErrorOther)));
+                          }
+                      }
+
+                      if let Some(err) = worst_error {
+                          return Err(err);
+                      }
                   }
-                  Err(_) => {
-                      panic!("PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all", self.pool_id, self.lambda_id, channel_id_clone);
+                  Err(err) => {
+                      panic!("PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all: {}", self.pool_id, self.lambda_id, self.channel_id, err);
                   }
               }
           }
@@ -512,7 +636,7 @@ impl RouterChannel {
       self.count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 
-    Ok(())
+    Ok(channel_result)
   }
 }
 
@@ -522,7 +646,7 @@ mod tests {
 
   use std::sync::Arc;
 
-  use crate::connect_to_router;
+  use crate::{connect_to_router, test_mock_router};
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
 
   use axum::response::Response;
@@ -535,41 +659,63 @@ mod tests {
   use tokio_test::assert_ok;
 
   #[tokio::test]
-  async fn test_channel_immediate_409() {
+  async fn test_channel_status_305() {
+    test_channel_status_code(
+      StatusCode::USE_PROXY,
+      Some(ChannelResult::RouterStatusOther),
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_channel_status_400() {
+    test_channel_status_code(
+      StatusCode::BAD_REQUEST,
+      Some(ChannelResult::RouterStatus4xx),
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_channel_status_409() {
+    test_channel_status_code(StatusCode::CONFLICT, Some(ChannelResult::GoAwayReceived)).await;
+  }
+
+  #[tokio::test]
+  async fn test_channel_status_500() {
+    test_channel_status_code(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Some(ChannelResult::RouterStatus5xx),
+    )
+    .await;
+  }
+
+  async fn test_channel_status_code(
+    status_code: StatusCode,
+    expected_result: Option<ChannelResult>,
+  ) {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
     let channel_id = "channel_id".to_string();
 
-    // Start router server
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let app = Router::new().route(
-      "/api/chunked/request/:lambda_id/:channel_id",
-      post(
-        move |Path((lambda_id, channel_id)): Path<(String, String)>| {
-          let request_count = Arc::clone(&request_count_clone);
-          async move {
-            // Increment the request count
-            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "LambdaID: {}, ChannelID: {}, Request count: {}",
-              lambda_id,
-              channel_id,
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
-
-            // Return a 409
-            (StatusCode::CONFLICT, b"Request already made")
-          }
-        },
-      ),
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_non_200_status_after_count: 0,
+        channel_non_200_status_code: status_code,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
     );
-    let mock_router_server = run_http2_app(app);
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
+    let router_endpoint: Endpoint = format!(
+      "http://localhost:{}",
+      mock_router_server.mock_router_server.addr.port()
+    )
+    .parse()
+    .unwrap();
 
     // Start app server
     let mock_app_server = MockServer::start();
@@ -615,7 +761,9 @@ mod tests {
     let channel_start_result = channel.start().await;
 
     // Assert
-    assert_ok!(channel_start_result);
+    assert!(channel_start_result.is_ok(), "channel start result is ok");
+    let channel_start_result = channel_start_result.unwrap();
+    assert_eq!(channel_start_result, expected_result, "result expected");
     assert_eq!(channel.count.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_eq!(
       channel
@@ -629,7 +777,12 @@ mod tests {
         .load(std::sync::atomic::Ordering::SeqCst),
       0
     );
-    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
     assert_eq!(
       goaway_received.load(std::sync::atomic::Ordering::SeqCst),
       true
@@ -668,22 +821,14 @@ mod tests {
                 .1
                 .into_data_stream()
                 .for_each(|chunk| async {
-                  let chunk = chunk.unwrap();
-                  println!("Chunk: {:?}", chunk);
+                  let _chunk = chunk.unwrap();
+                  // println!("Chunk: {:?}", chunk);
                 })
                 .await;
-
-              println!(
-                "Router Channel - Request body (for contained app response) finished writing"
-              );
             });
 
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Bail after 1st request
             if request_count.load(std::sync::atomic::Ordering::SeqCst) > 1 {
@@ -714,10 +859,6 @@ mod tests {
 
               // Close the stream
               tx.shutdown().await.unwrap();
-
-              println!(
-                "Router Channel - Response body (for contained app request) finished reading"
-              );
             });
 
             let body = AsyncReadBody::new(rx);
@@ -864,10 +1005,6 @@ mod tests {
           async move {
             // Increment the request count
             request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!(
-              "Request count: {}",
-              request_count.load(std::sync::atomic::Ordering::SeqCst)
-            );
 
             // Create a channel for the stream
             let (mut tx, rx) = tokio::io::duplex(65_536);
@@ -890,10 +1027,6 @@ mod tests {
 
               // Close the stream
               tx.shutdown().await.unwrap();
-
-              println!(
-                "Router Channel - Response body (for contained app request) finished reading"
-              );
             });
 
             let body = AsyncReadBody::new(rx);

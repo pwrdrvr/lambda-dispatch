@@ -16,9 +16,9 @@ use hyper::{
   Request, StatusCode,
 };
 
-use crate::endpoint::Endpoint;
 use crate::prelude::*;
 use crate::time;
+use crate::{endpoint::Endpoint, messages};
 
 #[derive(PartialEq, Debug)]
 pub enum PingResult {
@@ -32,6 +32,21 @@ pub enum PingResult {
   StatusCodeOther,
 }
 
+impl From<PingResult> for Option<messages::ExitReason> {
+  fn from(result: PingResult) -> Self {
+    match result {
+      PingResult::GoAway => Some(messages::ExitReason::RouterGoAway),
+      PingResult::Deadline => Some(messages::ExitReason::SelfDeadline),
+      PingResult::LastActive => Some(messages::ExitReason::SelfLastActive),
+      PingResult::CancelToken => None,
+      PingResult::ConnectionError => Some(messages::ExitReason::RouterConnectionError),
+      PingResult::StatusCode5xx => Some(messages::ExitReason::RouterStatus5xx),
+      PingResult::StatusCode4xx => Some(messages::ExitReason::RouterStatus4xx),
+      PingResult::StatusCodeOther => Some(messages::ExitReason::RouterStatus4xx),
+    }
+  }
+}
+
 pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
@@ -43,8 +58,8 @@ pub async fn send_ping_requests(
   deadline_ms: u64,
   cancel_token: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
-) -> PingResult {
-  let mut result = PingResult::GoAway;
+) -> Option<PingResult> {
+  let mut ping_result = None;
   let start_time = time::current_time_millis();
   let mut last_ping_time = start_time;
 
@@ -106,7 +121,7 @@ pub async fn send_ping_requests(
           elapsed,
           rps
         );
-        result = PingResult::LastActive;
+        ping_result.get_or_insert(PingResult::LastActive);
       } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
           "PoolId: {}, LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
@@ -117,7 +132,7 @@ pub async fn send_ping_requests(
           elapsed,
           rps
         );
-        result = PingResult::Deadline;
+        ping_result.get_or_insert(PingResult::Deadline);
       }
 
       // Send Close request to router
@@ -138,7 +153,7 @@ pub async fn send_ping_requests(
       if sender.ready().await.is_err() {
         // This gets hit when the connection for HTTP/1.1 faults
         goaway_received.store(true, Ordering::Release);
-        result = PingResult::ConnectionError;
+        ping_result.get_or_insert(PingResult::ConnectionError);
         log::error!(
           "Ping Loop - Router connection ready check threw error - connection has disconnected, exiting"
         );
@@ -187,7 +202,7 @@ pub async fn send_ping_requests(
 
       if sender.ready().await.is_err() {
         // This gets hit when the connection faults
-        result = PingResult::ConnectionError;
+        ping_result.get_or_insert(PingResult::ConnectionError);
         goaway_received.store(true, Ordering::Release);
         log::error!("PoolId: {}, LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, exiting", pool_id, lambda_id);
         break;
@@ -202,23 +217,24 @@ pub async fn send_ping_requests(
           // Rip through and discard so the response stream is closed
           while res_stream.frame().await.is_some() {}
 
-          if parts.status == 409 {
+          if parts.status == StatusCode::CONFLICT {
             log::info!(
               "PoolId: {}, LambdaId: {} - Ping Loop - 409 received on ping, exiting",
               pool_id,
               lambda_id
             );
+            ping_result.get_or_insert(PingResult::GoAway);
             goaway_received.store(true, Ordering::Release);
             break;
           }
 
           if parts.status != StatusCode::OK {
             if parts.status.is_server_error() {
-              result = PingResult::StatusCode5xx;
+              ping_result.get_or_insert(PingResult::StatusCode5xx);
             } else if parts.status.is_client_error() {
-              result = PingResult::StatusCode4xx;
+              ping_result.get_or_insert(PingResult::StatusCode4xx);
             } else {
-              result = PingResult::StatusCodeOther;
+              ping_result.get_or_insert(PingResult::StatusCodeOther);
             }
             log::info!(
               "PoolId: {}, LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
@@ -231,7 +247,7 @@ pub async fn send_ping_requests(
           }
         }
         Err(err) => {
-          result = PingResult::ConnectionError;
+          ping_result.get_or_insert(PingResult::ConnectionError);
           log::error!(
             "PoolId: {}, LambdaId: {} - Ping Loop - Ping request failed: {:?}",
             pool_id,
@@ -239,6 +255,7 @@ pub async fn send_ping_requests(
             err
           );
           goaway_received.store(true, Ordering::Release);
+          break;
         }
       }
 
@@ -267,7 +284,7 @@ pub async fn send_ping_requests(
             rps
           );
 
-          result = PingResult::CancelToken;
+          ping_result.get_or_insert(PingResult::CancelToken);
         }
         _ = tokio::time::sleep(Duration::from_millis(100)) => {
         }
@@ -277,17 +294,17 @@ pub async fn send_ping_requests(
   let count = count.load(Ordering::Acquire);
   let elapsed = time::current_time_millis() - start_time;
   log::info!(
-    "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Exiting",
+    "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {:.1} - Ping Loop - Exiting",
     pool_id,
     lambda_id,
     count,
     goaway_received.load(Ordering::Acquire),
     requests_in_flight.load(Ordering::Acquire),
     elapsed,
-    format!("{:.1}", count as f64 / (elapsed as f64 / 1000.0))
+    count as f64 / (elapsed as f64 / 1000.0)
   );
 
-  result
+  ping_result
 }
 
 #[cfg(test)]
@@ -373,7 +390,11 @@ mod tests {
     .await;
 
     // Assert
-    assert_eq!(result, PingResult::Deadline, "result should be Deadline");
+    assert_eq!(
+      result,
+      Some(PingResult::Deadline),
+      "result should be Deadline"
+    );
     assert_eq!(
       ping_count.load(std::sync::atomic::Ordering::SeqCst),
       0,
@@ -419,10 +440,6 @@ mod tests {
           let ping_count = Arc::clone(&ping_count_clone);
           // Increment
           ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Ping count: {}",
-            ping_count.load(std::sync::atomic::Ordering::SeqCst)
-          );
           format!("Ping! LambdaID: {}", lambda_id)
         }),
       )
@@ -479,7 +496,7 @@ mod tests {
     // Assert
     assert_eq!(
       result,
-      PingResult::LastActive,
+      Some(PingResult::LastActive),
       "result should be LastActive"
     );
     assert_eq!(
@@ -593,7 +610,7 @@ mod tests {
     // Assert
     assert_eq!(
       result,
-      PingResult::CancelToken,
+      Some(PingResult::CancelToken),
       "result should be CancelToken"
     );
     assert_eq!(
@@ -625,25 +642,29 @@ mod tests {
 
   #[tokio::test]
   async fn test_ping_channel_status_305() {
-    test_ping_status_code(StatusCode::USE_PROXY, PingResult::StatusCodeOther).await;
+    test_ping_status_code(StatusCode::USE_PROXY, Some(PingResult::StatusCodeOther)).await;
   }
 
   #[tokio::test]
   async fn test_ping_channel_status_400() {
-    test_ping_status_code(StatusCode::BAD_REQUEST, PingResult::StatusCode4xx).await;
+    test_ping_status_code(StatusCode::BAD_REQUEST, Some(PingResult::StatusCode4xx)).await;
   }
 
   #[tokio::test]
   async fn test_ping_channel_status_409() {
-    test_ping_status_code(StatusCode::CONFLICT, PingResult::GoAway).await;
+    test_ping_status_code(StatusCode::CONFLICT, Some(PingResult::GoAway)).await;
   }
 
   #[tokio::test]
   async fn test_ping_channel_status_500() {
-    test_ping_status_code(StatusCode::INTERNAL_SERVER_ERROR, PingResult::StatusCode5xx).await;
+    test_ping_status_code(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Some(PingResult::StatusCode5xx),
+    )
+    .await;
   }
 
-  async fn test_ping_status_code(status_code: StatusCode, expected_result: PingResult) {
+  async fn test_ping_status_code(status_code: StatusCode, expected_result: Option<PingResult>) {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
 
@@ -660,10 +681,6 @@ mod tests {
           let ping_count = Arc::clone(&ping_count_clone);
           // Increment
           ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Ping count: {}",
-            ping_count.load(std::sync::atomic::Ordering::SeqCst)
-          );
           (status_code, format!("Ping! LambdaID: {}", lambda_id))
         }),
       )
@@ -774,11 +791,6 @@ mod tests {
           let ping_count = Arc::clone(&ping_count_clone);
           // Increment
           ping_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-          println!(
-            "Ping count: {}",
-            ping_count.load(std::sync::atomic::Ordering::SeqCst)
-          );
-
           panic!("Connection closed")
         }),
       )
@@ -838,7 +850,7 @@ mod tests {
     // Assert
     assert_eq!(
       result,
-      PingResult::ConnectionError,
+      Some(PingResult::ConnectionError),
       "result should be ConnectionError"
     );
     assert_eq!(

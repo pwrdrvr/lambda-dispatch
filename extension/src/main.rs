@@ -22,15 +22,20 @@ mod connect_to_router;
 mod counter_drop;
 mod endpoint;
 mod lambda_request;
+mod lambda_request_error;
 mod lambda_service;
 mod messages;
 mod options;
 mod ping;
 pub mod prelude;
 mod router_channel;
-mod test_http2_server;
 mod threads;
 mod time;
+
+#[cfg(test)]
+mod test_http2_server;
+#[cfg(test)]
+mod test_mock_router;
 
 fn main() -> Result<()> {
   env_logger::Builder::new()
@@ -187,7 +192,26 @@ async fn async_main(options: Options) -> Result<()> {
           match lambda_result {
               Ok(_) => {}
               Err(e) => {
-                log::error!("Error: {}", e);
+                // Probably should change this to a panic
+                log::error!("Fatal Error in lambda_runtime::run: {}", e);
+
+                //
+                // To reproduce:
+                // - In deployed lambda
+                //   - Set LAMBDA_DISPATCH_PORT to an invalid port like 54321
+                //   - Set LAMBDA_DISPATCH_ASYNC_INIT to true
+                //   - Invoke the lambda
+                //   - The lambda will start, spillover the init to the handler,
+                //     then exit hard when it cannot connect to the app
+                // - Locally
+                //   - Use LambdaTestTool
+                //   - Make sure the demo-app is not running
+                //   - Set async init as above
+                //   - Invoke with the payload:
+                //     { "Id": "lambda_id", "DispatcherUrl": "http://127.0.0.1:3000", "NumberOfChannels": 1, "SentTime": "2025-01-01T00:00:00Z", "InitOnly": false }
+                //
+
+                //panic!("Fatal Error in lambda_runtime::run: {}", e);
               }
           }
       }
