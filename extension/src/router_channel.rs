@@ -547,7 +547,6 @@ impl RouterChannel {
           }
         }
 
-        // Errors here are ignored because the channel is closing
         if let Some(encoder) = encoder.take() {
           let writer = encoder.finish().unwrap();
           let bytes = writer.into_inner().into();
