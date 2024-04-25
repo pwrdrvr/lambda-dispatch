@@ -1052,7 +1052,7 @@ mod tests {
       Ok(waiter_response) => {
         assert_eq!(
           waiter_response.exit_reason,
-          messages::ExitReason::RouterGoaway,
+          messages::ExitReason::RouterGoAway,
         );
         assert_eq!(waiter_response.request_count, 100);
         assert_ne!(waiter_response.invoke_duration, 0);
@@ -1150,7 +1150,7 @@ mod tests {
       Ok(waiter_response) => {
         assert_eq!(
           waiter_response.exit_reason,
-          messages::ExitReason::RouterGoaway,
+          messages::ExitReason::RouterGoAway,
         );
         assert_eq!(waiter_response.request_count, 100);
         assert_ne!(waiter_response.invoke_duration, 0);
@@ -1437,5 +1437,111 @@ mod tests {
       duration <= std::time::Duration::from_secs(1),
       "Connection should take at most 1 seconds"
     );
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_channel_status_305() {
+    test_lambda_service_channel_status_code(StatusCode::USE_PROXY, ExitReason::RouterStatusOther)
+      .await;
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_channel_status_400() {
+    test_lambda_service_channel_status_code(StatusCode::BAD_REQUEST, ExitReason::RouterStatus4xx)
+      .await;
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_channel_status_409() {
+    test_lambda_service_channel_status_code(StatusCode::CONFLICT, ExitReason::RouterGoAway).await;
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_channel_status_500() {
+    test_lambda_service_channel_status_code(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      ExitReason::RouterStatus5xx,
+    )
+    .await;
+  }
+
+  async fn test_lambda_service_channel_status_code(
+    status_code: StatusCode,
+    expected_result: ExitReason,
+  ) {
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_non_200_status_after_count: 0,
+        channel_non_200_status_code: status_code,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = MockServer::start();
+    let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+
+    // Release the request
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.base_url())
+        .parse()
+        .unwrap(),
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "response is ok");
+    let response: WaiterResponse = response.unwrap();
+    assert_eq!(response.exit_reason, expected_result, "result expected");
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
+
+    // Assert app server's healthcheck endpoint did not get called
+    mock_app_healthcheck.assert_hits(0);
   }
 }

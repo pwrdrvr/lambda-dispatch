@@ -35,7 +35,7 @@ pub enum PingResult {
 impl From<PingResult> for Option<messages::ExitReason> {
   fn from(result: PingResult) -> Self {
     match result {
-      PingResult::GoAway => Some(messages::ExitReason::RouterGoaway),
+      PingResult::GoAway => Some(messages::ExitReason::RouterGoAway),
       PingResult::Deadline => Some(messages::ExitReason::SelfDeadline),
       PingResult::LastActive => Some(messages::ExitReason::SelfLastActive),
       PingResult::CancelToken => None,

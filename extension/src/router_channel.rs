@@ -37,7 +37,7 @@ pub enum ChannelResult {
 impl From<ChannelResult> for messages::ExitReason {
   fn from(result: ChannelResult) -> Self {
     match result {
-      ChannelResult::GoAwayReceived => messages::ExitReason::RouterGoaway,
+      ChannelResult::GoAwayReceived => messages::ExitReason::RouterGoAway,
       ChannelResult::RouterStatus5xx => messages::ExitReason::RouterStatus5xx,
       ChannelResult::RouterStatus4xx => messages::ExitReason::RouterStatus4xx,
       ChannelResult::RouterStatusOther => messages::ExitReason::RouterStatusOther,

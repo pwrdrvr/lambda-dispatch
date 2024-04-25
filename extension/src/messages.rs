@@ -58,8 +58,8 @@ pub enum ExitReason {
   RouterConnectionError,
   #[serde(rename = "RouterUnreachable")]
   RouterUnreachable,
-  #[serde(rename = "RouterGoaway")]
-  RouterGoaway,
+  #[serde(rename = "RouterGoAway")]
+  RouterGoAway,
   #[serde(rename = "RouterStatus4xx")]
   RouterStatus4xx,
   #[serde(rename = "RouterStatus5xx")]
@@ -84,7 +84,7 @@ impl ExitReason {
       RouterStatus5xx,
       RouterStatus4xx,
       RouterStatusOther,
-      RouterGoaway,
+      RouterGoAway,
       SelfLastActive,
       SelfDeadline,
       SelfStaleRequest,
@@ -117,7 +117,7 @@ impl ExitReason {
       RouterStatus5xx => {}
       RouterStatus4xx => {}
       RouterStatusOther => {}
-      RouterGoaway => {}
+      RouterGoAway => {}
       SelfLastActive => {}
       SelfDeadline => {}
       SelfStaleRequest => {}
@@ -134,7 +134,7 @@ impl WaiterResponse {
       id,
       request_count: 0,
       invoke_duration: 0,
-      exit_reason: ExitReason::RouterGoaway,
+      exit_reason: ExitReason::RouterGoAway,
     }
   }
 }

@@ -136,7 +136,7 @@ impl LambdaRequest {
       })
       .collect::<Vec<_>>();
 
-    let mut exit_reason = messages::ExitReason::RouterGoaway;
+    let mut exit_reason = messages::ExitReason::RouterGoAway;
 
     // `try_join_all` says all futures will be immediately canceled if one of them returns an error
     // However, this "cancelation" is cooperative and has to be checked by the tasks themselves
