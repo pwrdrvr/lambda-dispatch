@@ -268,6 +268,7 @@ mod tests {
   use crate::{messages, test_mock_router};
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
+  use hyper::StatusCode;
   use tokio_test::assert_ok;
 
   #[tokio::test]
@@ -323,7 +324,8 @@ mod tests {
   async fn test_lambda_service_tower_service_call_fatal_error_app_unreachable() {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 0,
+        channel_non_200_status_after_count: 0,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -356,7 +358,8 @@ mod tests {
     };
 
     // Create the service
-    let options = Options::default();
+    let mut options = Options::default();
+    options.port = 54321;
     let initialized = true;
 
     let mut service = LambdaService::new(
@@ -460,7 +463,8 @@ mod tests {
   async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok() {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 0,
+        channel_non_200_status_after_count: 0,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -763,7 +767,8 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 1,
+        channel_non_200_status_after_count: 1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -868,7 +873,8 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: -1,
+        channel_non_200_status_after_count: -1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -946,6 +952,8 @@ mod tests {
           waiter_response.exit_reason,
           messages::ExitReason::RouterConnectionError,
         );
+        assert_ne!(waiter_response.invoke_duration, 0);
+        assert_ne!(waiter_response.request_count, 0);
       }
       Err(err) => {
         assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
@@ -971,7 +979,8 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 100,
+        channel_non_200_status_after_count: 100,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -1035,9 +1044,7 @@ mod tests {
     };
 
     // Act
-    let start = std::time::Instant::now();
     let response = service.fetch_response(event).await;
-    let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
     assert!(response.is_ok(), "fetch_response should succeed");
@@ -1048,6 +1055,7 @@ mod tests {
           messages::ExitReason::RouterGoaway,
         );
         assert_eq!(waiter_response.request_count, 100);
+        assert_ne!(waiter_response.invoke_duration, 0);
       }
       Err(err) => {
         assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
@@ -1066,7 +1074,8 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 100,
+        channel_non_200_status_after_count: 100,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -1144,6 +1153,7 @@ mod tests {
           messages::ExitReason::RouterGoaway,
         );
         assert_eq!(waiter_response.request_count, 100);
+        assert_ne!(waiter_response.invoke_duration, 0);
       }
       Err(err) => {
         assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
@@ -1167,7 +1177,8 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         // We have 2 channels
         // The 2nd channel should not finish all 100 requests after the 1st channel panics
-        channel_conflict_after_count: 100,
+        channel_non_200_status_after_count: 100,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: 1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -1269,7 +1280,8 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         // We have 2 channels
         // The 2nd channel should not finish all 100 requests after the 1st channel panics
-        channel_conflict_after_count: 100,
+        channel_non_200_status_after_count: 100,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: 1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
@@ -1369,7 +1381,8 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_conflict_after_count: 100,
+        channel_non_200_status_after_count: 100,
+        channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: 1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,

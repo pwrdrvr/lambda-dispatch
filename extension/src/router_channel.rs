@@ -1,5 +1,5 @@
 use crate::lambda_request_error::LambdaRequestError;
-use crate::prelude::*;
+use crate::{messages, prelude::*};
 
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -11,6 +11,7 @@ use futures::channel::mpsc;
 use futures::SinkExt;
 use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use httpdate::fmt_http_date;
+use hyper::StatusCode;
 use hyper::{
   body::{Body, Bytes, Frame, Incoming},
   client::conn::http2,
@@ -24,6 +25,25 @@ use crate::endpoint::Endpoint;
 use crate::time;
 
 use flate2::write::GzEncoder;
+
+#[derive(PartialEq, Debug)]
+pub enum ChannelResult {
+  GoAwayReceived,
+  RouterStatus5xx,
+  RouterStatus4xx,
+  RouterStatusOther,
+}
+
+impl From<ChannelResult> for messages::ExitReason {
+  fn from(result: ChannelResult) -> Self {
+    match result {
+      ChannelResult::GoAwayReceived => messages::ExitReason::RouterGoaway,
+      ChannelResult::RouterStatus5xx => messages::ExitReason::RouterStatus5xx,
+      ChannelResult::RouterStatus4xx => messages::ExitReason::RouterStatus4xx,
+      ChannelResult::RouterStatusOther => messages::ExitReason::RouterStatusOther,
+    }
+  }
+}
 
 #[derive(Clone)]
 pub struct RouterChannel {
@@ -83,7 +103,8 @@ impl RouterChannel {
     }
   }
 
-  pub async fn start(&mut self) -> Result<(), LambdaRequestError> {
+  pub async fn start(&mut self) -> Result<Option<ChannelResult>, LambdaRequestError> {
+    let mut channel_result = None;
     let mut app_sender = connect_to_app::connect_to_app(
       &self.app_endpoint,
       Arc::clone(&self.pool_id),
@@ -161,11 +182,12 @@ impl RouterChannel {
 
       // If the router returned a 409 when we opened the channel
       // then we close the channel
-      if parts.status == 409 {
+      if parts.status == StatusCode::CONFLICT {
         if !self
           .goaway_received
           .load(std::sync::atomic::Ordering::Acquire)
         {
+          channel_result.get_or_insert(ChannelResult::GoAwayReceived);
           log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
                   self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
@@ -173,6 +195,24 @@ impl RouterChannel {
             .store(true, std::sync::atomic::Ordering::Release);
         }
         tx.close().await.unwrap_or(());
+        break;
+      }
+
+      if parts.status != StatusCode::OK {
+        if parts.status.is_server_error() {
+          channel_result.get_or_insert(ChannelResult::RouterStatus5xx);
+        } else if parts.status.is_client_error() {
+          channel_result.get_or_insert(ChannelResult::RouterStatus4xx);
+        } else {
+          channel_result.get_or_insert(ChannelResult::RouterStatusOther);
+        }
+        log::info!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - Channel Loop - non-200 received on ping, exiting: {:?}",
+          self.pool_id,
+          self.lambda_id,
+          self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
+          parts.status);
+        self.goaway_received.store(true, Ordering::Release);
         break;
       }
 
@@ -212,6 +252,7 @@ impl RouterChannel {
           .goaway_received
           .load(std::sync::atomic::Ordering::Acquire)
         {
+          channel_result.get_or_insert(ChannelResult::GoAwayReceived);
           log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                     self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
           self
@@ -595,7 +636,7 @@ impl RouterChannel {
       self.count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 
-    Ok(())
+    Ok(channel_result)
   }
 }
 
@@ -605,7 +646,7 @@ mod tests {
 
   use std::sync::Arc;
 
-  use crate::connect_to_router;
+  use crate::{connect_to_router, test_mock_router};
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
 
   use axum::response::Response;
@@ -618,35 +659,63 @@ mod tests {
   use tokio_test::assert_ok;
 
   #[tokio::test]
-  async fn test_channel_immediate_409() {
+  async fn test_channel_status_305() {
+    test_channel_status_code(
+      StatusCode::USE_PROXY,
+      Some(ChannelResult::RouterStatusOther),
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_channel_status_400() {
+    test_channel_status_code(
+      StatusCode::BAD_REQUEST,
+      Some(ChannelResult::RouterStatus4xx),
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_channel_status_409() {
+    test_channel_status_code(StatusCode::CONFLICT, Some(ChannelResult::GoAwayReceived)).await;
+  }
+
+  #[tokio::test]
+  async fn test_channel_status_500() {
+    test_channel_status_code(
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Some(ChannelResult::RouterStatus5xx),
+    )
+    .await;
+  }
+
+  async fn test_channel_status_code(
+    status_code: StatusCode,
+    expected_result: Option<ChannelResult>,
+  ) {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
     let channel_id = "channel_id".to_string();
 
-    // Start router server
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let app = Router::new().route(
-      "/api/chunked/request/:lambda_id/:channel_id",
-      post(
-        move |Path((lambda_id, channel_id)): Path<(String, String)>| {
-          let request_count = Arc::clone(&request_count_clone);
-          async move {
-            // Increment the request count
-            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-            // Return a 409
-            (StatusCode::CONFLICT, b"Request already made")
-          }
-        },
-      ),
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        channel_non_200_status_after_count: 0,
+        channel_non_200_status_code: status_code,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
     );
-    let mock_router_server = run_http2_app(app);
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
+    let router_endpoint: Endpoint = format!(
+      "http://localhost:{}",
+      mock_router_server.mock_router_server.addr.port()
+    )
+    .parse()
+    .unwrap();
 
     // Start app server
     let mock_app_server = MockServer::start();
@@ -692,7 +761,9 @@ mod tests {
     let channel_start_result = channel.start().await;
 
     // Assert
-    assert_ok!(channel_start_result);
+    assert!(channel_start_result.is_ok(), "channel start result is ok");
+    let channel_start_result = channel_start_result.unwrap();
+    assert_eq!(channel_start_result, expected_result, "result expected");
     assert_eq!(channel.count.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_eq!(
       channel
@@ -706,7 +777,12 @@ mod tests {
         .load(std::sync::atomic::Ordering::SeqCst),
       0
     );
-    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
     assert_eq!(
       goaway_received.load(std::sync::atomic::Ordering::SeqCst),
       true

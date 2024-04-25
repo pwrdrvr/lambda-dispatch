@@ -33,8 +33,8 @@ pub enum PingResult {
 }
 
 impl From<PingResult> for Option<messages::ExitReason> {
-  fn from(ping_result: PingResult) -> Self {
-    match ping_result {
+  fn from(result: PingResult) -> Self {
+    match result {
       PingResult::GoAway => Some(messages::ExitReason::RouterGoaway),
       PingResult::Deadline => Some(messages::ExitReason::SelfDeadline),
       PingResult::LastActive => Some(messages::ExitReason::SelfLastActive),
@@ -59,7 +59,7 @@ pub async fn send_ping_requests(
   cancel_token: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
 ) -> Option<PingResult> {
-  let mut result = None;
+  let mut ping_result = None;
   let start_time = time::current_time_millis();
   let mut last_ping_time = start_time;
 
@@ -121,7 +121,7 @@ pub async fn send_ping_requests(
           elapsed,
           rps
         );
-        result = Some(PingResult::LastActive);
+        ping_result.get_or_insert(PingResult::LastActive);
       } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
           "PoolId: {}, LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
@@ -132,7 +132,7 @@ pub async fn send_ping_requests(
           elapsed,
           rps
         );
-        result = Some(PingResult::Deadline);
+        ping_result.get_or_insert(PingResult::Deadline);
       }
 
       // Send Close request to router
@@ -153,7 +153,7 @@ pub async fn send_ping_requests(
       if sender.ready().await.is_err() {
         // This gets hit when the connection for HTTP/1.1 faults
         goaway_received.store(true, Ordering::Release);
-        result = Some(PingResult::ConnectionError);
+        ping_result.get_or_insert(PingResult::ConnectionError);
         log::error!(
           "Ping Loop - Router connection ready check threw error - connection has disconnected, exiting"
         );
@@ -202,7 +202,7 @@ pub async fn send_ping_requests(
 
       if sender.ready().await.is_err() {
         // This gets hit when the connection faults
-        result = Some(PingResult::ConnectionError);
+        ping_result.get_or_insert(PingResult::ConnectionError);
         goaway_received.store(true, Ordering::Release);
         log::error!("PoolId: {}, LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, exiting", pool_id, lambda_id);
         break;
@@ -217,24 +217,24 @@ pub async fn send_ping_requests(
           // Rip through and discard so the response stream is closed
           while res_stream.frame().await.is_some() {}
 
-          if parts.status == 409 {
+          if parts.status == StatusCode::CONFLICT {
             log::info!(
               "PoolId: {}, LambdaId: {} - Ping Loop - 409 received on ping, exiting",
               pool_id,
               lambda_id
             );
-            result = Some(PingResult::GoAway);
+            ping_result.get_or_insert(PingResult::GoAway);
             goaway_received.store(true, Ordering::Release);
             break;
           }
 
           if parts.status != StatusCode::OK {
             if parts.status.is_server_error() {
-              result = Some(PingResult::StatusCode5xx);
+              ping_result.get_or_insert(PingResult::StatusCode5xx);
             } else if parts.status.is_client_error() {
-              result = Some(PingResult::StatusCode4xx);
+              ping_result.get_or_insert(PingResult::StatusCode4xx);
             } else {
-              result = Some(PingResult::StatusCodeOther);
+              ping_result.get_or_insert(PingResult::StatusCodeOther);
             }
             log::info!(
               "PoolId: {}, LambdaId: {} - Ping Loop - non-200 received on ping, exiting: {:?}",
@@ -247,7 +247,7 @@ pub async fn send_ping_requests(
           }
         }
         Err(err) => {
-          result = Some(PingResult::ConnectionError);
+          ping_result.get_or_insert(PingResult::ConnectionError);
           log::error!(
             "PoolId: {}, LambdaId: {} - Ping Loop - Ping request failed: {:?}",
             pool_id,
@@ -284,7 +284,7 @@ pub async fn send_ping_requests(
             rps
           );
 
-          result = Some(PingResult::CancelToken);
+          ping_result.get_or_insert(PingResult::CancelToken);
         }
         _ = tokio::time::sleep(Duration::from_millis(100)) => {
         }
@@ -304,7 +304,7 @@ pub async fn send_ping_requests(
     count as f64 / (elapsed as f64 / 1000.0)
   );
 
-  result
+  ping_result
 }
 
 #[cfg(test)]

@@ -154,7 +154,11 @@ impl LambdaRequest {
 
         for result in results {
           match result {
-            Ok(_) => {}
+            Ok(result) => {
+              if let Some(result) = result {
+                exit_reason = exit_reason.worse(result.into());
+              }
+            }
             Err(err) => {
               log::error!(
                 "LambdaId: {} - run - Error in channel task: {:?}",
@@ -194,8 +198,8 @@ impl LambdaRequest {
 
         // If the ping task knows why we exited, use that reason
         if let Some(ping_result) = result {
-          if let Some(exit_reason_value) = ping_result.into() {
-            exit_reason = exit_reason.worse(exit_reason_value);
+          if let Some(ping_result) = ping_result.into() {
+            exit_reason = exit_reason.worse(ping_result);
           }
         }
       }
