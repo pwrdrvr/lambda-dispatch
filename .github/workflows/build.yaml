@@ -79,7 +79,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -87,7 +87,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -111,7 +111,7 @@ jobs:
           touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v3
         with:
           name: digests-router
@@ -144,7 +144,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -152,7 +152,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -176,7 +176,7 @@ jobs:
           touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v3
         with:
           name: digests-router
@@ -185,7 +185,7 @@ jobs:
           retention-days: 1
 
   merge-router:
-    if: github.event.pull_request.head.repo.fork == false
+    if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
@@ -289,7 +289,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -297,7 +297,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -321,7 +321,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v3
         with:
           name: digests-extension
@@ -370,7 +370,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -378,7 +378,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -404,7 +404,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v3
         with:
           name: digests-extension
@@ -413,7 +413,7 @@ jobs:
           retention-days: 1
 
   merge-extension:
-    if: github.event.pull_request.head.repo.fork == false
+    if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
@@ -525,14 +525,14 @@ jobs:
           sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.prSuffix.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
           aws-region: us-east-1
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false
+        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -543,5 +543,5 @@ jobs:
           context: .
           file: ./DockerfileLambdaDemoApp
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event.pull_request.head.repo.fork == false }}
+          push: ${{ github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]' }}
           tags: ${{ steps.meta.outputs.tags }}
