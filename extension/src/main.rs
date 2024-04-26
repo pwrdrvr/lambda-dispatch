@@ -31,6 +31,7 @@ pub mod prelude;
 mod router_channel;
 mod threads;
 mod time;
+mod utils;
 
 #[cfg(test)]
 mod test_http2_server;

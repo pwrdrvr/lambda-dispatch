@@ -1,4 +1,5 @@
 use crate::lambda_request_error::LambdaRequestError;
+use crate::utils::compressable;
 use crate::{messages, prelude::*};
 
 use std::io::Write;
@@ -412,43 +413,10 @@ impl RouterChannel {
       let channel_id_header_bytes = channel_id_header.as_bytes();
       header_buffer.extend(channel_id_header_bytes);
 
-      // Check if we have a Content-Encoding response header
-      // If we do, we should not gzip the response
-      let app_res_compressed = app_res_parts.headers.get("content-encoding").is_some();
-
-      // Check if we have a Content-Length response header
-      // If we do, and if it's small (e.g. < 1 KB), we should not gzip the response
-      let app_res_content_length = app_res_parts
-        .headers
-        .get(hyper::header::CONTENT_LENGTH)
-        .and_then(|val| val.to_str().ok())
-        .and_then(|s| s.parse::<i32>().ok())
-        .unwrap_or(-1);
-
-      let app_res_content_type =
-        if let Some(content_type) = app_res_parts.headers.get("content-type") {
-          content_type
-            .to_str()
-            .map_err(|_| LambdaRequestError::ChannelErrorOther)?
-        } else {
-          ""
-        };
-
-      let compressable_content_type = app_res_content_type.starts_with("text/")
-        || app_res_content_type.starts_with("application/json")
-        || app_res_content_type.starts_with("application/javascript")
-        || app_res_content_type.starts_with("image/svg+xml")
-        || app_res_content_type.starts_with("application/xhtml+xml")
-        || app_res_content_type.starts_with("application/x-javascript")
-        || app_res_content_type.starts_with("application/xml");
-
       let app_res_will_compress = self.compression
         && accepts_gzip
-        && !app_res_compressed
-        // If it's a chunked response we'll compress it
-        // But if it's non-chunked we'll only compress it if it's not small
-        && (app_res_content_length == -1 || app_res_content_length > 1024)
-        && compressable_content_type;
+        && compressable(&app_res_parts.headers)
+          .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
       // If we're going to gzip the response, add the content-encoding header
       if app_res_will_compress {
