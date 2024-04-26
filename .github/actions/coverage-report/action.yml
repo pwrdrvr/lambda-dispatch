@@ -40,7 +40,6 @@ runs:
         body-includes: '### 📊 ${{ inputs.title }}'
 
     - name: Post Coverage Comment
-      if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
       uses: peter-evans/create-or-update-comment@v4
       with:
         comment-id: ${{ steps.fc.outputs.comment-id }}
