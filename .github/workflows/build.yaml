@@ -9,7 +9,17 @@ on:
     types: [published]
 
 jobs:
+  check-access:
+    runs-on: ubuntu-latest
+    outputs:
+      has-token-access: ${{ steps.check.outputs.has-token-access }}
+    steps:
+      - id: check
+        run: |
+          echo "has-token-access=$(if [[ '${{ github.event.pull_request.head.repo.fork }}' == 'false' && '${{ github.actor }}' != 'dependabot[bot]' ]]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
+
   dotnet-tests:
+    needs: check-access
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -28,12 +38,14 @@ jobs:
             -reporttypes:lcov
 
       - name: Upload code coverage
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: ./.github/actions/coverage-report
         with:
           lcov-file: coveragereport/lcov.info
           title: DotNet Code Coverage Report
 
   rust-tests:
+    needs: check-access
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -49,12 +61,14 @@ jobs:
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
       - name: Upload code coverage
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: ./.github/actions/coverage-report
         with:
           lcov-file: lcov.info
           title: Rust Code Coverage Report
 
   build-router-arm64:
+    needs: check-access
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: [self-hosted, arm64]
@@ -79,7 +93,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -87,7 +101,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -101,7 +115,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
         run: |
@@ -111,7 +125,7 @@ jobs:
           touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: actions/upload-artifact@v3
         with:
           name: digests-router
@@ -120,6 +134,7 @@ jobs:
           retention-days: 1
 
   build-router:
+    needs: check-access
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
@@ -144,7 +159,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -152,7 +167,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -166,7 +181,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-x64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
         run: |
@@ -176,7 +191,7 @@ jobs:
           touch "/tmp/digests-router/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: actions/upload-artifact@v3
         with:
           name: digests-router
@@ -185,11 +200,12 @@ jobs:
           retention-days: 1
 
   merge-router:
-    if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+    if: needs.check-access.outputs.has-token-access == 'true'
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
     needs:
+      - check-access
       - build-router
       - build-router-arm64
     permissions:
@@ -247,18 +263,14 @@ jobs:
           docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
 
   build-extension-arm64:
+    needs: check-access
     env:
       ARCH: aarch64
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     permissions:
       contents: read
       id-token: write
-
     runs-on: ubuntu-latest
-
-    # Using cross compiler now, can run on x64
-    # runs-on: [self-hosted, arm64]
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -289,7 +301,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -297,7 +309,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -311,7 +323,7 @@ jobs:
           file: ./DockerfileExtensionCross
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
         run: |
@@ -321,7 +333,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: actions/upload-artifact@v3
         with:
           name: digests-extension
@@ -330,16 +342,14 @@ jobs:
           retention-days: 1
 
   build-extension:
+    needs: check-access
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
       ARCH: x86_64
-
     permissions:
       contents: read
       id-token: write
-
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -370,7 +380,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
@@ -378,7 +388,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -394,7 +404,7 @@ jobs:
             ARCH=x86_64
             TARGET_PLATFORM=linux/amd64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ github.event.pull_request.head.repo.fork == false }},name-canonical=true,push=${{ github.event.pull_request.head.repo.fork == false }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
         run: |
@@ -404,7 +414,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: actions/upload-artifact@v3
         with:
           name: digests-extension
@@ -413,11 +423,12 @@ jobs:
           retention-days: 1
 
   merge-extension:
-    if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+    if: needs.check-access.outputs.has-token-access == 'true'
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
     needs:
+      - check-access
       - build-extension
       - build-extension-arm64
     permissions:
@@ -481,7 +492,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    needs: merge-extension
+    needs:
+      - check-access
+      - merge-extension
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -495,7 +508,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
-          # type=sha
           tags: |
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
@@ -525,14 +537,14 @@ jobs:
           sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.prSuffix.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
 
       - name: Configure AWS Credentials
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-session-name: lambda-dispatch-ghpublic-build
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
           aws-region: us-east-1
       - name: Login to ECR Public
-        if: github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
+        if: needs.check-access.outputs.has-token-access == 'true'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
@@ -543,5 +555,5 @@ jobs:
           context: .
           file: ./DockerfileLambdaDemoApp
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]' }}
+          push: ${{ needs.check-access.outputs.has-token-access == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
