@@ -11,6 +11,7 @@ use tokio_rustls::client::TlsStream;
 
 use crate::endpoint::Endpoint;
 use crate::lambda_request_error::LambdaRequestError;
+use crate::lambda_service::AppClient;
 use crate::ping;
 use crate::prelude::*;
 use crate::router_channel::RouterChannel;
@@ -77,7 +78,10 @@ impl LambdaRequest {
   }
 
   /// Executes a task with a specified deadline.
-  pub async fn start(&mut self) -> Result<messages::ExitReason, LambdaRequestError> {
+  pub async fn start(
+    &mut self,
+    app_client: &AppClient,
+  ) -> Result<messages::ExitReason, LambdaRequestError> {
     let sender = match connect_to_router::connect_to_router(
       self.router_endpoint.clone(),
       Arc::clone(&self.pool_id),
@@ -125,8 +129,10 @@ impl LambdaRequest {
             .to_string(),
         );
         let goaway_received = Arc::clone(&self.goaway_received);
+
+        let app_client = app_client.clone();
         tokio::spawn(async move {
-          let result = router_channel.start().await;
+          let result = router_channel.start(app_client).await;
 
           // Tell the other channels to stop
           goaway_received.store(true, Ordering::Release);

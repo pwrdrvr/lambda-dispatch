@@ -1,4 +1,5 @@
 use crate::lambda_request_error::LambdaRequestError;
+use crate::lambda_service::AppClient;
 use crate::relay::{relay_request_to_app, relay_response_to_router};
 use crate::utils::compressable;
 use crate::{messages, prelude::*};
@@ -102,16 +103,11 @@ impl RouterChannel {
     }
   }
 
-  pub async fn start(&mut self) -> Result<Option<ChannelResult>, LambdaRequestError> {
+  pub async fn start(
+    &mut self,
+    app_client: AppClient,
+  ) -> Result<Option<ChannelResult>, LambdaRequestError> {
     let mut channel_result = None;
-    let mut app_sender = connect_to_app::connect_to_app(
-      &self.app_endpoint,
-      Arc::clone(&self.pool_id),
-      Arc::clone(&self.lambda_id),
-      Arc::clone(&self.channel_id),
-    )
-    .await
-    .map_err(|_| LambdaRequestError::AppConnectionUnreachable)?;
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
     // If the pinger or another channel sets the goaway we will stop looping
@@ -280,12 +276,6 @@ impl RouterChannel {
         .body(StreamBody::new(app_req_recv))
         .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
-      // This gets hit when the app connection faults
-      app_sender
-        .ready()
-        .await
-        .map_err(|_| LambdaRequestError::AppConnectionError)?;
-
       // Relay the request body to the contained app
       // We start a task for this because we need to relay the bytes
       // between the incoming request and the outgoing request
@@ -303,10 +293,12 @@ impl RouterChannel {
 
       //
       // Send the request
+      // request waits for tx connection to be ready.
+      // https://github.com/hyperium/hyper-util/blob/5688b2733eee146a1df1fc3b5263cd2021974d9b/src/client/legacy/client.rs#L574-L576
       //
       // FIXME: This will exit the entire channel when one request errors
-      let app_res = app_sender
-        .send_request(app_req)
+      let app_res = app_client
+        .request(app_req)
         .await
         .map_err(|_| LambdaRequestError::AppConnectionError)?;
       let (app_res_parts, app_res_stream) = app_res.into_parts();

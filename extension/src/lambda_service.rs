@@ -1,13 +1,27 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use std::{pin::Pin, sync::Arc};
+use std::{
+  pin::Pin,
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+  },
+  time::Duration,
+};
 
-use futures::Future;
-use hyper::Uri;
+use bytes::Bytes;
+use futures::{channel::mpsc::Receiver, Future};
+use http_body_util::StreamBody;
+use hyper::{body::Frame, Uri};
+use hyper_util::{
+  client::legacy::{connect::HttpConnector, Client},
+  rt::{TokioExecutor, TokioTimer},
+};
 use lambda_runtime::LambdaEvent;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
-use tokio::time::timeout;
+use tokio::{
+  io::{AsyncRead, AsyncWrite},
+  net::TcpStream,
+  time::timeout,
+};
+use tokio_rustls::client::TlsStream;
 use tower::Service;
 
 use crate::endpoint::{Endpoint, Scheme};
@@ -22,26 +36,35 @@ use crate::{
   messages::{WaiterRequest, WaiterResponse},
 };
 
-use tokio_rustls::client::TlsStream;
-
 // Define a Stream trait that both TlsStream and TcpStream implement
 pub trait Stream: AsyncRead + AsyncWrite + Send {}
 impl Stream for TlsStream<TcpStream> {}
 impl Stream for TcpStream {}
+
+pub type AppClient = Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>>>>>;
 
 #[derive(Clone)]
 pub struct LambdaService {
   options: Options,
   initialized: Arc<AtomicBool>,
   healthcheck_url: Uri,
+  app_client: AppClient,
 }
 
 impl LambdaService {
   pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(3)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     LambdaService {
       options,
       initialized,
       healthcheck_url,
+      app_client,
     }
   }
 
@@ -184,7 +207,7 @@ impl LambdaService {
     //
     // This is the main loop that runs until the deadline is about to be reached
     //
-    let result = lambda_request.start().await;
+    let result = lambda_request.start(&self.app_client).await;
     match result {
       Ok(exit_reason) => {
         log::info!(
