@@ -4,7 +4,6 @@ use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use env_logger;
 use hyper::Uri;
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
@@ -28,6 +27,7 @@ mod messages;
 mod options;
 mod ping;
 pub mod prelude;
+mod relay;
 mod router_channel;
 mod threads;
 mod time;
