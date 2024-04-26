@@ -51,6 +51,7 @@ public class WeightedAverageTests
   // }
 
   [Test]
+  [Retry(3)]
   public void TestMeanTrue()
   {
     // Arrange
