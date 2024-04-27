@@ -347,7 +347,7 @@ mod tests {
   async fn test_lambda_service_tower_service_call_fatal_error_app_unreachable() {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
-        channel_non_200_status_after_count: 0,
+        channel_non_200_status_after_count: 5,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
