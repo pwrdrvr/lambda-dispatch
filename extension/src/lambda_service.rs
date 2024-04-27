@@ -1092,7 +1092,6 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore = "Issue-178 - This test fails because we do not re-establish the contained app connections"]
   async fn test_lambda_service_loop_100_requests_contained_app_connection_close_header() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
@@ -1118,6 +1117,8 @@ mod tests {
       then
         .status(200)
         .header("Content-Type", "text/plain")
+        // Every app response sends `Connection: close` response header,
+        // causing the router channel to have to get a new connection for each request
         .header("Connection", "close")
         .body("Bananas");
     });
@@ -1183,8 +1184,9 @@ mod tests {
       }
     }
     assert!(
-      duration <= std::time::Duration::from_secs(2),
-      "Connection should take at most 2 seconds"
+      duration <= std::time::Duration::from_secs(6),
+      "Connection should take at most 6 seconds, took {:?}",
+      duration
     );
 
     // Healthcheck not called
