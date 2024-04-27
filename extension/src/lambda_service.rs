@@ -1406,7 +1406,7 @@ mod tests {
       test_mock_router::test_mock_router::RouterParams {
         channel_non_200_status_after_count: 100,
         channel_non_200_status_code: StatusCode::CONFLICT,
-        channel_panic_response_from_extension_on_count: 1,
+        channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,

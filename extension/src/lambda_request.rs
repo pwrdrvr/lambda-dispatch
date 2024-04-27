@@ -82,7 +82,7 @@ impl LambdaRequest {
     &mut self,
     app_client: &AppClient,
   ) -> Result<messages::ExitReason, LambdaRequestError> {
-    let sender = match connect_to_router::connect_to_router(
+    let router_sender = match connect_to_router::connect_to_router(
       self.router_endpoint.clone(),
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
@@ -97,7 +97,7 @@ impl LambdaRequest {
     let ping_task = tokio::task::spawn(ping::send_ping_requests(
       Arc::clone(&self.last_active),
       Arc::clone(&self.goaway_received),
-      sender.clone(),
+      router_sender.clone(),
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
       Arc::clone(&self.count),
@@ -121,7 +121,7 @@ impl LambdaRequest {
           self.router_endpoint.clone(),
           self.app_endpoint.clone(),
           channel_number,
-          sender.clone(),
+          router_sender.clone(),
           Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
           uuid::Builder::from_random_bytes(self.rng.gen())

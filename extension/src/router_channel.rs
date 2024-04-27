@@ -54,7 +54,7 @@ pub struct RouterChannel {
   channel_url: Uri,
   app_endpoint: Endpoint,
   channel_number: u8,
-  sender: http2::SendRequest<BoxBody<Bytes, Error>>,
+  router_sender: http2::SendRequest<BoxBody<Bytes, Error>>,
   pool_id: PoolId,
   lambda_id: LambdaId,
   channel_id: ChannelId,
@@ -95,7 +95,7 @@ impl RouterChannel {
       channel_url,
       app_endpoint,
       channel_number,
-      sender,
+      router_sender: sender,
       pool_id,
       lambda_id,
       channel_id: channel_id.into(),
@@ -148,14 +148,14 @@ impl RouterChannel {
 
       // Bail if the router connection is not ready
       self
-        .sender
+        .router_sender
         .ready()
         .await
         .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
       // FIXME: This will exit the entire channel when one request errors
       let router_response = self
-        .sender
+        .router_sender
         .send_request(router_request)
         .await
         .map_err(|_| LambdaRequestError::RouterConnectionError)?;
@@ -297,10 +297,15 @@ impl RouterChannel {
       // https://github.com/hyperium/hyper-util/blob/5688b2733eee146a1df1fc3b5263cd2021974d9b/src/client/legacy/client.rs#L574-L576
       //
       // FIXME: This will exit the entire channel when one request errors
-      let app_res = app_client
-        .request(app_req)
-        .await
-        .map_err(|_| LambdaRequestError::AppConnectionError)?;
+      let app_res = match app_client.request(app_req).await {
+        Ok(res) => res,
+        Err(err) => {
+          if err.is_connect() {
+            return Err(LambdaRequestError::AppConnectionUnreachable);
+          }
+          return Err(LambdaRequestError::AppConnectionError);
+        }
+      };
       let (app_res_parts, app_res_stream) = app_res.into_parts();
 
       //
