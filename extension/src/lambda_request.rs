@@ -234,6 +234,8 @@ impl LambdaRequest {
 
 #[cfg(test)]
 mod tests {
+  use std::time::Duration;
+
   use super::*;
 
   use crate::test_http2_server::test_http2_server::run_http2_app;
@@ -246,6 +248,8 @@ mod tests {
   use httpmock::Method::GET;
   use httpmock::MockServer;
   use hyper::StatusCode;
+  use hyper_util::client::legacy::Client;
+  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio::io::AsyncWriteExt;
 
   #[tokio::test]
@@ -260,9 +264,16 @@ mod tests {
       current_time_millis() + 60 * 1000,
     );
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     // Act
     let start = std::time::Instant::now();
-    let result = lambda_request.start().await;
+    let result = lambda_request.start(&app_client).await;
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
@@ -432,9 +443,16 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     // Act
     let start = std::time::Instant::now();
-    let result = lambda_request.start().await;
+    let result = lambda_request.start(&app_client).await;
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert

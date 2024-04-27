@@ -180,7 +180,7 @@ mod tests {
     let debug_string = format!("{:?}", endpoint);
     assert_eq!(
       debug_string,
-      "Endpoint { scheme: Http, host: \"localhost\", port: 8000 }"
+      "Endpoint { scheme: Http, host: \"localhost\", port: 8000, url: Url { scheme: \"http\", cannot_be_a_base: false, username: \"\", password: None, host: Some(Domain(\"localhost\")), port: Some(8000), path: \"/\", query: None, fragment: None } }"
     );
   }
 

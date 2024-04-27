@@ -449,6 +449,7 @@ mod tests {
   use super::*;
 
   use std::sync::Arc;
+  use std::time::Duration;
 
   use crate::{connect_to_router, test_mock_router};
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
@@ -459,6 +460,8 @@ mod tests {
   use futures::stream::StreamExt;
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
+  use hyper_util::client::legacy::Client;
+  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio::io::AsyncWriteExt;
   use tokio_test::assert_ok;
 
@@ -541,6 +544,13 @@ mod tests {
     .await
     .unwrap();
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     // Declare the counts
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -562,7 +572,7 @@ mod tests {
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start().await;
+    let channel_start_result = channel.start(app_client).await;
 
     // Assert
     assert!(channel_start_result.is_ok(), "channel start result is ok");
@@ -714,6 +724,13 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -734,7 +751,7 @@ mod tests {
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start().await;
+    let channel_start_result = channel.start(app_client).await;
     // Assert
     assert_ok!(channel_start_result);
     assert_eq!(
@@ -870,6 +887,13 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -890,7 +914,7 @@ mod tests {
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start().await;
+    let channel_start_result = channel.start(app_client).await;
     // Assert
     assert_ok!(channel_start_result);
     assert_eq!(
