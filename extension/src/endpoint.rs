@@ -2,6 +2,7 @@ use crate::prelude::*;
 use hyper::Uri;
 use rustls_pki_types::ServerName;
 use std::{borrow::Cow, fmt, str::FromStr, sync::Arc};
+use url::Url;
 
 /// An `Endpoint` type to extract and validate the interesting components from a hyper `Uri`, and
 /// make them relatively cheap to clone.
@@ -10,6 +11,7 @@ pub struct Endpoint {
   scheme: Scheme,
   host: Arc<str>,
   port: u16,
+  url: Url,
 }
 
 impl fmt::Display for Endpoint {
@@ -23,10 +25,14 @@ impl Endpoint {
   where
     T: Into<Arc<str>>,
   {
+    let host = host.into();
+    let url = Url::parse(&format!("{}://{}:{}", scheme.as_str(), host, port)).unwrap();
+
     Self {
       scheme,
-      host: host.into(),
+      host,
       port,
+      url,
     }
   }
 
@@ -37,11 +43,13 @@ impl Endpoint {
       .host()
       .with_context(|| format!("could not determine host from url '{}'", uri))?;
     let port = uri.port_u16().unwrap_or(scheme.default_port());
+    let url = Url::parse(&uri.to_string()).unwrap();
 
     Ok(Self {
       scheme,
       host: host.into(),
       port,
+      url,
     })
   }
 
@@ -55,6 +63,10 @@ impl Endpoint {
 
   pub fn port(&self) -> u16 {
     self.port
+  }
+
+  pub fn url(&self) -> &Url {
+    &self.url
   }
 
   /// Formats a host request header that specifies the host and port number of the server to which

@@ -19,7 +19,6 @@ use hyper::{
 };
 
 use crate::app_request;
-use crate::connect_to_app;
 use crate::counter_drop::DecrementOnDrop;
 use crate::endpoint::Endpoint;
 use crate::time;
@@ -224,6 +223,7 @@ impl RouterChannel {
 
       // Read until we get all the request headers so we can construct our app request
       let (app_req_builder, is_goaway, left_over_buf) = app_request::read_until_req_headers(
+        self.app_endpoint.clone(),
         &mut router_response_stream,
         &self.pool_id,
         &self.lambda_id,

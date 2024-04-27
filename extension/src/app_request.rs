@@ -1,12 +1,15 @@
 use std::pin::Pin;
 use std::str::FromStr;
 
+use crate::endpoint::Endpoint;
 use crate::prelude::*;
 use hyper::body::Body;
 use hyper::header::HeaderName;
+use hyper::Uri;
 use hyper::{body::Incoming, Request};
 
 pub async fn read_until_req_headers(
+  app_endpoint: Endpoint,
   res_stream: &mut Incoming,
   pool_id: &str,
   lambda_id: &str,
@@ -41,7 +44,9 @@ pub async fn read_until_req_headers(
         // The app_url is only the path
         // Next.js, for one, gives a 308 redirect if you give it `http://localhost:3000/`
         // and it mangles that to `http:/localhost:3000/`
-        let app_url = req.path.unwrap();
+
+        let app_url = app_endpoint.url().join(req.path.unwrap()).unwrap();
+        let app_url = Uri::from_str(app_url.as_str()).unwrap();
 
         let mut app_req_bld = Request::builder()
           .uri(app_url)
