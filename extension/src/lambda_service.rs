@@ -55,7 +55,7 @@ impl LambdaService {
   pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
     let app_client = Client::builder(TokioExecutor::new())
       .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(3)
+      .pool_max_idle_per_host(100)
       .pool_timer(TokioTimer::new())
       .retry_canceled_requests(false)
       .build_http();
