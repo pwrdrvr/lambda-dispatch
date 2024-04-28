@@ -298,6 +298,21 @@ mod tests {
   use hyper::StatusCode;
   use tokio_test::assert_ok;
 
+  use tokio::net::TcpListener;
+
+  async fn start_mock_server() -> u16 {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    // If we accept but do not await or return then the connection is dropped immediately
+    // tokio::spawn(async move {
+    //   let (mut _socket, _) = listener.accept().await.unwrap();
+
+    //   // let _ = socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await;
+    // });
+    port
+  }
+
   #[tokio::test]
   async fn test_lambda_service_tower_service_call_init_only_already_initialized() {
     let request = WaiterRequest {
@@ -601,17 +616,52 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_service_fetch_response_spillover_healthcheck_blackhole_timeout() {
+  async fn test_lambda_service_fetch_response_async_init_healthcheck_blackhole_async_init_timeout()
+  {
+    // NOTE: This is testing whether the async init timeout works, not whether
+    // the channel contained app connection timeout works on a blackhole
+    test_lambda_service_fetch_response_async_init_healthcheck_blackhole_timeout_fixture(
+      std::time::Duration::from_secs(1),
+      std::time::Duration::from_secs(1),
+      std::time::Duration::from_secs(2),
+      54321,
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_fetch_response_async_init_healthcheck_connects_no_response_async_init_timeout(
+  ) {
+    let mock_app_port = start_mock_server().await;
+
+    // NOTE: This is testing whether the async init timeout works, not whether
+    // the channel contained app connection timeout works on a blackhole
+    test_lambda_service_fetch_response_async_init_healthcheck_blackhole_timeout_fixture(
+      std::time::Duration::from_secs(2),
+      std::time::Duration::from_secs(2),
+      std::time::Duration::from_secs(3),
+      mock_app_port,
+    )
+    .await;
+  }
+
+  async fn test_lambda_service_fetch_response_async_init_healthcheck_blackhole_timeout_fixture(
+    async_init_timeout: std::time::Duration,
+    test_min_time: std::time::Duration,
+    test_max_time: std::time::Duration,
+    port: u16,
+  ) {
     let mut options = Options::default();
-    options.async_init_timeout = std::time::Duration::from_millis(1000);
+    options.async_init_timeout = async_init_timeout;
     options.async_init = true;
+    options.port = port;
     let initialized = false;
 
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
-      "http://192.0.2.0:54321/health".parse().unwrap(),
+      format!("http://192.0.2.0:{}/health", port).parse().unwrap(),
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -640,12 +690,16 @@ mod tests {
       Some(LambdaRequestError::AppConnectionUnreachable)
     );
     assert!(
-      duration >= std::time::Duration::from_secs(1),
-      "Connection should take at least 1 seconds"
+      duration >= test_min_time,
+      "Connection should take at least {:?} seconds, took {:?}",
+      test_min_time,
+      duration
     );
     assert!(
-      duration <= std::time::Duration::from_secs(2),
-      "Connection should take at most 2 seconds"
+      duration <= test_max_time,
+      "Connection should take at most {:?} seconds, took {:?}",
+      test_max_time,
+      duration
     );
   }
 
@@ -1406,7 +1460,9 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_service_initialized_app_blackhole_timeout() {
+  async fn test_lambda_service_initialized_app_unopened_port_timeout() {
+    let port = 54321;
+
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
@@ -1424,14 +1480,13 @@ mod tests {
     options.async_init_timeout = std::time::Duration::from_millis(1000);
     options.async_init = true;
     // App port is a blackhole
-    options.port = 54321;
+    options.port = port;
     let initialized = true;
 
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
-      // 192.0.2.0/24 (TEST-NET-1)
-      // App is a blackhole
+      // Healthcheck is not called in this test
       "http://192.0.2.0:54321/health".parse().unwrap(),
     );
     let request = WaiterRequest {
@@ -1470,31 +1525,38 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_305() {
-    test_lambda_service_channel_status_code(StatusCode::USE_PROXY, ExitReason::RouterStatusOther)
-      .await;
+    fixture_lambda_service_channel_status_code(
+      StatusCode::USE_PROXY,
+      ExitReason::RouterStatusOther,
+    )
+    .await;
   }
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_400() {
-    test_lambda_service_channel_status_code(StatusCode::BAD_REQUEST, ExitReason::RouterStatus4xx)
-      .await;
+    fixture_lambda_service_channel_status_code(
+      StatusCode::BAD_REQUEST,
+      ExitReason::RouterStatus4xx,
+    )
+    .await;
   }
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_409() {
-    test_lambda_service_channel_status_code(StatusCode::CONFLICT, ExitReason::RouterGoAway).await;
+    fixture_lambda_service_channel_status_code(StatusCode::CONFLICT, ExitReason::RouterGoAway)
+      .await;
   }
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_500() {
-    test_lambda_service_channel_status_code(
+    fixture_lambda_service_channel_status_code(
       StatusCode::INTERNAL_SERVER_ERROR,
       ExitReason::RouterStatus5xx,
     )
     .await;
   }
 
-  async fn test_lambda_service_channel_status_code(
+  async fn fixture_lambda_service_channel_status_code(
     status_code: StatusCode,
     expected_result: ExitReason,
   ) {
