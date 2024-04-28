@@ -53,12 +53,16 @@ pub struct LambdaService {
 
 impl LambdaService {
   pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
+    let mut http_connector = HttpConnector::new();
+    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
+    http_connector.set_nodelay(true);
+
     let app_client = Client::builder(TokioExecutor::new())
       .pool_idle_timeout(Duration::from_secs(5))
       .pool_max_idle_per_host(100)
       .pool_timer(TokioTimer::new())
       .retry_canceled_requests(false)
-      .build_http();
+      .build(http_connector);
 
     LambdaService {
       options,
