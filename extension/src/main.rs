@@ -16,7 +16,6 @@ use crate::prelude::*;
 mod app_request;
 mod app_start;
 mod cert;
-mod connect_to_app;
 mod connect_to_router;
 mod counter_drop;
 mod endpoint;
