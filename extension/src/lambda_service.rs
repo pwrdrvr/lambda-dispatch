@@ -11,10 +11,7 @@ use bytes::Bytes;
 use futures::{channel::mpsc::Receiver, Future};
 use http_body_util::StreamBody;
 use hyper::{body::Frame, Uri};
-use hyper_util::{
-  client::legacy::{connect::HttpConnector, Client},
-  rt::{TokioExecutor, TokioTimer},
-};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use lambda_runtime::LambdaEvent;
 use tokio::{
   io::{AsyncRead, AsyncWrite},
@@ -44,26 +41,20 @@ impl Stream for TcpStream {}
 pub type AppClient = Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>>>>>;
 
 #[derive(Clone)]
-pub struct LambdaService {
+pub struct LambdaService<'a> {
   options: Options,
   initialized: Arc<AtomicBool>,
   healthcheck_url: Uri,
-  app_client: AppClient,
+  app_client: &'a AppClient,
 }
 
-impl LambdaService {
-  pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
-    let mut http_connector = HttpConnector::new();
-    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
-    http_connector.set_nodelay(true);
-
-    let app_client = Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build(http_connector);
-
+impl<'a> LambdaService<'a> {
+  pub fn new(
+    options: Options,
+    initialized: Arc<AtomicBool>,
+    healthcheck_url: Uri,
+    app_client: &'a AppClient,
+  ) -> Self {
     LambdaService {
       options,
       initialized,
@@ -110,6 +101,7 @@ impl LambdaService {
         app_start::health_check_contained_app(
           Arc::clone(&fake_goaway_received),
           &self.healthcheck_url,
+          &self.app_client,
         ),
       )
       .await;
@@ -261,10 +253,10 @@ impl LambdaService {
 }
 
 // Tower.Service is the interface required by lambda_runtime::run
-impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
+impl<'a> Service<LambdaEvent<WaiterRequest>> for LambdaService<'a> {
   type Response = WaiterResponse;
   type Error = Error;
-  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>;
 
   fn poll_ready(
     &mut self,
@@ -296,6 +288,7 @@ mod tests {
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
+  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio_test::assert_ok;
 
   use tokio::net::TcpListener;
@@ -311,6 +304,19 @@ mod tests {
     //   // let _ = socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await;
     // });
     port
+  }
+
+  fn setup_app_client() -> Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>, Error>>>>
+  {
+    let mut http_connector = HttpConnector::new();
+    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
+    http_connector.set_nodelay(true);
+    Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build(http_connector)
   }
 
   #[tokio::test]
@@ -334,10 +340,12 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let mut service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       "localhost:54321".parse().unwrap(),
+      &app_client,
     );
 
     // Ensure the service is ready
@@ -404,10 +412,12 @@ mod tests {
     options.port = 54321;
     let initialized = true;
 
+    let app_client = setup_app_client();
     let mut service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       "localhost:54321".parse().unwrap(),
+      &app_client,
     );
 
     // Ensure the service is ready
@@ -465,11 +475,13 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // blackhole the healthcheck
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      &app_client,
     );
     let mut context = lambda_runtime::Context::default();
     context.deadline = current_time_millis() + 60 * 1000;
@@ -535,10 +547,12 @@ mod tests {
     let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
       .parse()
       .unwrap();
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       mock_app_healthcheck_url,
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -657,11 +671,13 @@ mod tests {
     options.port = port;
     let initialized = false;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       format!("http://192.0.2.0:{}/health", port).parse().unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -709,11 +725,13 @@ mod tests {
     options.local_env = true;
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -750,11 +768,13 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -792,11 +812,13 @@ mod tests {
     options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -890,12 +912,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -994,12 +1018,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1098,12 +1124,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1195,12 +1223,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1298,12 +1328,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1401,12 +1433,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1483,11 +1517,13 @@ mod tests {
     options.port = port;
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // Healthcheck is not called in this test
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1592,12 +1628,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      &app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),

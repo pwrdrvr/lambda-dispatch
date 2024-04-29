@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{lambda_service::AppClient, prelude::*};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -108,6 +108,7 @@ async fn send_request(
 pub async fn health_check_contained_app(
   goaway_received: Arc<AtomicBool>,
   healthcheck_url: &Uri,
+  app_client: &AppClient,
 ) -> bool {
   let healthcheck_host = healthcheck_url.host().expect("uri has no host");
   let healthcheck_port = healthcheck_url.port_u16().unwrap_or(80);
@@ -181,26 +182,50 @@ mod tests {
   use tokio::time::timeout;
   use tokio_test::assert_err;
 
+  use std::{
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+  };
+
+  use bytes::Bytes;
+  use futures::channel::mpsc::Receiver;
+  use http_body_util::StreamBody;
+  use hyper::{body::Frame, Uri};
+  use hyper_util::{
+    client::legacy::{connect::HttpConnector, Client},
+    rt::{TokioExecutor, TokioTimer},
+  };
+
+  fn setup_app_client() -> Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>, Error>>>>
+  {
+    let mut http_connector = HttpConnector::new();
+    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
+    http_connector.set_nodelay(true);
+    Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build(http_connector)
+  }
+
   #[tokio::test]
   async fn test_health_check_contained_app_success() {
-    // If you want to view logs during a test, uncomment this
-    // let _ = env_logger::builder().is_test(true).try_init();
-
     // Start app server
     let mock_app_server = MockServer::start();
     let mock_app_healthcheck = mock_app_server.mock(|when, then| {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
-
     let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
       .parse()
       .unwrap();
-
     let goaway_received = Arc::new(AtomicBool::new(false));
+    let app_client = setup_app_client();
 
     // Act
-    let result = health_check_contained_app(goaway_received, &mock_app_healthcheck_url).await;
+    let result =
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
     assert!(result, "Health check failed");
 
     // Assert app server's healthcheck endpoint got called
@@ -211,14 +236,14 @@ mod tests {
   async fn test_health_check_contained_app_blackhole() {
     // 192.0.2.0/24 (TEST-NET-1)
     let mock_app_healthcheck_url = "http://192.0.2.0:54321/health".parse().unwrap();
-
     let goaway_received = Arc::new(AtomicBool::new(false));
+    let app_client = setup_app_client();
 
     // Act
     let start = std::time::Instant::now();
     let result = timeout(
       Duration::from_secs(2),
-      health_check_contained_app(goaway_received, &mock_app_healthcheck_url),
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client),
     )
     .await;
     let duration = start.elapsed();
@@ -237,14 +262,14 @@ mod tests {
   #[tokio::test]
   async fn test_health_check_contained_app_error() {
     let mock_app_healthcheck_url = "http://127.0.0.1:54321/health".parse().unwrap();
-
     let goaway_received = Arc::new(AtomicBool::new(false));
+    let app_client = setup_app_client();
 
     // Act
     let start = std::time::Instant::now();
     let result = timeout(
       Duration::from_secs(2),
-      health_check_contained_app(goaway_received, &mock_app_healthcheck_url),
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client),
     )
     .await;
     let duration = start.elapsed();
