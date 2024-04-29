@@ -14,6 +14,17 @@ pub mod test_mock_router {
   use hyper::StatusCode;
   use tokio::{io::AsyncWriteExt, sync::mpsc::Sender};
 
+  #[derive(Clone, Copy, PartialEq)]
+  pub enum RequestMethod {
+    Get,
+    GetQuerySimple,
+    GetQueryEncoded,
+    GetQueryUnencodedBrackets,
+    GetQueryRepeated,
+    PostSimple,
+    PostEcho
+  }
+
   #[derive(Clone, Copy)]
   pub struct RouterParams {
     pub channel_non_200_status_after_count: isize,
@@ -23,6 +34,7 @@ pub mod test_mock_router {
     pub channel_panic_request_to_extension_after_start: bool,
     pub channel_panic_request_to_extension_before_close: bool,
     pub ping_panic_after_count: isize,
+    pub request_method: RequestMethod,
   }
 
   pub struct RouterResult {
@@ -69,17 +81,33 @@ pub mod test_mock_router {
               panic!("Panic! Response from extension");
             }
 
-            parts
-              .1
-              .into_data_stream()
-              .for_each(|chunk| async {
-                let _chunk = chunk.unwrap();
-                // println!("Chunk: {:?}", chunk);
-              })
-              .await;
+            if params.request_method == RequestMethod::PostEcho
+              && params.channel_panic_request_to_extension_before_start_on_count >= 0
+              && request_count > params.channel_panic_request_to_extension_before_start_on_count as usize {
+              // Read the bytes
+              // Decode the gzip
+              // Confirm we got 10 KB of 'a'
+              let buf = parts.1.into_data_stream().fold(Vec::new(), |mut buf, chunk| async move {
+                  let chunk = chunk.unwrap();
+                  buf.extend_from_slice(&chunk);
+                  buf
+              }).await;
+              assert_eq!(String::from_utf8(buf).unwrap(), "a".repeat(10 * 1024));
+            } else {
+              // Read and discard the response body chunks
+              parts
+                .1
+                .into_data_stream()
+                .for_each(|chunk| async {
+                  let _chunk = chunk.unwrap();
+                  // println!("Chunk: {:?}", chunk);
+                })
+                .await;
+            }
           });
 
           // Bail after request count if desired
+
           if params.channel_non_200_status_after_count >= 0 && request_count > params.channel_non_200_status_after_count as usize {
             let body = AsyncReadBody::new(tokio::io::empty());
             let response = Response::builder()
@@ -101,16 +129,39 @@ pub mod test_mock_router {
             }
 
             // Send static request to extension
-            let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
-            tx.write_all(data).await.unwrap();
+            if params.request_method == RequestMethod::PostSimple {
+              let data = b"POST /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\nHELLO WORLD";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::PostEcho {
+              let data = b"POST /bananas_echo HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
 
-            if params.channel_panic_request_to_extension_after_start {
-              panic!("Panic! Request to extension, after sending VERB line and some headers");
+              let data = "a".repeat(10 * 1024);
+              tx.write_all(data.as_bytes()).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQuerySimple {
+              let data = b"GET /bananas_query_simple?cat=dog&frog=log HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQueryRepeated {
+              let data = b"GET /bananas_query_repeated?cat=dog&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQueryEncoded {
+              let data = b"GET /bananas_query_encoded?cat=dog%25&cat=%22log%22&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQueryUnencodedBrackets {
+              let data = b"GET /bananas_query_unencoded_brackets?cat=[dog]&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else {
+              let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+
+              if params.channel_panic_request_to_extension_after_start {
+                panic!("Panic! Request to extension, after sending VERB line and some headers");
+              }
+  
+              // Write the rest of the headers
+              let data = b"Test-Headers: bar\r\nTest-Headerss: baz\r\nAccept-Encoding: gzip\r\n\r\nHELLO WORLD";
+              tx.write_all(data).await.unwrap();
             }
-
-            // Write the rest of the headers
-            let data = b"Test-Headers: bar\r\nTest-Headerss: baz\r\nAccept-Encoding: gzip\r\n\r\nHELLO WORLD";
-            tx.write_all(data).await.unwrap();
 
             // Wait for the release before indicating that the body is finished
             // Keep in mind that this is HTTP/1.1 WITHOUT CHUNKING and WITHOUT CONTENT-LENGTH header

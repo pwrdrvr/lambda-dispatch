@@ -374,6 +374,7 @@ mod tests {
   async fn test_lambda_service_tower_service_call_fatal_error_app_unreachable() {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 5,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -517,6 +518,7 @@ mod tests {
   async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok() {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 0,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -870,6 +872,7 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 1,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -978,6 +981,7 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: -1,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -1082,10 +1086,11 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_service_loop_100_normal_requests() {
+  async fn test_lambda_service_loop_100_valid_get_requests() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 100,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -1178,10 +1183,575 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn test_lambda_service_loop_100_valid_post_requests() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::PostSimple,
+        channel_non_200_status_after_count: 100,
+        channel_non_200_status_code: StatusCode::CONFLICT,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+      .and(wiremock::matchers::path("/bananas"))
+      .respond_with(move |request: &'_ wiremock::Request| {
+        let body_str = String::from_utf8(request.body.clone()).unwrap();
+        assert_eq!(body_str, "HELLO WORLD");
+        wiremock::ResponseTemplate::new(200).set_body_raw("Bananas", "text/plain")
+      })
+      .expect(100)
+      .mount(&mock_app_server)
+      .await;
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let app_client = setup_app_client();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.uri()).parse().unwrap(),
+      app_client,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoAway,
+        );
+        assert_eq!(waiter_response.request_count, 100);
+        assert_ne!(waiter_response.invoke_duration, 0);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_valid_10kb_echo_post_requests() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::PostEcho,
+        channel_non_200_status_after_count: 1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+      .and(wiremock::matchers::path("/bananas_echo"))
+      .respond_with(move |request: &'_ wiremock::Request| {
+        let body_str = String::from_utf8(request.body.clone()).unwrap();
+        let data = "a".repeat(10 * 1024);
+        assert_eq!(body_str, data, "Should get 10 KB of 'a'");
+        wiremock::ResponseTemplate::new(200).set_body_raw(body_str, "text/plain")
+      })
+      .expect(1)
+      .mount(&mock_app_server)
+      .await;
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+    options.compression = true;
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let app_client = setup_app_client();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.uri()).parse().unwrap(),
+      app_client,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoAway,
+        );
+        assert_eq!(waiter_response.request_count, 1);
+        assert_ne!(waiter_response.invoke_duration, 0);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_get_query_string_simple() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::GetQuerySimple,
+        channel_non_200_status_after_count: 1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+      .and(wiremock::matchers::path("/bananas_query_simple"))
+      .respond_with(move |request: &'_ wiremock::Request| {
+        let body_str = String::from_utf8(request.body.clone()).unwrap();
+        let query = request.url.query();
+        assert_eq!("cat=dog&frog=log", query.unwrap(), "Query string");
+        wiremock::ResponseTemplate::new(200).set_body_raw(body_str, "text/plain")
+      })
+      .expect(1)
+      .mount(&mock_app_server)
+      .await;
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+    options.compression = true;
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let app_client = setup_app_client();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.uri()).parse().unwrap(),
+      app_client,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoAway,
+        );
+        assert_eq!(waiter_response.request_count, 1);
+        assert_ne!(waiter_response.invoke_duration, 0);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_get_query_string_repeated() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::GetQueryRepeated,
+        channel_non_200_status_after_count: 1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+      .and(wiremock::matchers::path("/bananas_query_repeated"))
+      .respond_with(move |request: &'_ wiremock::Request| {
+        let body_str = String::from_utf8(request.body.clone()).unwrap();
+        let query = request.url.query();
+        assert_eq!("cat=dog&cat=log&cat=cat", query.unwrap(), "Query string");
+        wiremock::ResponseTemplate::new(200).set_body_raw(body_str, "text/plain")
+      })
+      .expect(1)
+      .mount(&mock_app_server)
+      .await;
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+    options.compression = true;
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let app_client = setup_app_client();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.uri()).parse().unwrap(),
+      app_client,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoAway,
+        );
+        assert_eq!(waiter_response.request_count, 1);
+        assert_ne!(waiter_response.invoke_duration, 0);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_get_query_string_encoded() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::GetQueryEncoded,
+        channel_non_200_status_after_count: 1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+      .and(wiremock::matchers::path("/bananas_query_encoded"))
+      .respond_with(move |request: &'_ wiremock::Request| {
+        let body_str = String::from_utf8(request.body.clone()).unwrap();
+        let query = request.url.query();
+        assert_eq!(
+          "cat=dog%25&cat=%22log%22&cat=cat",
+          query.unwrap(),
+          "Query string"
+        );
+        wiremock::ResponseTemplate::new(200).set_body_raw(body_str, "text/plain")
+      })
+      .expect(1)
+      .mount(&mock_app_server)
+      .await;
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+    options.compression = true;
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let app_client = setup_app_client();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.uri()).parse().unwrap(),
+      app_client,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoAway,
+        );
+        assert_eq!(waiter_response.request_count, 1);
+        assert_ne!(waiter_response.invoke_duration, 0);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_get_query_string_unencoded_brackets() {
+    // Start router server
+    let mock_router_server = test_mock_router::test_mock_router::setup_router(
+      test_mock_router::test_mock_router::RouterParams {
+        request_method:
+          test_mock_router::test_mock_router::RequestMethod::GetQueryUnencodedBrackets,
+        channel_non_200_status_after_count: 1,
+        channel_non_200_status_code: StatusCode::CONFLICT,
+        channel_panic_response_from_extension_on_count: -1,
+        channel_panic_request_to_extension_before_start_on_count: -1,
+        channel_panic_request_to_extension_after_start: false,
+        channel_panic_request_to_extension_before_close: false,
+        ping_panic_after_count: -1,
+      },
+    );
+
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+      .and(wiremock::matchers::path(
+        "/bananas_query_unencoded_brackets",
+      ))
+      .respond_with(move |request: &'_ wiremock::Request| {
+        let body_str = String::from_utf8(request.body.clone()).unwrap();
+        let query = request.url.query();
+        assert_eq!("cat=[dog]&cat=log&cat=cat", query.unwrap(), "Query string");
+        wiremock::ResponseTemplate::new(200).set_body_raw(body_str, "text/plain")
+      })
+      .expect(1)
+      .mount(&mock_app_server)
+      .await;
+
+    // Let the router run wild
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let mut options = Options::default();
+    options.compression = true;
+    options.port = mock_app_server.address().port();
+    let initialized = true;
+
+    let app_client = setup_app_client();
+    let service = LambdaService::new(
+      options,
+      Arc::new(AtomicBool::new(initialized)),
+      format!("{}/health", mock_app_server.uri()).parse().unwrap(),
+      app_client,
+    );
+    let request = WaiterRequest {
+      pool_id: Some("test_pool".to_string()),
+      id: "test_id".to_string(),
+      router_url: format!(
+        "http://127.0.0.1:{}",
+        mock_router_server.mock_router_server.addr.port()
+      ),
+      number_of_channels: 1,
+      sent_time: "2022-01-01T00:00:00Z".to_string(),
+      init_only: false,
+    };
+    let mut context = lambda_runtime::Context::default();
+    // Test an overly large value to exercise trimming code
+    context.deadline = current_time_millis() + 60 * 1000;
+    let event = LambdaEvent {
+      payload: request,
+      context,
+    };
+
+    // Act
+    let response = service.fetch_response(event).await;
+
+    // Assert
+    assert!(response.is_ok(), "fetch_response should succeed");
+    match response {
+      Ok(waiter_response) => {
+        assert_eq!(
+          waiter_response.exit_reason,
+          messages::ExitReason::RouterGoAway,
+        );
+        assert_eq!(waiter_response.request_count, 1);
+        assert_ne!(waiter_response.invoke_duration, 0);
+      }
+      Err(err) => {
+        assert!(false, "Expected Ok with ExitReason, got Err: {:?}", err);
+      }
+    }
+  }
+
+  #[tokio::test]
   async fn test_lambda_service_loop_100_requests_contained_app_connection_close_header() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 100,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -1288,6 +1858,7 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         // We have 2 channels
         // The 2nd channel should not finish all 100 requests after the 1st channel panics
         channel_non_200_status_after_count: 100,
@@ -1393,6 +1964,7 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         // We have 2 channels
         // The 2nd channel should not finish all 100 requests after the 1st channel panics
         channel_non_200_status_after_count: 100,
@@ -1500,6 +2072,7 @@ mod tests {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 100,
         channel_non_200_status_code: StatusCode::CONFLICT,
         channel_panic_response_from_extension_on_count: -1,
@@ -1598,6 +2171,7 @@ mod tests {
   ) {
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 0,
         channel_non_200_status_code: status_code,
         channel_panic_response_from_extension_on_count: -1,

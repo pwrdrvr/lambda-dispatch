@@ -512,6 +512,7 @@ mod tests {
 
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
+        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
         channel_non_200_status_after_count: 0,
         channel_non_200_status_code: status_code,
         channel_panic_response_from_extension_on_count: -1,
