@@ -1,13 +1,24 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use std::{pin::Pin, sync::Arc};
+use std::{
+  pin::Pin,
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+  },
+  time::Duration,
+};
 
-use futures::Future;
-use hyper::Uri;
+use bytes::Bytes;
+use futures::{channel::mpsc::Receiver, Future};
+use http_body_util::StreamBody;
+use hyper::{body::Frame, Uri};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use lambda_runtime::LambdaEvent;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
-use tokio::time::timeout;
+use tokio::{
+  io::{AsyncRead, AsyncWrite},
+  net::TcpStream,
+  time::timeout,
+};
+use tokio_rustls::client::TlsStream;
 use tower::Service;
 
 use crate::endpoint::{Endpoint, Scheme};
@@ -22,26 +33,33 @@ use crate::{
   messages::{WaiterRequest, WaiterResponse},
 };
 
-use tokio_rustls::client::TlsStream;
-
 // Define a Stream trait that both TlsStream and TcpStream implement
 pub trait Stream: AsyncRead + AsyncWrite + Send {}
 impl Stream for TlsStream<TcpStream> {}
 impl Stream for TcpStream {}
+
+pub type AppClient = Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>>>>>;
 
 #[derive(Clone)]
 pub struct LambdaService {
   options: Options,
   initialized: Arc<AtomicBool>,
   healthcheck_url: Uri,
+  app_client: AppClient,
 }
 
 impl LambdaService {
-  pub fn new(options: Options, initialized: Arc<AtomicBool>, healthcheck_url: Uri) -> Self {
+  pub fn new(
+    options: Options,
+    initialized: Arc<AtomicBool>,
+    healthcheck_url: Uri,
+    app_client: AppClient,
+  ) -> Self {
     LambdaService {
       options,
       initialized,
       healthcheck_url,
+      app_client,
     }
   }
 
@@ -83,6 +101,7 @@ impl LambdaService {
         app_start::health_check_contained_app(
           Arc::clone(&fake_goaway_received),
           &self.healthcheck_url,
+          &self.app_client,
         ),
       )
       .await;
@@ -184,7 +203,7 @@ impl LambdaService {
     //
     // This is the main loop that runs until the deadline is about to be reached
     //
-    let result = lambda_request.start().await;
+    let result = lambda_request.start(&self.app_client).await;
     match result {
       Ok(exit_reason) => {
         log::info!(
@@ -269,7 +288,36 @@ mod tests {
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
+  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio_test::assert_ok;
+
+  use tokio::net::TcpListener;
+
+  async fn start_mock_server() -> u16 {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    // If we accept but do not await or return then the connection is dropped immediately
+    // tokio::spawn(async move {
+    //   let (mut _socket, _) = listener.accept().await.unwrap();
+
+    //   // let _ = socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await;
+    // });
+    port
+  }
+
+  fn setup_app_client() -> Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>, Error>>>>
+  {
+    let mut http_connector = HttpConnector::new();
+    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
+    http_connector.set_nodelay(true);
+    Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build(http_connector)
+  }
 
   #[tokio::test]
   async fn test_lambda_service_tower_service_call_init_only_already_initialized() {
@@ -292,10 +340,12 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let mut service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       "localhost:54321".parse().unwrap(),
+      app_client,
     );
 
     // Ensure the service is ready
@@ -362,10 +412,12 @@ mod tests {
     options.port = 54321;
     let initialized = true;
 
+    let app_client = setup_app_client();
     let mut service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       "localhost:54321".parse().unwrap(),
+      app_client,
     );
 
     // Ensure the service is ready
@@ -423,11 +475,13 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // blackhole the healthcheck
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      app_client,
     );
     let mut context = lambda_runtime::Context::default();
     context.deadline = current_time_millis() + 60 * 1000;
@@ -493,10 +547,12 @@ mod tests {
     let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
       .parse()
       .unwrap();
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       mock_app_healthcheck_url,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -574,17 +630,54 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_service_fetch_response_spillover_healthcheck_blackhole_timeout() {
+  async fn test_lambda_service_fetch_response_async_init_healthcheck_blackhole_async_init_timeout()
+  {
+    // NOTE: This is testing whether the async init timeout works, not whether
+    // the channel contained app connection timeout works on a blackhole
+    test_lambda_service_fetch_response_async_init_healthcheck_blackhole_timeout_fixture(
+      std::time::Duration::from_secs(1),
+      std::time::Duration::from_secs(1),
+      std::time::Duration::from_secs(2),
+      54321,
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn test_lambda_service_fetch_response_async_init_healthcheck_connects_no_response_async_init_timeout(
+  ) {
+    let mock_app_port = start_mock_server().await;
+
+    // NOTE: This is testing whether the async init timeout works, not whether
+    // the channel contained app connection timeout works on a blackhole
+    test_lambda_service_fetch_response_async_init_healthcheck_blackhole_timeout_fixture(
+      std::time::Duration::from_secs(2),
+      std::time::Duration::from_secs(2),
+      std::time::Duration::from_secs(3),
+      mock_app_port,
+    )
+    .await;
+  }
+
+  async fn test_lambda_service_fetch_response_async_init_healthcheck_blackhole_timeout_fixture(
+    async_init_timeout: std::time::Duration,
+    test_min_time: std::time::Duration,
+    test_max_time: std::time::Duration,
+    port: u16,
+  ) {
     let mut options = Options::default();
-    options.async_init_timeout = std::time::Duration::from_millis(1000);
+    options.async_init_timeout = async_init_timeout;
     options.async_init = true;
+    options.port = port;
     let initialized = false;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
-      "http://192.0.2.0:54321/health".parse().unwrap(),
+      format!("http://192.0.2.0:{}/health", port).parse().unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -613,12 +706,16 @@ mod tests {
       Some(LambdaRequestError::AppConnectionUnreachable)
     );
     assert!(
-      duration >= std::time::Duration::from_secs(1),
-      "Connection should take at least 1 seconds"
+      duration >= test_min_time,
+      "Connection should take at least {:?} seconds, took {:?}",
+      test_min_time,
+      duration
     );
     assert!(
-      duration <= std::time::Duration::from_secs(2),
-      "Connection should take at most 2 seconds"
+      duration <= test_max_time,
+      "Connection should take at most {:?} seconds, took {:?}",
+      test_max_time,
+      duration
     );
   }
 
@@ -628,11 +725,13 @@ mod tests {
     options.local_env = true;
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -669,11 +768,13 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -711,11 +812,13 @@ mod tests {
     options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -809,12 +912,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -913,12 +1018,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1017,12 +1124,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1069,7 +1178,6 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore = "Issue-178 - This test fails because we do not re-establish the contained app connections"]
   async fn test_lambda_service_loop_100_requests_contained_app_connection_close_header() {
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
@@ -1095,6 +1203,8 @@ mod tests {
       then
         .status(200)
         .header("Content-Type", "text/plain")
+        // Every app response sends `Connection: close` response header,
+        // causing the router channel to have to get a new connection for each request
         .header("Connection", "close")
         .body("Bananas");
     });
@@ -1113,12 +1223,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1160,8 +1272,9 @@ mod tests {
       }
     }
     assert!(
-      duration <= std::time::Duration::from_secs(2),
-      "Connection should take at most 2 seconds"
+      duration <= std::time::Duration::from_secs(6),
+      "Connection should take at most 6 seconds, took {:?}",
+      duration
     );
 
     // Healthcheck not called
@@ -1215,12 +1328,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1318,12 +1433,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1377,13 +1494,15 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_lambda_service_initialized_app_blackhole_timeout() {
+  async fn test_lambda_service_initialized_app_unopened_port_timeout() {
+    let port = 54321;
+
     // Start router server
     let mock_router_server = test_mock_router::test_mock_router::setup_router(
       test_mock_router::test_mock_router::RouterParams {
         channel_non_200_status_after_count: 100,
         channel_non_200_status_code: StatusCode::CONFLICT,
-        channel_panic_response_from_extension_on_count: 1,
+        channel_panic_response_from_extension_on_count: -1,
         channel_panic_request_to_extension_before_start_on_count: -1,
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
@@ -1395,15 +1514,16 @@ mod tests {
     options.async_init_timeout = std::time::Duration::from_millis(1000);
     options.async_init = true;
     // App port is a blackhole
-    options.port = 54321;
+    options.port = port;
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
-      // 192.0.2.0/24 (TEST-NET-1)
-      // App is a blackhole
+      // Healthcheck is not called in this test
       "http://192.0.2.0:54321/health".parse().unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1441,31 +1561,38 @@ mod tests {
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_305() {
-    test_lambda_service_channel_status_code(StatusCode::USE_PROXY, ExitReason::RouterStatusOther)
-      .await;
+    fixture_lambda_service_channel_status_code(
+      StatusCode::USE_PROXY,
+      ExitReason::RouterStatusOther,
+    )
+    .await;
   }
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_400() {
-    test_lambda_service_channel_status_code(StatusCode::BAD_REQUEST, ExitReason::RouterStatus4xx)
-      .await;
+    fixture_lambda_service_channel_status_code(
+      StatusCode::BAD_REQUEST,
+      ExitReason::RouterStatus4xx,
+    )
+    .await;
   }
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_409() {
-    test_lambda_service_channel_status_code(StatusCode::CONFLICT, ExitReason::RouterGoAway).await;
+    fixture_lambda_service_channel_status_code(StatusCode::CONFLICT, ExitReason::RouterGoAway)
+      .await;
   }
 
   #[tokio::test]
   async fn test_lambda_service_channel_status_500() {
-    test_lambda_service_channel_status_code(
+    fixture_lambda_service_channel_status_code(
       StatusCode::INTERNAL_SERVER_ERROR,
       ExitReason::RouterStatus5xx,
     )
     .await;
   }
 
-  async fn test_lambda_service_channel_status_code(
+  async fn fixture_lambda_service_channel_status_code(
     status_code: StatusCode,
     expected_result: ExitReason,
   ) {
@@ -1501,12 +1628,14 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
+    let app_client = setup_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),

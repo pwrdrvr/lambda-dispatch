@@ -3,8 +3,12 @@
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use hyper::Uri;
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::{TokioExecutor, TokioTimer};
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::timeout;
@@ -16,7 +20,6 @@ use crate::prelude::*;
 mod app_request;
 mod app_start;
 mod cert;
-mod connect_to_app;
 mod connect_to_router;
 mod counter_drop;
 mod endpoint;
@@ -155,12 +158,26 @@ async fn async_main(options: Options) -> Result<()> {
     .parse()
     .expect("healthcheck url with port should always be valid");
 
+  let mut http_connector = HttpConnector::new();
+  http_connector.set_connect_timeout(Some(Duration::from_millis(500)));
+  http_connector.set_nodelay(true);
+  let app_client = Client::builder(TokioExecutor::new())
+    .pool_idle_timeout(Duration::from_secs(5))
+    .pool_max_idle_per_host(100)
+    .pool_timer(TokioTimer::new())
+    .retry_canceled_requests(false)
+    .build(http_connector);
+
   // Wait for the contained app to be ready
   let initialized = if options.async_init {
     let goaway_received = Arc::new(AtomicBool::new(false));
     let result = timeout(
       std::time::Duration::from_millis(9500),
-      app_start::health_check_contained_app(Arc::clone(&goaway_received), &healthcheck_url),
+      app_start::health_check_contained_app(
+        Arc::clone(&goaway_received),
+        &healthcheck_url,
+        &app_client,
+      ),
     )
     .await;
 
@@ -179,13 +196,19 @@ async fn async_main(options: Options) -> Result<()> {
     }
   } else {
     // Wait until init finishes OR the 10 second init gets canceled and re-run as a regular request
-    app_start::health_check_contained_app(Arc::new(AtomicBool::new(false)), &healthcheck_url).await
+    app_start::health_check_contained_app(
+      Arc::new(AtomicBool::new(false)),
+      &healthcheck_url,
+      &app_client,
+    )
+    .await
   };
 
   let svc = LambdaService::new(
     options,
     Arc::new(AtomicBool::new(initialized)),
     healthcheck_url,
+    app_client,
   );
 
   tokio::select! {

@@ -11,6 +11,7 @@ use tokio_rustls::client::TlsStream;
 
 use crate::endpoint::Endpoint;
 use crate::lambda_request_error::LambdaRequestError;
+use crate::lambda_service::AppClient;
 use crate::ping;
 use crate::prelude::*;
 use crate::router_channel::RouterChannel;
@@ -77,8 +78,11 @@ impl LambdaRequest {
   }
 
   /// Executes a task with a specified deadline.
-  pub async fn start(&mut self) -> Result<messages::ExitReason, LambdaRequestError> {
-    let sender = match connect_to_router::connect_to_router(
+  pub async fn start(
+    &mut self,
+    app_client: &AppClient,
+  ) -> Result<messages::ExitReason, LambdaRequestError> {
+    let router_sender = match connect_to_router::connect_to_router(
       self.router_endpoint.clone(),
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
@@ -93,7 +97,7 @@ impl LambdaRequest {
     let ping_task = tokio::task::spawn(ping::send_ping_requests(
       Arc::clone(&self.last_active),
       Arc::clone(&self.goaway_received),
-      sender.clone(),
+      router_sender.clone(),
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
       Arc::clone(&self.count),
@@ -117,7 +121,7 @@ impl LambdaRequest {
           self.router_endpoint.clone(),
           self.app_endpoint.clone(),
           channel_number,
-          sender.clone(),
+          router_sender.clone(),
           Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
           uuid::Builder::from_random_bytes(self.rng.gen())
@@ -125,8 +129,10 @@ impl LambdaRequest {
             .to_string(),
         );
         let goaway_received = Arc::clone(&self.goaway_received);
+
+        let app_client = app_client.clone();
         tokio::spawn(async move {
-          let result = router_channel.start().await;
+          let result = router_channel.start(app_client).await;
 
           // Tell the other channels to stop
           goaway_received.store(true, Ordering::Release);
@@ -228,6 +234,8 @@ impl LambdaRequest {
 
 #[cfg(test)]
 mod tests {
+  use std::time::Duration;
+
   use super::*;
 
   use crate::test_http2_server::test_http2_server::run_http2_app;
@@ -240,6 +248,8 @@ mod tests {
   use httpmock::Method::GET;
   use httpmock::MockServer;
   use hyper::StatusCode;
+  use hyper_util::client::legacy::Client;
+  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio::io::AsyncWriteExt;
 
   #[tokio::test]
@@ -254,9 +264,16 @@ mod tests {
       current_time_millis() + 60 * 1000,
     );
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     // Act
     let start = std::time::Instant::now();
-    let result = lambda_request.start().await;
+    let result = lambda_request.start(&app_client).await;
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
@@ -426,9 +443,16 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     // Act
     let start = std::time::Instant::now();
-    let result = lambda_request.start().await;
+    let result = lambda_request.start(&app_client).await;
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert

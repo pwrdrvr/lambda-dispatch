@@ -1,12 +1,15 @@
 use std::pin::Pin;
 use std::str::FromStr;
 
+use crate::endpoint::Endpoint;
 use crate::prelude::*;
 use hyper::body::Body;
 use hyper::header::HeaderName;
+use hyper::Uri;
 use hyper::{body::Incoming, Request};
 
 pub async fn read_until_req_headers(
+  app_endpoint: Endpoint,
   res_stream: &mut Incoming,
   pool_id: &str,
   lambda_id: &str,
@@ -41,7 +44,9 @@ pub async fn read_until_req_headers(
         // The app_url is only the path
         // Next.js, for one, gives a 308 redirect if you give it `http://localhost:3000/`
         // and it mangles that to `http:/localhost:3000/`
-        let app_url = req.path.unwrap();
+
+        let app_url = app_endpoint.url().join(req.path.unwrap()).unwrap();
+        let app_url = Uri::from_str(app_url.as_str()).unwrap();
 
         let mut app_req_bld = Request::builder()
           .uri(app_url)
@@ -188,8 +193,17 @@ mod tests {
     let res = sender.send_request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
+    let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
+
     // Act
-    let result = read_until_req_headers(&mut res_stream, &pool_id, &lambda_id, &channel_id).await;
+    let result = read_until_req_headers(
+      app_endpoint,
+      &mut res_stream,
+      &pool_id,
+      &lambda_id,
+      &channel_id,
+    )
+    .await;
 
     // Assert
     assert_eq!(
@@ -205,7 +219,10 @@ mod tests {
     let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
     assert_eq!(test_header, Some(&HeaderValue::from_static("foo")));
     let app_req_uri = app_req_builder.uri_ref().unwrap();
-    assert_eq!(app_req_uri, &Uri::from_static("/bananas"));
+    assert_eq!(
+      app_req_uri,
+      &Uri::from_static("http://localhost:3000/bananas")
+    );
     assert_eq!(goaway, false);
     assert_eq!(left_over_buf.is_empty(), false);
     assert_eq!(left_over_buf, b"HELLO WORLD");
@@ -304,8 +321,17 @@ mod tests {
     let res = sender.send_request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
+    let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
+
     // Act
-    let result = read_until_req_headers(&mut res_stream, &pool_id, &lambda_id, &channel_id).await;
+    let result = read_until_req_headers(
+      app_endpoint,
+      &mut res_stream,
+      &pool_id,
+      &lambda_id,
+      &channel_id,
+    )
+    .await;
 
     // Assert
     assert_eq!(
@@ -437,8 +463,17 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
+
     // Act
-    let result = read_until_req_headers(&mut res_stream, &pool_id, &lambda_id, &channel_id).await;
+    let result = read_until_req_headers(
+      app_endpoint,
+      &mut res_stream,
+      &pool_id,
+      &lambda_id,
+      &channel_id,
+    )
+    .await;
 
     // Assert
     assert_eq!(
@@ -568,8 +603,17 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
+
     // Act
-    let result = read_until_req_headers(&mut res_stream, &pool_id, &lambda_id, &channel_id).await;
+    let result = read_until_req_headers(
+      app_endpoint,
+      &mut res_stream,
+      &pool_id,
+      &lambda_id,
+      &channel_id,
+    )
+    .await;
 
     // Assert
     assert_eq!(
@@ -589,7 +633,10 @@ mod tests {
     let test_headerss = app_req_builder.headers_ref().unwrap().get("test-headerss");
     assert_eq!(test_headerss, Some(&HeaderValue::from_static("baz")));
     let app_req_uri = app_req_builder.uri_ref().unwrap();
-    assert_eq!(app_req_uri, &Uri::from_static("/bananas"));
+    assert_eq!(
+      app_req_uri,
+      &Uri::from_static("http://localhost:3000/bananas")
+    );
     assert_eq!(goaway, false);
     assert_eq!(left_over_buf.is_empty(), false);
     assert_eq!(left_over_buf, b"HELLO WORLD");

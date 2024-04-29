@@ -1,4 +1,5 @@
 use crate::lambda_request_error::LambdaRequestError;
+use crate::lambda_service::AppClient;
 use crate::relay::{relay_request_to_app, relay_response_to_router};
 use crate::utils::compressable;
 use crate::{messages, prelude::*};
@@ -18,7 +19,6 @@ use hyper::{
 };
 
 use crate::app_request;
-use crate::connect_to_app;
 use crate::counter_drop::DecrementOnDrop;
 use crate::endpoint::Endpoint;
 use crate::time;
@@ -54,7 +54,7 @@ pub struct RouterChannel {
   channel_url: Uri,
   app_endpoint: Endpoint,
   channel_number: u8,
-  sender: http2::SendRequest<BoxBody<Bytes, Error>>,
+  router_sender: http2::SendRequest<BoxBody<Bytes, Error>>,
   pool_id: PoolId,
   lambda_id: LambdaId,
   channel_id: ChannelId,
@@ -95,23 +95,18 @@ impl RouterChannel {
       channel_url,
       app_endpoint,
       channel_number,
-      sender,
+      router_sender: sender,
       pool_id,
       lambda_id,
       channel_id: channel_id.into(),
     }
   }
 
-  pub async fn start(&mut self) -> Result<Option<ChannelResult>, LambdaRequestError> {
+  pub async fn start(
+    &mut self,
+    app_client: AppClient,
+  ) -> Result<Option<ChannelResult>, LambdaRequestError> {
     let mut channel_result = None;
-    let mut app_sender = connect_to_app::connect_to_app(
-      &self.app_endpoint,
-      Arc::clone(&self.pool_id),
-      Arc::clone(&self.lambda_id),
-      Arc::clone(&self.channel_id),
-    )
-    .await
-    .map_err(|_| LambdaRequestError::AppConnectionUnreachable)?;
 
     // This is where HTTP2 loops to make all the requests for a given client and worker
     // If the pinger or another channel sets the goaway we will stop looping
@@ -153,14 +148,14 @@ impl RouterChannel {
 
       // Bail if the router connection is not ready
       self
-        .sender
+        .router_sender
         .ready()
         .await
         .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
       // FIXME: This will exit the entire channel when one request errors
       let router_response = self
-        .sender
+        .router_sender
         .send_request(router_request)
         .await
         .map_err(|_| LambdaRequestError::RouterConnectionError)?;
@@ -228,6 +223,7 @@ impl RouterChannel {
 
       // Read until we get all the request headers so we can construct our app request
       let (app_req_builder, is_goaway, left_over_buf) = app_request::read_until_req_headers(
+        self.app_endpoint.clone(),
         &mut router_response_stream,
         &self.pool_id,
         &self.lambda_id,
@@ -280,12 +276,6 @@ impl RouterChannel {
         .body(StreamBody::new(app_req_recv))
         .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
-      // This gets hit when the app connection faults
-      app_sender
-        .ready()
-        .await
-        .map_err(|_| LambdaRequestError::AppConnectionError)?;
-
       // Relay the request body to the contained app
       // We start a task for this because we need to relay the bytes
       // between the incoming request and the outgoing request
@@ -303,12 +293,19 @@ impl RouterChannel {
 
       //
       // Send the request
+      // request waits for tx connection to be ready.
+      // https://github.com/hyperium/hyper-util/blob/5688b2733eee146a1df1fc3b5263cd2021974d9b/src/client/legacy/client.rs#L574-L576
       //
       // FIXME: This will exit the entire channel when one request errors
-      let app_res = app_sender
-        .send_request(app_req)
-        .await
-        .map_err(|_| LambdaRequestError::AppConnectionError)?;
+      let app_res = match app_client.request(app_req).await {
+        Ok(res) => res,
+        Err(err) => {
+          if err.is_connect() {
+            return Err(LambdaRequestError::AppConnectionUnreachable);
+          }
+          return Err(LambdaRequestError::AppConnectionError);
+        }
+      };
       let (app_res_parts, app_res_stream) = app_res.into_parts();
 
       //
@@ -457,6 +454,7 @@ mod tests {
   use super::*;
 
   use std::sync::Arc;
+  use std::time::Duration;
 
   use crate::{connect_to_router, test_mock_router};
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
@@ -467,6 +465,8 @@ mod tests {
   use futures::stream::StreamExt;
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
+  use hyper_util::client::legacy::Client;
+  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio::io::AsyncWriteExt;
   use tokio_test::assert_ok;
 
@@ -549,6 +549,13 @@ mod tests {
     .await
     .unwrap();
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     // Declare the counts
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -570,7 +577,7 @@ mod tests {
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start().await;
+    let channel_start_result = channel.start(app_client).await;
 
     // Assert
     assert!(channel_start_result.is_ok(), "channel start result is ok");
@@ -722,6 +729,13 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -742,7 +756,7 @@ mod tests {
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start().await;
+    let channel_start_result = channel.start(app_client).await;
     // Assert
     assert_ok!(channel_start_result);
     assert_eq!(
@@ -878,6 +892,13 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
+    let app_client = Client::builder(TokioExecutor::new())
+      .pool_idle_timeout(Duration::from_secs(5))
+      .pool_max_idle_per_host(100)
+      .pool_timer(TokioTimer::new())
+      .retry_canceled_requests(false)
+      .build_http();
+
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -898,7 +919,7 @@ mod tests {
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start().await;
+    let channel_start_result = channel.start(app_client).await;
     // Assert
     assert_ok!(channel_start_result);
     assert_eq!(
