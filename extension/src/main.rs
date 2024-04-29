@@ -208,7 +208,7 @@ async fn async_main(options: Options) -> Result<()> {
     options,
     Arc::new(AtomicBool::new(initialized)),
     healthcheck_url,
-    &app_client,
+    app_client,
   );
 
   tokio::select! {
