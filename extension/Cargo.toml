@@ -48,6 +48,7 @@ procfs = "0.16.0"
 [dev-dependencies]
 # ntest = "0.9.2"
 httpmock = "0.7.0"
+wiremock = "0.6.0"
 regex = "1.10.4"
 axum = "0.7.5"
 hyper = { version = "1.1.0", features = ["server"] }

@@ -1,106 +1,63 @@
-use crate::{lambda_service::AppClient, prelude::*};
+use crate::{lambda_request_error::LambdaRequestError, lambda_service::AppClient, prelude::*};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use http_body_util::Empty;
+use futures::channel::mpsc;
+use http_body_util::{BodyExt, StreamBody};
 use hyper::{
-  body::{Bytes, Incoming},
-  client::conn::http1,
-  Request, Uri,
+  body::{Bytes, Frame},
+  Request, StatusCode, Uri,
 };
-use hyper_util::rt::TokioIo;
-use tokio::net::TcpStream;
 
-async fn create_connection(
-  healthcheck_addr: &str,
-) -> Result<(
-  http1::SendRequest<Empty<Bytes>>,
-  http1::Connection<TokioIo<TcpStream>, Empty<Bytes>>,
-)> {
-  // Setup the contained app connection
-  // This is HTTP/1.1 so we need 1 connection for each worker
-  // The endpoint is within the lambda so this should be very fast
-  let timeout_duration = tokio::time::Duration::from_millis(500);
-  let tcp_stream_result =
-    tokio::time::timeout(timeout_duration, TcpStream::connect(healthcheck_addr)).await;
-  let tcp_stream = match tcp_stream_result {
-    Ok(Ok(stream)) => {
-      stream.set_nodelay(true)?;
-      Some(stream)
-    }
-    Ok(Err(err)) => {
-      // Connection error
-      return Err(anyhow::anyhow!(
-        "Health check - TcpStream::connect error: {}",
-        err
-      ));
-    }
-    Err(err) => {
-      // Timeout
-      return Err(anyhow::anyhow!(
-        "Health check - TcpStream::connect timed out: {}",
-        err
-      ));
-    }
-  }
-  .expect("Health check - Failed to create TCP stream");
-
-  let io: TokioIo<TcpStream> = TokioIo::new(tcp_stream);
-  let http1_handshake_future = hyper::client::conn::http1::handshake(io);
-
-  // Wait for the HTTP1 handshake to complete or timeout
-  let timeout_duration = tokio::time::Duration::from_secs(2);
-  let (sender, connection) =
-    match tokio::time::timeout(timeout_duration, http1_handshake_future).await {
-      Ok(Ok((sender, connection))) => (sender, connection), // Handshake completed successfully
-      Ok(Err(err)) => {
-        log::error!(
-          "Health check - Contained App HTTP connection could not be established: {}, endpoint: {}",
-          err,
-          healthcheck_addr
-        );
-        return Err(anyhow::anyhow!(
-          "Health check - Contained App HTTP connection could not be established: {}",
-          err
-        ));
-      }
-      Err(_) => {
-        log::error!(
-          "Health check - Contained App HTTP connection timed out, endpoint: {}",
-          healthcheck_addr
-        );
-        return Err(anyhow::anyhow!(
-          "Health check - Contained App HTTP connection timed out"
-        ));
-      }
-    };
-
-  Ok((sender, connection))
-}
-
-async fn send_request(
-  sender: &mut http1::SendRequest<Empty<Bytes>>,
-) -> Option<hyper::Response<Incoming>> {
-  let req = Request::builder()
+async fn send_healthcheck(
+  app_client: &AppClient,
+  healthcheck_url: &Uri,
+) -> Result<(), LambdaRequestError> {
+  let (mut app_req_tx, app_req_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+  let app_req = Request::builder()
     .method("GET")
-    .uri("/health")
+    .uri(healthcheck_url)
     .header(hyper::header::HOST, "localhost")
-    .body(http_body_util::Empty::<Bytes>::new())
-    .unwrap();
+    .body(StreamBody::new(app_req_recv))
+    .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
-  match sender.send_request(req).await {
-    Err(err) => {
-      log::debug!(
-        "Health check - Failed to send request to contained app: {}",
-        err
-      );
-      None
-    }
-    Ok(res) => {
+  // Close the body - we are not sending one
+  let _ = app_req_tx.close_channel();
+
+  match app_client.request(app_req).await {
+    Ok(app_res) => {
+      let (parts, mut res_stream) = app_res.into_parts();
+
+      // Rip through and discard so the response stream is closed
+      while res_stream.frame().await.is_some() {}
+
+      // Check status code and discard body
+      if parts.status != StatusCode::OK {
+        log::debug!("Health check - Failed: {:?}\nHeaders:", parts.status);
+        for header in parts.headers.iter() {
+          log::debug!("  {}: {}", header.0, header.1.to_str().unwrap());
+        }
+
+        return Err(LambdaRequestError::AppConnectionError);
+      }
+
       log::debug!("Health check - Send request to contained app success");
-      Some(res)
+
+      Ok(())
+    }
+    Err(err) => {
+      if err.is_connect() {
+        log::debug!("Health check - Failed to connect to contained app: {}", err);
+        Err(LambdaRequestError::AppConnectionError)
+      } else {
+        log::debug!(
+          "Health check - Failed to send request to contained app: {}",
+          err
+        );
+        Err(LambdaRequestError::ChannelErrorOther)
+      }
     }
   }
 }
@@ -110,63 +67,22 @@ pub async fn health_check_contained_app(
   healthcheck_url: &Uri,
   app_client: &AppClient,
 ) -> bool {
-  let healthcheck_host = healthcheck_url.host().expect("uri has no host");
-  let healthcheck_port = healthcheck_url.port_u16().unwrap_or(80);
-  let healthcheck_addr = format!("{}:{}", healthcheck_host, healthcheck_port);
-
   log::info!(
     "Health check - Starting for contained app at: {}",
     healthcheck_url.to_string()
   );
 
-  let mut sender = None;
-  let mut conn = None;
-
   while !goaway_received.load(std::sync::atomic::Ordering::Acquire) {
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    if sender.is_none() || conn.is_none() {
-      match create_connection(&healthcheck_addr).await {
-        Ok((s, c)) => {
-          sender = Some(s);
-          conn = Some(tokio::task::spawn(async move {
-            if let Err(err) = c.await {
-              log::error!("Health check - Connection failed: {}", err);
-            }
-          }));
-        }
-        Err(_) => {
-          continue;
-        }
-      }
-    }
-
-    let usable_sender = sender.as_mut().unwrap();
-
-    if usable_sender.ready().await.is_err() {
-      // The connection has errored
-      sender.take();
-      conn.take();
-      continue;
-    }
-
-    let res = send_request(usable_sender).await;
-
-    if let Some(res) = res {
-      let (parts, _) = res.into_parts();
-      if parts.status == hyper::StatusCode::OK {
+    match send_healthcheck(app_client, healthcheck_url).await {
+      Ok(_) => {
         log::info!("Health check - Complete - Success");
         return true;
-      } else {
-        log::debug!("Health check - Failed: {:?}\nHeaders:", parts.status);
-        for header in parts.headers.iter() {
-          log::debug!("  {}: {}", header.0, header.1.to_str().unwrap());
-        }
       }
-    } else {
-      // The connection errored with a non-HTTP error
-      sender.take();
-      conn.take();
+      Err(_) => {
+        log::debug!("Health check - Failed");
+      }
     }
   }
 
@@ -179,11 +95,12 @@ mod tests {
   use super::*;
 
   use httpmock::{Method::GET, MockServer};
-  use tokio::time::timeout;
-  use tokio_test::assert_err;
 
   use std::{
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+      atomic::{AtomicBool, AtomicUsize, Ordering},
+      Arc,
+    },
     time::Duration,
   };
 
@@ -210,11 +127,15 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_health_check_contained_app_success() {
+  async fn test_health_check_contained_app_success_immediate() {
     // Start app server
     let mock_app_server = MockServer::start();
     let mock_app_healthcheck = mock_app_server.mock(|when, then| {
       when.method(GET).path("/health");
+      then.status(200).body("OK");
+    });
+    let mock_app_root = mock_app_server.mock(|when, then| {
+      when.method(GET).path("/");
       then.status(200).body("OK");
     });
     let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
@@ -224,12 +145,71 @@ mod tests {
     let app_client = setup_app_client();
 
     // Act
+    let start = std::time::Instant::now();
     let result =
       health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
-    assert!(result, "Health check failed");
+    let duration = start.elapsed();
 
-    // Assert app server's healthcheck endpoint got called
-    mock_app_healthcheck.assert();
+    // Assert
+    assert!(result, "Health check failed");
+    mock_app_healthcheck.assert_hits(1);
+    mock_app_root.assert_hits(0);
+    assert!(
+      duration <= std::time::Duration::from_secs(1),
+      "Connection should take at most 1 seconds, took: {:?}",
+      duration
+    );
+  }
+
+  #[tokio::test]
+  async fn test_health_check_contained_app_success_delayed_ok() {
+    // Start app server
+    let mock_app_server = wiremock::MockServer::start().await;
+
+    // Arrange the behaviour of the MockServer adding a Mock:
+    // when it receives a GET request on '/hello' it will respond with a 200.
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_clone = Arc::clone(&hits);
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+      .and(wiremock::matchers::path("/health"))
+      .respond_with(move |_request: &'_ wiremock::Request| {
+        // Increment the hit count
+        hits_clone.fetch_add(1, Ordering::SeqCst);
+
+        // Do not respond with healthy until we have hit the healthcheck endpoint 400 times
+        if hits_clone.load(Ordering::SeqCst) <= 400 {
+          wiremock::ResponseTemplate::new(404).set_body_raw("Not Yet", "text/plain")
+        } else {
+          wiremock::ResponseTemplate::new(200).set_body_raw("OK", "text/plain")
+        }
+      })
+      .expect(401)
+      .mount(&mock_app_server)
+      .await;
+
+    let mock_app_healthcheck_url: Uri =
+      format!("{}/health", mock_app_server.uri()).parse().unwrap();
+    let goaway_received = Arc::new(AtomicBool::new(false));
+    let app_client = setup_app_client();
+
+    // Act
+    let start = std::time::Instant::now();
+    let result =
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
+    let duration = start.elapsed();
+
+    // Assert
+    assert!(result, "Health check failed");
+    assert!(
+      duration >= std::time::Duration::from_secs(4),
+      "Connection should take at least 4 seconds, took: {:?}",
+      duration
+    );
+    assert!(
+      duration <= std::time::Duration::from_secs(6),
+      "Connection should take at most 6 seconds, took: {:?}",
+      duration
+    );
   }
 
   #[tokio::test]
@@ -239,16 +219,20 @@ mod tests {
     let goaway_received = Arc::new(AtomicBool::new(false));
     let app_client = setup_app_client();
 
+    // Setup async firing of goaway
+    let goaway_received_clone = Arc::clone(&goaway_received);
+    tokio::spawn(async move {
+      tokio::time::sleep(Duration::from_secs(2)).await;
+      goaway_received_clone.store(true, std::sync::atomic::Ordering::Release);
+    });
+
     // Act
     let start = std::time::Instant::now();
-    let result = timeout(
-      Duration::from_secs(2),
-      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client),
-    )
-    .await;
+    let result =
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
     let duration = start.elapsed();
 
-    assert_err!(result, "Health check should fail");
+    assert_eq!(result, false, "Health check should fail");
     assert!(
       duration >= std::time::Duration::from_secs(2),
       "Connection should take at least 2 seconds"
@@ -265,16 +249,20 @@ mod tests {
     let goaway_received = Arc::new(AtomicBool::new(false));
     let app_client = setup_app_client();
 
+    // Setup async firing of goaway
+    let goaway_received_clone = Arc::clone(&goaway_received);
+    tokio::spawn(async move {
+      tokio::time::sleep(Duration::from_secs(2)).await;
+      goaway_received_clone.store(true, std::sync::atomic::Ordering::Release);
+    });
+
     // Act
     let start = std::time::Instant::now();
-    let result = timeout(
-      Duration::from_secs(2),
-      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client),
-    )
-    .await;
+    let result =
+      health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
     let duration = start.elapsed();
 
-    assert_err!(result, "Health check should fail");
+    assert_eq!(result, false, "Health check should fail");
     assert!(
       duration >= std::time::Duration::from_secs(2),
       "Connection should take at least 2 seconds"
