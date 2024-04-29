@@ -16,9 +16,13 @@ pub mod test_mock_router {
 
   #[derive(Clone, Copy, PartialEq)]
   pub enum RequestMethod {
-    GET,
-    POST,
-    POST_ECHO
+    Get,
+    GetQuerySimple,
+    GetQueryEncoded,
+    GetQueryUnencodedBrackets,
+    GetQueryRepeated,
+    PostSimple,
+    PostEcho
   }
 
   #[derive(Clone, Copy)]
@@ -77,7 +81,7 @@ pub mod test_mock_router {
               panic!("Panic! Response from extension");
             }
 
-            if params.request_method == RequestMethod::POST_ECHO
+            if params.request_method == RequestMethod::PostEcho
               && params.channel_panic_request_to_extension_before_start_on_count >= 0
               && request_count > params.channel_panic_request_to_extension_before_start_on_count as usize {
               // Read the bytes
@@ -125,15 +129,27 @@ pub mod test_mock_router {
             }
 
             // Send static request to extension
-            if params.request_method == RequestMethod::POST {
+            if params.request_method == RequestMethod::PostSimple {
               let data = b"POST /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\nHELLO WORLD";
               tx.write_all(data).await.unwrap();
-            } else if params.request_method == RequestMethod::POST_ECHO {
+            } else if params.request_method == RequestMethod::PostEcho {
               let data = b"POST /bananas_echo HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
 
               let data = "a".repeat(10 * 1024);
               tx.write_all(data.as_bytes()).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQuerySimple {
+              let data = b"GET /bananas_query_simple?cat=dog&frog=log HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQueryRepeated {
+              let data = b"GET /bananas_query_repeated?cat=dog&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQueryEncoded {
+              let data = b"GET /bananas_query_encoded?cat=dog%25&cat=%22log%22&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetQueryUnencodedBrackets {
+              let data = b"GET /bananas_query_unencoded_brackets?cat=[dog]&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
             } else {
               let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
