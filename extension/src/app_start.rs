@@ -116,7 +116,7 @@ mod tests {
   fn setup_app_client() -> Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>, Error>>>>
   {
     let mut http_connector = HttpConnector::new();
-    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
+    http_connector.set_connect_timeout(Some(Duration::from_millis(500)));
     http_connector.set_nodelay(true);
     Client::builder(TokioExecutor::new())
       .pool_idle_timeout(Duration::from_secs(5))

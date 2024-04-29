@@ -159,7 +159,7 @@ async fn async_main(options: Options) -> Result<()> {
     .expect("healthcheck url with port should always be valid");
 
   let mut http_connector = HttpConnector::new();
-  http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
+  http_connector.set_connect_timeout(Some(Duration::from_millis(500)));
   http_connector.set_nodelay(true);
   let app_client = Client::builder(TokioExecutor::new())
     .pool_idle_timeout(Duration::from_secs(5))
