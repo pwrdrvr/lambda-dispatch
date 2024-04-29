@@ -41,19 +41,19 @@ impl Stream for TcpStream {}
 pub type AppClient = Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>>>>>;
 
 #[derive(Clone)]
-pub struct LambdaService<'a> {
+pub struct LambdaService {
   options: Options,
   initialized: Arc<AtomicBool>,
   healthcheck_url: Uri,
-  app_client: &'a AppClient,
+  app_client: AppClient,
 }
 
-impl<'a> LambdaService<'a> {
+impl LambdaService {
   pub fn new(
     options: Options,
     initialized: Arc<AtomicBool>,
     healthcheck_url: Uri,
-    app_client: &'a AppClient,
+    app_client: AppClient,
   ) -> Self {
     LambdaService {
       options,
@@ -253,10 +253,10 @@ impl<'a> LambdaService<'a> {
 }
 
 // Tower.Service is the interface required by lambda_runtime::run
-impl<'a> Service<LambdaEvent<WaiterRequest>> for LambdaService<'a> {
+impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
   type Response = WaiterResponse;
   type Error = Error;
-  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>;
+  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
   fn poll_ready(
     &mut self,
@@ -345,7 +345,7 @@ mod tests {
       options,
       Arc::new(AtomicBool::new(initialized)),
       "localhost:54321".parse().unwrap(),
-      &app_client,
+      app_client,
     );
 
     // Ensure the service is ready
@@ -417,7 +417,7 @@ mod tests {
       options,
       Arc::new(AtomicBool::new(initialized)),
       "localhost:54321".parse().unwrap(),
-      &app_client,
+      app_client,
     );
 
     // Ensure the service is ready
@@ -481,7 +481,7 @@ mod tests {
       Arc::new(AtomicBool::new(initialized)),
       // blackhole the healthcheck
       "http://192.0.2.0:54321/health".parse().unwrap(),
-      &app_client,
+      app_client,
     );
     let mut context = lambda_runtime::Context::default();
     context.deadline = current_time_millis() + 60 * 1000;
@@ -552,7 +552,7 @@ mod tests {
       options,
       Arc::new(AtomicBool::new(initialized)),
       mock_app_healthcheck_url,
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -677,7 +677,7 @@ mod tests {
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       format!("http://192.0.2.0:{}/health", port).parse().unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -731,7 +731,7 @@ mod tests {
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -774,7 +774,7 @@ mod tests {
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -818,7 +818,7 @@ mod tests {
       Arc::new(AtomicBool::new(initialized)),
       // 192.0.2.0/24 (TEST-NET-1)
       "http://192.0.2.0:54321/health".parse().unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -919,7 +919,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1025,7 +1025,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1131,7 +1131,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1230,7 +1230,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1335,7 +1335,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1440,7 +1440,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1523,7 +1523,7 @@ mod tests {
       Arc::new(AtomicBool::new(initialized)),
       // Healthcheck is not called in this test
       "http://192.0.2.0:54321/health".parse().unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
@@ -1635,7 +1635,7 @@ mod tests {
       format!("{}/health", mock_app_server.base_url())
         .parse()
         .unwrap(),
-      &app_client,
+      app_client,
     );
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
