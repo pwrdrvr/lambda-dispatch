@@ -2,7 +2,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 
 use crate::endpoint::Endpoint;
-use crate::prelude::*;
+use crate::lambda_request_error::LambdaRequestError;
 use hyper::body::Body;
 use hyper::header::HeaderName;
 use hyper::Uri;
@@ -14,7 +14,7 @@ pub async fn read_until_req_headers(
   pool_id: &str,
   lambda_id: &str,
   channel_id: &str,
-) -> Result<(hyper::http::request::Builder, bool, Vec<u8>)> {
+) -> Result<(hyper::http::request::Builder, bool, Vec<u8>), LambdaRequestError> {
   let mut buf = Vec::<u8>::with_capacity(32 * 1024);
 
   while let Some(chunk) =
@@ -24,8 +24,27 @@ pub async fn read_until_req_headers(
     let mut req = httparse::Request::new(&mut inc_rec_headers);
 
     // Read and collect the response body
-    let data = chunk?.into_data().unwrap();
-    buf.extend_from_slice(&data);
+    let chunk = match chunk {
+      Ok(value) => value,
+      Err(e) => {
+        log::error!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {}, - Error reading from res_stream: {:?}",
+          pool_id,
+          lambda_id,
+          channel_id,
+          e
+        );
+        return Err(LambdaRequestError::RouterConnectionError);
+      }
+    };
+    let chunk_data = match chunk.data_ref() {
+      Some(data) => data,
+      None => {
+        // Not a data frame
+        continue;
+      }
+    };
+    buf.extend_from_slice(chunk_data);
 
     // Try to parse the headers
     match req.parse(&buf) {
@@ -58,10 +77,28 @@ pub async fn read_until_req_headers(
         // Write the headers to the request
         let app_req_headers = app_req_bld.headers_mut().unwrap();
         for header in req.headers {
-          let header_name = HeaderName::from_str(header.name)?;
+          let header_name = HeaderName::from_str(header.name).map_err(|e| {
+            log::error!(
+              "PoolId: {}, LambdaId: {}, ChannelId: {}, - Failed to parse header name: {}",
+              pool_id,
+              lambda_id,
+              channel_id,
+              e
+            );
+            LambdaRequestError::ChannelErrorOther
+          })?;
           app_req_headers.insert(
             header_name,
-            hyper::header::HeaderValue::from_bytes(header.value).unwrap(),
+            hyper::header::HeaderValue::from_bytes(header.value).map_err(|e| {
+              log::error!(
+                "PoolId: {}, LambdaId: {}, ChannelId: {}, - Failed to parse header value: {}",
+                pool_id,
+                lambda_id,
+                channel_id,
+                e,
+              );
+              LambdaRequestError::ChannelErrorOther
+            })?,
           );
         }
 
@@ -71,19 +108,26 @@ pub async fn read_until_req_headers(
         log::debug!("Partial header received, waiting for more data");
       }
       Err(e) => {
-        Err(anyhow::anyhow!("Failed to parse headers: {:?}", e))?;
+        log::error!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {}, - Failed to parse request headers: {}",
+          pool_id,
+          lambda_id,
+          channel_id,
+          e
+        );
+        return Err(LambdaRequestError::ChannelErrorOther);
       }
     }
   }
 
-  Err(anyhow::anyhow!("Failed to get a request"))
+  return Err(LambdaRequestError::RouterConnectionError);
 }
 
 #[cfg(test)]
 mod tests {
   use std::{sync::Arc, time::SystemTime};
 
-  use crate::connect_to_router;
+  use crate::router_client::create_router_client;
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
 
   use super::*;
@@ -147,24 +191,11 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
     // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
-    let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+    let (_tx, recv) = mpsc::channel::<crate::prelude::Result<Frame<Bytes>>>(32 * 1024);
     let boxed_body = BodyExt::boxed(StreamBody::new(recv));
     let req = Request::builder()
       .uri(&channel_url)
@@ -182,15 +213,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    //
-    // Make the request to the router
-    //
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
@@ -275,24 +298,10 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
-    let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+    let (_tx, recv) = mpsc::channel::<crate::prelude::Result<Frame<Bytes>>>(32 * 1024);
     let boxed_body = BodyExt::boxed(StreamBody::new(recv));
     let req = Request::builder()
       .uri(&channel_url)
@@ -310,15 +319,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    //
-    // Make the request to the router
-    //
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
@@ -412,24 +413,10 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
-    let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+    let (_tx, recv) = mpsc::channel::<crate::prelude::Result<Frame<Bytes>>>(32 * 1024);
     let boxed_body = BodyExt::boxed(StreamBody::new(recv));
     let req = Request::builder()
       .uri(&channel_url)
@@ -447,13 +434,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    // Make the request to the router
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     // Blow up the mock router server
@@ -553,24 +534,10 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
-    let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+    let (_tx, recv) = mpsc::channel::<crate::prelude::Result<Frame<Bytes>>>(32 * 1024);
     let boxed_body = BodyExt::boxed(StreamBody::new(recv));
     let req = Request::builder()
       .uri(&channel_url)
@@ -588,13 +555,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    // Make the request to the router
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     // Release the request after a few seconds

@@ -1,4 +1,4 @@
-use crate::{lambda_request_error::LambdaRequestError, lambda_service::AppClient, prelude::*};
+use crate::{app_client::AppClient, lambda_request_error::LambdaRequestError, prelude::*};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;

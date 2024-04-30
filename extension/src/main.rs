@@ -3,24 +3,21 @@
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use hyper::Uri;
-use hyper_util::client::legacy::connect::HttpConnector;
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::{TokioExecutor, TokioTimer};
 use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::timeout;
 
+use crate::app_client::create_app_client;
 use crate::lambda_service::LambdaService;
 use crate::options::{Options, Runtime};
 use crate::prelude::*;
 
+mod app_client;
 mod app_request;
 mod app_start;
 mod cert;
-mod connect_to_router;
 mod counter_drop;
 mod endpoint;
 mod lambda_request;
@@ -32,6 +29,7 @@ mod ping;
 pub mod prelude;
 mod relay;
 mod router_channel;
+mod router_client;
 mod threads;
 mod time;
 mod utils;
@@ -158,15 +156,7 @@ async fn async_main(options: Options) -> Result<()> {
     .parse()
     .expect("healthcheck url with port should always be valid");
 
-  let mut http_connector = HttpConnector::new();
-  http_connector.set_connect_timeout(Some(Duration::from_millis(500)));
-  http_connector.set_nodelay(true);
-  let app_client = Client::builder(TokioExecutor::new())
-    .pool_idle_timeout(Duration::from_secs(5))
-    .pool_max_idle_per_host(100)
-    .pool_timer(TokioTimer::new())
-    .retry_canceled_requests(false)
-    .build(http_connector);
+  let app_client = create_app_client();
 
   // Wait for the contained app to be ready
   let initialized = if options.async_init {

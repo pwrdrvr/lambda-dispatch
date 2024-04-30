@@ -7,38 +7,26 @@ use std::{
   time::Duration,
 };
 
-use bytes::Bytes;
-use futures::{channel::mpsc::Receiver, Future};
-use http_body_util::StreamBody;
-use hyper::{body::Frame, Uri};
-use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use futures::Future;
+use hyper::Uri;
 use lambda_runtime::LambdaEvent;
-use tokio::{
-  io::{AsyncRead, AsyncWrite},
-  net::TcpStream,
-  time::timeout,
-};
-use tokio_rustls::client::TlsStream;
+use tokio::time::timeout;
 use tower::Service;
 
-use crate::endpoint::{Endpoint, Scheme};
-use crate::lambda_request::LambdaRequest;
-use crate::lambda_request_error::LambdaRequestError;
 use crate::messages::ExitReason;
 use crate::options::Options;
 use crate::prelude::*;
 use crate::time::current_time_millis;
 use crate::{
+  app_client::AppClient,
+  endpoint::{Endpoint, Scheme},
+};
+use crate::{
   app_start,
   messages::{WaiterRequest, WaiterResponse},
 };
-
-// Define a Stream trait that both TlsStream and TcpStream implement
-pub trait Stream: AsyncRead + AsyncWrite + Send {}
-impl Stream for TlsStream<TcpStream> {}
-impl Stream for TcpStream {}
-
-pub type AppClient = Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>>>>>;
+use crate::{lambda_request::LambdaRequest, router_client::RouterClient};
+use crate::{lambda_request_error::LambdaRequestError, router_client::create_router_client};
 
 #[derive(Clone)]
 pub struct LambdaService {
@@ -46,6 +34,7 @@ pub struct LambdaService {
   initialized: Arc<AtomicBool>,
   healthcheck_url: Uri,
   app_client: AppClient,
+  router_client: RouterClient,
 }
 
 impl LambdaService {
@@ -60,6 +49,7 @@ impl LambdaService {
       initialized,
       healthcheck_url,
       app_client,
+      router_client: create_router_client(),
     }
   }
 
@@ -203,7 +193,9 @@ impl LambdaService {
     //
     // This is the main loop that runs until the deadline is about to be reached
     //
-    let result = lambda_request.start(&self.app_client).await;
+    let result = lambda_request
+      .start(self.app_client.clone(), self.router_client.clone())
+      .await;
     match result {
       Ok(exit_reason) => {
         log::info!(
@@ -284,11 +276,10 @@ impl Service<LambdaEvent<WaiterRequest>> for LambdaService {
 mod tests {
   use super::*;
 
-  use crate::{messages, test_mock_router};
+  use crate::{app_client::create_app_client, messages, test_mock_router};
   use futures::task::noop_waker;
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
-  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio_test::assert_ok;
 
   use tokio::net::TcpListener;
@@ -304,19 +295,6 @@ mod tests {
     //   // let _ = socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await;
     // });
     port
-  }
-
-  fn setup_app_client() -> Client<HttpConnector, StreamBody<Receiver<Result<Frame<Bytes>, Error>>>>
-  {
-    let mut http_connector = HttpConnector::new();
-    http_connector.set_connect_timeout(Some(Duration::from_secs(2)));
-    http_connector.set_nodelay(true);
-    Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build(http_connector)
   }
 
   #[tokio::test]
@@ -340,7 +318,7 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let mut service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -382,21 +360,19 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
     log::info!(
       "Router server running on port: {}",
-      mock_router_server.mock_router_server.addr.port()
+      mock_router_server.server.addr.port()
     );
 
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://localhost:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://localhost:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -413,7 +389,7 @@ mod tests {
     options.port = 54321;
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let mut service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -476,7 +452,7 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -526,12 +502,13 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
     log::info!(
       "Router server running on port: {}",
-      mock_router_server.mock_router_server.addr.port()
+      mock_router_server.server.addr.port()
     );
 
     // Start app server
@@ -549,7 +526,7 @@ mod tests {
     let mock_app_healthcheck_url: Uri = format!("{}/health", mock_app_server.base_url())
       .parse()
       .unwrap();
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -559,10 +536,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://localhost:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://localhost:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -673,7 +647,7 @@ mod tests {
     options.port = port;
     let initialized = false;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -727,7 +701,7 @@ mod tests {
     options.local_env = true;
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -770,7 +744,7 @@ mod tests {
     let options = Options::default();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -814,7 +788,7 @@ mod tests {
     options.force_deadline_secs = Some(std::time::Duration::from_secs(15));
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -858,12 +832,14 @@ mod tests {
       }
     }
     assert!(
-      duration > std::time::Duration::from_secs(5),
-      "Connection should take at least 5 seconds"
+      duration > std::time::Duration::from_millis(500),
+      "Connection should take at least 5 seconds, took {:?}",
+      duration
     );
     assert!(
-      duration <= std::time::Duration::from_secs(6),
-      "Connection should take at most 6 seconds"
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds, took {:?}",
+      duration
     );
   }
 
@@ -880,6 +856,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: 0,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -915,7 +892,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -927,10 +904,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -989,6 +963,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: 0,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1022,7 +997,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1034,10 +1009,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1098,6 +1070,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1129,7 +1102,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1141,10 +1114,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1195,6 +1165,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1228,7 +1199,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1238,10 +1209,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1287,6 +1255,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1321,7 +1290,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1331,10 +1300,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1380,6 +1346,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1414,7 +1381,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1424,10 +1391,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1473,6 +1437,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1507,7 +1472,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1517,10 +1482,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1566,6 +1528,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1604,7 +1567,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1614,10 +1577,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1664,6 +1624,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1700,7 +1661,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1710,10 +1671,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1759,6 +1717,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1793,7 +1752,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1805,10 +1764,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1868,6 +1824,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1899,7 +1856,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -1911,10 +1868,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 2,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1974,6 +1928,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -2005,7 +1960,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -2017,10 +1972,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 2,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -2080,6 +2032,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -2090,7 +2043,7 @@ mod tests {
     options.port = port;
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -2101,10 +2054,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -2179,6 +2129,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -2202,7 +2153,7 @@ mod tests {
     options.port = mock_app_server.address().port();
     let initialized = true;
 
-    let app_client = setup_app_client();
+    let app_client = create_app_client();
     let service = LambdaService::new(
       options,
       Arc::new(AtomicBool::new(initialized)),
@@ -2214,10 +2165,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,

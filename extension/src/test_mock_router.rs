@@ -1,8 +1,8 @@
 #[cfg(test)]
 pub mod test_mock_router {
-  use std::sync::{atomic::AtomicUsize, Arc};
+  use std::{fmt, sync::{atomic::AtomicUsize, Arc}};
 
-  use crate::test_http2_server::test_http2_server::{run_http2_app, Serve};
+  use crate::test_http2_server::test_http2_server::{run_http2_app, run_http2_tls_app, Serve};
   use axum::{
     extract::Path,
     response::Response,
@@ -22,8 +22,25 @@ pub mod test_mock_router {
     GetQueryUnencodedBrackets,
     GetQueryRepeated,
     PostSimple,
-    PostEcho
+    PostEcho,
+    GetGoAwayOnBody,
+    GetInvalidHeaders
   }
+
+  #[derive(Clone, Copy, PartialEq)]
+  pub enum ListenerType {
+    Http,
+    Https,
+  }
+
+  impl fmt::Display for ListenerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            ListenerType::Http => write!(f, "http"),
+            ListenerType::Https => write!(f, "https"),
+        }
+    }
+}
 
   #[derive(Clone, Copy)]
   pub struct RouterParams {
@@ -35,6 +52,7 @@ pub mod test_mock_router {
     pub channel_panic_request_to_extension_before_close: bool,
     pub ping_panic_after_count: isize,
     pub request_method: RequestMethod,
+    pub listener_type: ListenerType,
   }
 
   pub struct RouterResult {
@@ -42,7 +60,7 @@ pub mod test_mock_router {
     pub request_count: Arc<AtomicUsize>,
     pub ping_count: Arc<AtomicUsize>,
     pub close_count: Arc<AtomicUsize>,
-    pub mock_router_server: Serve,
+    pub server: Serve,
   }
 
   pub fn setup_router(params: RouterParams) -> RouterResult {
@@ -150,7 +168,13 @@ pub mod test_mock_router {
             } else if params.request_method == RequestMethod::GetQueryUnencodedBrackets {
               let data = b"GET /bananas_query_unencoded_brackets?cat=[dog]&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
-            } else {
+            } else if params.request_method == RequestMethod::GetGoAwayOnBody {
+              let data = b"GET /_lambda_dispatch/goaway HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetInvalidHeaders {
+              let data = b"GET /bananas/invalid_headers HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n:\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            }else {
               let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
 
@@ -216,14 +240,17 @@ pub mod test_mock_router {
       }),
     );
 
-    let mock_router_server = run_http2_app(app);
+    let mock_router_server = match params.listener_type {
+      ListenerType::Http => run_http2_app(app),
+      ListenerType::Https => run_http2_tls_app(app),
+    };
 
     RouterResult {
       release_request_tx,
       request_count,
       ping_count,
       close_count,
-      mock_router_server,
+      server: mock_router_server,
     }
   }
 }

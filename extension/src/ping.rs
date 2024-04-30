@@ -8,17 +8,16 @@ use std::{
 };
 
 use futures::{channel::mpsc, SinkExt};
-use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
+use http_body_util::{BodyExt, StreamBody};
 use httpdate::fmt_http_date;
 use hyper::{
   body::{Bytes, Frame},
-  client::conn::http2::SendRequest,
   Request, StatusCode,
 };
 
-use crate::prelude::*;
 use crate::time;
 use crate::{endpoint::Endpoint, messages};
+use crate::{prelude::*, router_client::RouterClient};
 
 #[derive(PartialEq, Debug)]
 pub enum PingResult {
@@ -50,7 +49,7 @@ impl From<PingResult> for Option<messages::ExitReason> {
 pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
-  mut sender: SendRequest<BoxBody<Bytes, Error>>,
+  router_client: RouterClient,
   pool_id: PoolId,
   lambda_id: LambdaId,
   count: Arc<AtomicUsize>,
@@ -150,22 +149,12 @@ pub async fn send_ping_requests(
       };
       let close_req = close_req.body(boxed_close_body).unwrap();
 
-      if sender.ready().await.is_err() {
-        // This gets hit when the connection for HTTP/1.1 faults
-        goaway_received.store(true, Ordering::Release);
-        ping_result.get_or_insert(PingResult::ConnectionError);
-        log::error!(
-          "Ping Loop - Router connection ready check threw error - connection has disconnected, exiting"
-        );
-        break;
-      }
-
-      let res = sender.send_request(close_req).await;
+      let router_result = router_client.request(close_req).await;
       close_tx.close().await.unwrap();
-      match res {
-        Ok(mut res) => {
+      match router_result {
+        Ok(mut router_res) => {
           // Rip through and discard so the response stream is closed
-          while res.frame().await.is_some() {}
+          while router_res.frame().await.is_some() {}
         }
         Err(err) => {
           log::error!(
@@ -200,19 +189,11 @@ pub async fn send_ping_requests(
       };
       let ping_req = ping_req.body(boxed_ping_body).unwrap();
 
-      if sender.ready().await.is_err() {
-        // This gets hit when the connection faults
-        ping_result.get_or_insert(PingResult::ConnectionError);
-        goaway_received.store(true, Ordering::Release);
-        log::error!("PoolId: {}, LambdaId: {} - Ping Loop - Connection ready check threw error - connection has disconnected, exiting", pool_id, lambda_id);
-        break;
-      }
-
-      let res = sender.send_request(ping_req).await;
+      let router_result = router_client.request(ping_req).await;
       ping_tx.close().await.unwrap();
-      match res {
-        Ok(res) => {
-          let (parts, mut res_stream) = res.into_parts();
+      match router_result {
+        Ok(router_res) => {
+          let (parts, mut res_stream) = router_res.into_parts();
 
           // Rip through and discard so the response stream is closed
           while res_stream.frame().await.is_some() {}
@@ -313,7 +294,7 @@ mod tests {
 
   use std::sync::Arc;
 
-  use crate::connect_to_router;
+  use crate::router_client::create_router_client;
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
 
   use axum::{extract::Path, routing::get, Router};
@@ -358,15 +339,6 @@ mod tests {
     let pool_id_arc: PoolId = pool_id.clone().into();
     let lambda_id_arc: LambdaId = lambda_id.clone().into();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Declare the counts
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -378,7 +350,7 @@ mod tests {
     let result = send_ping_requests(
       Arc::clone(&last_active),
       Arc::clone(&goaway_received),
-      sender,
+      create_router_client(),
       Arc::clone(&pool_id_arc),
       Arc::clone(&lambda_id_arc),
       Arc::new(std::sync::atomic::AtomicUsize::new(0)), // count is only used in log messages
@@ -461,15 +433,6 @@ mod tests {
     let pool_id_arc: PoolId = pool_id.clone().into();
     let lambda_id_arc: LambdaId = lambda_id.clone().into();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Declare the counts
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active_intial = time::current_time_millis();
@@ -482,7 +445,7 @@ mod tests {
     let result = send_ping_requests(
       Arc::clone(&last_active),
       Arc::clone(&goaway_received),
-      sender,
+      create_router_client(),
       Arc::clone(&pool_id_arc),
       Arc::clone(&lambda_id_arc),
       Arc::new(std::sync::atomic::AtomicUsize::new(0)), // count is only used in log messages
@@ -565,15 +528,6 @@ mod tests {
     let pool_id_arc: PoolId = pool_id.clone().into();
     let lambda_id_arc: LambdaId = lambda_id.clone().into();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Declare the counts
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active_intial = time::current_time_millis();
@@ -596,7 +550,7 @@ mod tests {
     let result = send_ping_requests(
       Arc::clone(&last_active),
       Arc::clone(&goaway_received),
-      sender,
+      create_router_client(),
       Arc::clone(&pool_id_arc),
       Arc::clone(&lambda_id_arc),
       Arc::new(std::sync::atomic::AtomicUsize::new(0)), // count is only used in log messages
@@ -702,15 +656,6 @@ mod tests {
     let pool_id_arc: PoolId = pool_id.clone().into();
     let lambda_id_arc: LambdaId = lambda_id.clone().into();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Declare the counts
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active_intial = time::current_time_millis();
@@ -733,7 +678,7 @@ mod tests {
     let result = send_ping_requests(
       Arc::clone(&last_active),
       Arc::clone(&goaway_received),
-      sender,
+      create_router_client(),
       Arc::clone(&pool_id_arc),
       Arc::clone(&lambda_id_arc),
       Arc::new(std::sync::atomic::AtomicUsize::new(0)), // count is only used in log messages
@@ -812,15 +757,6 @@ mod tests {
     let pool_id_arc: PoolId = pool_id.clone().into();
     let lambda_id_arc: LambdaId = lambda_id.clone().into();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Declare the counts
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let last_active_intial = time::current_time_millis();
@@ -832,11 +768,13 @@ mod tests {
     let cancel_token = tokio_util::sync::CancellationToken::new();
     let deadline_ms = time::current_time_millis() + 30000;
 
+    let router_client = create_router_client();
+
     // Act
     let result = send_ping_requests(
       Arc::clone(&last_active),
       Arc::clone(&goaway_received),
-      sender,
+      router_client.clone(),
       Arc::clone(&pool_id_arc),
       Arc::clone(&lambda_id_arc),
       Arc::new(std::sync::atomic::AtomicUsize::new(0)), // count is only used in log messages
