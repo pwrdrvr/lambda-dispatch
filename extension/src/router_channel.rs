@@ -154,8 +154,8 @@ impl RouterChannel {
     let mut channel_result = None;
 
     // Create the router request
-    let (mut tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
-    let boxed_body = BodyExt::boxed(StreamBody::new(recv));
+    let (mut router_tx, router_recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
+    let boxed_body = BodyExt::boxed(StreamBody::new(router_recv));
     let router_request = Request::builder()
       .uri(&self.channel_url)
       .method("POST")
@@ -204,7 +204,7 @@ impl RouterChannel {
           .goaway_received
           .store(true, std::sync::atomic::Ordering::Release);
       }
-      tx.close().await.unwrap_or(());
+      router_tx.close().await.unwrap_or(());
       return Ok(Some(ChannelResult::GoAwayReceived));
     }
 
@@ -276,7 +276,7 @@ impl RouterChannel {
           .goaway_received
           .store(true, std::sync::atomic::Ordering::Release);
       }
-      tx.close().await.unwrap_or(());
+      router_tx.close().await.unwrap_or(());
       return Ok(channel_result);
     }
 
@@ -323,7 +323,6 @@ impl RouterChannel {
     // request waits for tx connection to be ready.
     // https://github.com/hyperium/hyper-util/blob/5688b2733eee146a1df1fc3b5263cd2021974d9b/src/client/legacy/client.rs#L574-L576
     //
-    // FIXME: This will exit the entire channel when one request errors
     let app_res = match app_client.request(app_req).await {
       Ok(res) => res,
       Err(err) => {
@@ -399,10 +398,10 @@ impl RouterChannel {
         header_buffer.extend(header_bytes);
       } else {
         // If the header_buffer is full, send it and create a new header_buffer
-        // FIXME: This will exit the entire channel when one request errors
-        tx.send(Ok(Frame::data(header_buffer.into())))
+        router_tx
+          .send(Ok(Frame::data(header_buffer.into())))
           .await
-          .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+          .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
         header_buffer = Vec::new();
         header_buffer.extend(header_bytes);
@@ -411,10 +410,10 @@ impl RouterChannel {
 
     // End the headers
     header_buffer.extend(b"\r\n");
-    // FIXME: This will exit the entire channel when one request errors
-    tx.send(Ok(Frame::data(header_buffer.into())))
+    router_tx
+      .send(Ok(Frame::data(header_buffer.into())))
       .await
-      .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+      .map_err(|_| LambdaRequestError::ChannelErrorOther)?;
 
     let mut encoder: Option<GzEncoder<Writer<BytesMut>>> = None;
     if app_res_will_compress {
@@ -433,7 +432,7 @@ impl RouterChannel {
       Arc::clone(&self.requests_in_flight),
       app_res_stream,
       encoder,
-      tx,
+      router_tx,
     ));
 
     // Wait for both to finish
