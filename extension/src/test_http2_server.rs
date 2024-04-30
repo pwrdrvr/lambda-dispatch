@@ -127,10 +127,13 @@ pub mod test_http2_server {
                         tower_service.clone().call(request)
                       });
 
-                    if let Err(err) = hyper::server::conn::http1::Builder::new()
+                      if let Err(err) = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                      // `serve_connection_with_upgrades` is required for websockets. If you don't need
+                      // that you can use `serve_connection` instead.
                       .serve_connection(socket, hyper_service)
                       .await
                     {
+                      println!("failed to serve connection: {:#}", err);
                       log::error!("failed to serve connection: {:#}", err);
                     }
                   });
