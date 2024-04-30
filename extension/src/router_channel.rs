@@ -1,6 +1,7 @@
+use crate::app_client::AppClient;
 use crate::lambda_request_error::LambdaRequestError;
-use crate::lambda_service::AppClient;
 use crate::relay::{relay_request_to_app, relay_response_to_router};
+use crate::router_client::RouterClient;
 use crate::utils::compressable;
 use crate::{messages, prelude::*};
 
@@ -10,11 +11,10 @@ use std::time::SystemTime;
 
 use bytes::{buf::Writer, BufMut, BytesMut};
 use futures::{channel::mpsc, SinkExt};
-use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
+use http_body_util::{BodyExt, StreamBody};
 use httpdate::fmt_http_date;
 use hyper::{
   body::{Bytes, Frame},
-  client::conn::http2,
   Request, StatusCode, Uri,
 };
 
@@ -54,7 +54,6 @@ pub struct RouterChannel {
   channel_url: Uri,
   app_endpoint: Endpoint,
   channel_number: u8,
-  router_sender: http2::SendRequest<BoxBody<Bytes, Error>>,
   pool_id: PoolId,
   lambda_id: LambdaId,
   channel_id: ChannelId,
@@ -70,7 +69,6 @@ impl RouterChannel {
     router_endpoint: Endpoint,
     app_endpoint: Endpoint,
     channel_number: u8,
-    sender: http2::SendRequest<BoxBody<Bytes, Error>>,
     pool_id: PoolId,
     lambda_id: LambdaId,
     channel_id: String,
@@ -95,7 +93,6 @@ impl RouterChannel {
       channel_url,
       app_endpoint,
       channel_number,
-      router_sender: sender,
       pool_id,
       lambda_id,
       channel_id: channel_id.into(),
@@ -105,6 +102,7 @@ impl RouterChannel {
   pub async fn start(
     &mut self,
     app_client: AppClient,
+    router_client: RouterClient,
   ) -> Result<Option<ChannelResult>, LambdaRequestError> {
     let mut channel_result = None;
 
@@ -146,19 +144,14 @@ impl RouterChannel {
         self.channel_id
       );
 
-      // Bail if the router connection is not ready
-      self
-        .router_sender
-        .ready()
-        .await
-        .map_err(|_| LambdaRequestError::RouterConnectionError)?;
-
       // FIXME: This will exit the entire channel when one request errors
-      let router_response = self
-        .router_sender
-        .send_request(router_request)
-        .await
-        .map_err(|_| LambdaRequestError::RouterConnectionError)?;
+      let router_response = router_client.request(router_request).await.map_err(|err| {
+        if err.is_connect() {
+          LambdaRequestError::RouterUnreachable
+        } else {
+          LambdaRequestError::RouterConnectionError
+        }
+      })?;
       log::debug!(
         "PoolId: {}, LambdaId: {}, ChannelId: {} - got response: {:?}",
         self.pool_id,
@@ -454,9 +447,10 @@ mod tests {
   use super::*;
 
   use std::sync::Arc;
-  use std::time::Duration;
 
-  use crate::{connect_to_router, test_mock_router};
+  use crate::app_client::create_app_client;
+  use crate::router_client::create_router_client;
+  use crate::test_mock_router;
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
 
   use axum::response::Response;
@@ -465,8 +459,6 @@ mod tests {
   use futures::stream::StreamExt;
   use httpmock::{Method::GET, MockServer};
   use hyper::StatusCode;
-  use hyper_util::client::legacy::Client;
-  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio::io::AsyncWriteExt;
   use tokio_test::assert_ok;
 
@@ -538,24 +530,8 @@ mod tests {
     });
     let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
 
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
-    let app_client = Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build_http();
+    let app_client = create_app_client();
+    let router_client = create_router_client();
 
     // Declare the counts
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -573,12 +549,11 @@ mod tests {
       router_endpoint,
       app_endpoint,
       0,
-      sender,
       pool_id.into(),
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start(app_client).await;
+    let channel_start_result = channel.start(app_client, router_client).await;
 
     // Assert
     assert!(channel_start_result.is_ok(), "channel start result is ok");
@@ -695,9 +670,6 @@ mod tests {
       .parse()
       .unwrap();
 
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
     // Start app server
     let mock_app_server = MockServer::start();
     let mock_app_healthcheck = mock_app_server.mock(|when, then| {
@@ -715,27 +687,14 @@ mod tests {
     });
     let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Release the request after a few seconds
     tokio::spawn(async move {
       tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
       release_request_tx.send(()).await.unwrap();
     });
 
-    let app_client = Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build_http();
+    let app_client = create_app_client();
+    let router_client = create_router_client();
 
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -752,12 +711,11 @@ mod tests {
       router_endpoint,
       app_endpoint,
       0,
-      sender,
       pool_id.into(),
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start(app_client).await;
+    let channel_start_result = channel.start(app_client, router_client).await;
     // Assert
     assert_ok!(channel_start_result);
     assert_eq!(
@@ -867,9 +825,6 @@ mod tests {
       .parse()
       .unwrap();
 
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
     // Start app server
     let mock_app_server = MockServer::start();
     let mock_app_healthcheck = mock_app_server.mock(|when, then| {
@@ -878,27 +833,14 @@ mod tests {
     });
     let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
 
-    // Setup our connection to the router
-    let sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
-
     // Release the request after a few seconds
     tokio::spawn(async move {
       tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
       release_request_tx.send(()).await.unwrap();
     });
 
-    let app_client = Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build_http();
+    let app_client = create_app_client();
+    let router_client = create_router_client();
 
     let channel_request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let goaway_received = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -915,12 +857,11 @@ mod tests {
       router_endpoint,
       app_endpoint,
       0,
-      sender,
       pool_id.into(),
       lambda_id.into(),
       channel_id,
     );
-    let channel_start_result = channel.start(app_client).await;
+    let channel_start_result = channel.start(app_client, router_client).await;
     // Assert
     assert_ok!(channel_start_result);
     assert_eq!(

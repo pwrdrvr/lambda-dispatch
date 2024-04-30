@@ -9,14 +9,15 @@ use tokio::{
 };
 use tokio_rustls::client::TlsStream;
 
+use crate::app_client::AppClient;
 use crate::endpoint::Endpoint;
 use crate::lambda_request_error::LambdaRequestError;
-use crate::lambda_service::AppClient;
+use crate::messages;
 use crate::ping;
 use crate::prelude::*;
 use crate::router_channel::RouterChannel;
+use crate::router_client::RouterClient;
 use crate::time::current_time_millis;
-use crate::{connect_to_router, messages};
 
 // Define a Stream trait that both TlsStream and TcpStream implement
 pub trait Stream: AsyncRead + AsyncWrite + Send {}
@@ -43,6 +44,7 @@ pub struct LambdaRequest {
   pub count: Arc<AtomicUsize>,
   start_time: u64,
 }
+
 impl LambdaRequest {
   /// Create a new `LambdaRequest` task with a specified deadline.
   ///
@@ -80,24 +82,14 @@ impl LambdaRequest {
   /// Executes a task with a specified deadline.
   pub async fn start(
     &mut self,
-    app_client: &AppClient,
+    app_client: AppClient,
+    router_client: RouterClient,
   ) -> Result<messages::ExitReason, LambdaRequestError> {
-    let router_sender = match connect_to_router::connect_to_router(
-      self.router_endpoint.clone(),
-      Arc::clone(&self.pool_id),
-      Arc::clone(&self.lambda_id),
-    )
-    .await
-    {
-      Ok(sender) => sender,
-      Err(_) => return Err(LambdaRequestError::RouterUnreachable),
-    };
-
     // Send the ping requests in background
     let ping_task = tokio::task::spawn(ping::send_ping_requests(
       Arc::clone(&self.last_active),
       Arc::clone(&self.goaway_received),
-      router_sender.clone(),
+      router_client.clone(),
       Arc::clone(&self.pool_id),
       Arc::clone(&self.lambda_id),
       Arc::clone(&self.count),
@@ -121,7 +113,6 @@ impl LambdaRequest {
           self.router_endpoint.clone(),
           self.app_endpoint.clone(),
           channel_number,
-          router_sender.clone(),
           Arc::clone(&self.pool_id),
           Arc::clone(&self.lambda_id),
           uuid::Builder::from_random_bytes(self.rng.gen())
@@ -131,8 +122,11 @@ impl LambdaRequest {
         let goaway_received = Arc::clone(&self.goaway_received);
 
         let app_client = app_client.clone();
+        let router_client = router_client.clone();
         tokio::spawn(async move {
-          let result = router_channel.start(app_client).await;
+          let result = router_channel
+            .start(app_client.clone(), router_client.clone())
+            .await;
 
           // Tell the other channels to stop
           goaway_received.store(true, Ordering::Release);
@@ -234,10 +228,11 @@ impl LambdaRequest {
 
 #[cfg(test)]
 mod tests {
-  use std::time::Duration;
-
   use super::*;
 
+  use crate::app_client::create_app_client;
+  use crate::messages::ExitReason;
+  use crate::router_client::create_router_client;
   use crate::test_http2_server::test_http2_server::run_http2_app;
 
   use axum::response::Response;
@@ -248,8 +243,6 @@ mod tests {
   use httpmock::Method::GET;
   use httpmock::MockServer;
   use hyper::StatusCode;
-  use hyper_util::client::legacy::Client;
-  use hyper_util::rt::{TokioExecutor, TokioTimer};
   use tokio::io::AsyncWriteExt;
 
   #[tokio::test]
@@ -264,35 +257,35 @@ mod tests {
       current_time_millis() + 60 * 1000,
     );
 
-    let app_client = Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build_http();
+    let app_client = create_app_client();
+    let router_client = create_router_client();
 
     // Act
     let start = std::time::Instant::now();
-    let result = lambda_request.start(&app_client).await;
+    let result = lambda_request
+      .start(app_client.clone(), router_client.clone())
+      .await;
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert
-    if let Err(err) = result {
+    if let Ok(exit_reason) = result {
       assert_eq!(
-        err,
-        LambdaRequestError::RouterUnreachable,
+        exit_reason,
+        ExitReason::RouterUnreachable,
         "Expected LambdaRequestError::RouterUnreachable"
       );
     } else {
-      assert!(false, "Expected an error result");
+      assert!(false, "Expected Ok with ExitReason");
     }
     assert!(
-      duration > std::time::Duration::from_secs(5),
-      "Connection should take at least 5 seconds"
+      duration > std::time::Duration::from_millis(500),
+      "Connection should take at least 500 ms, took: {:?}",
+      duration
     );
     assert!(
-      duration <= std::time::Duration::from_secs(6),
-      "Connection should take at most 6 seconds"
+      duration <= std::time::Duration::from_secs(2),
+      "Connection should take at most 2 seconds, took: {:?}",
+      duration
     );
   }
 
@@ -443,16 +436,12 @@ mod tests {
       release_request_tx.send(()).await.unwrap();
     });
 
-    let app_client = Client::builder(TokioExecutor::new())
-      .pool_idle_timeout(Duration::from_secs(5))
-      .pool_max_idle_per_host(100)
-      .pool_timer(TokioTimer::new())
-      .retry_canceled_requests(false)
-      .build_http();
+    let app_client = create_app_client();
+    let router_client = create_router_client();
 
     // Act
     let start = std::time::Instant::now();
-    let result = lambda_request.start(&app_client).await;
+    let result = lambda_request.start(app_client, router_client).await;
     let duration = std::time::Instant::now().duration_since(start);
 
     // Assert

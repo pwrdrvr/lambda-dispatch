@@ -83,7 +83,7 @@ pub async fn read_until_req_headers(
 mod tests {
   use std::{sync::Arc, time::SystemTime};
 
-  use crate::connect_to_router;
+  use crate::router_client::create_router_client;
   use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
 
   use super::*;
@@ -147,21 +147,8 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
     // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
     let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
@@ -182,15 +169,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    //
-    // Make the request to the router
-    //
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
@@ -275,21 +254,7 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
     let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
@@ -310,15 +275,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    //
-    // Make the request to the router
-    //
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
@@ -412,21 +369,7 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
     let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
@@ -447,13 +390,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    // Make the request to the router
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     // Blow up the mock router server
@@ -553,21 +490,7 @@ mod tests {
     .parse()
     .unwrap();
 
-    let router_endpoint: Endpoint = format!("http://localhost:{}", mock_router_server.addr.port())
-      .parse()
-      .unwrap();
-
-    let pool_id_arc: PoolId = pool_id.clone().into();
-    let lambda_id_arc: LambdaId = lambda_id.clone().into();
-
-    // Setup our connection to the router
-    let mut sender = connect_to_router::connect_to_router(
-      router_endpoint.clone(),
-      Arc::clone(&pool_id_arc),
-      Arc::clone(&lambda_id_arc),
-    )
-    .await
-    .unwrap();
+    let router_client = create_router_client();
 
     // Create the router request
     let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>>>(32 * 1024);
@@ -588,13 +511,7 @@ mod tests {
       .body(boxed_body)
       .unwrap();
 
-    // Make the request to the router
-    sender
-      .ready()
-      .await
-      .context("PoolId: {}, LambdaId: {}, ChannelId: {} - Router connection ready check threw error - connection has disconnected, should reconnect").unwrap();
-
-    let res = sender.send_request(req).await.unwrap();
+    let res = router_client.request(req).await.unwrap();
     let (parts, mut res_stream) = res.into_parts();
 
     // Release the request after a few seconds
