@@ -22,7 +22,9 @@ pub mod test_mock_router {
     GetQueryUnencodedBrackets,
     GetQueryRepeated,
     PostSimple,
-    PostEcho
+    PostEcho,
+    GetGoAwayOnBody,
+    GetInvalidHeaders
   }
 
   #[derive(Clone, Copy)]
@@ -42,7 +44,7 @@ pub mod test_mock_router {
     pub request_count: Arc<AtomicUsize>,
     pub ping_count: Arc<AtomicUsize>,
     pub close_count: Arc<AtomicUsize>,
-    pub mock_router_server: Serve,
+    pub server: Serve,
   }
 
   pub fn setup_router(params: RouterParams) -> RouterResult {
@@ -150,7 +152,13 @@ pub mod test_mock_router {
             } else if params.request_method == RequestMethod::GetQueryUnencodedBrackets {
               let data = b"GET /bananas_query_unencoded_brackets?cat=[dog]&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
-            } else {
+            } else if params.request_method == RequestMethod::GetGoAwayOnBody {
+              let data = b"GET /_lambda_dispatch/goaway HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetInvalidHeaders {
+              let data = b"GET /bananas/invalid_headers HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n:\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            }else {
               let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
 
@@ -223,7 +231,7 @@ pub mod test_mock_router {
       request_count,
       ping_count,
       close_count,
-      mock_router_server,
+      server: mock_router_server,
     }
   }
 }

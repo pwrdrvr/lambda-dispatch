@@ -365,16 +365,13 @@ mod tests {
 
     log::info!(
       "Router server running on port: {}",
-      mock_router_server.mock_router_server.addr.port()
+      mock_router_server.server.addr.port()
     );
 
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://localhost:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://localhost:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -509,7 +506,7 @@ mod tests {
 
     log::info!(
       "Router server running on port: {}",
-      mock_router_server.mock_router_server.addr.port()
+      mock_router_server.server.addr.port()
     );
 
     // Start app server
@@ -537,10 +534,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://localhost:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://localhost:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -907,10 +901,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1014,10 +1005,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1121,10 +1109,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1218,10 +1203,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1311,10 +1293,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1404,10 +1383,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1497,10 +1473,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1594,10 +1567,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1690,10 +1660,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1785,10 +1752,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1891,10 +1855,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 2,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -1997,10 +1958,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 2,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -2081,10 +2039,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
@@ -2194,10 +2149,7 @@ mod tests {
     let request = WaiterRequest {
       pool_id: Some("test_pool".to_string()),
       id: "test_id".to_string(),
-      router_url: format!(
-        "http://127.0.0.1:{}",
-        mock_router_server.mock_router_server.addr.port()
-      ),
+      router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
       number_of_channels: 1,
       sent_time: "2022-01-01T00:00:00Z".to_string(),
       init_only: false,
