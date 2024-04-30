@@ -37,6 +37,8 @@ pub fn create_router_client() -> RouterClient {
   let mut http_connector = HttpConnector::new();
   http_connector.set_connect_timeout(Some(Duration::from_millis(500)));
   http_connector.set_nodelay(true);
+  // Have to disable this otherwise it rejects https:// on the HttpsConnector
+  http_connector.enforce_http(false);
 
   let https = HttpsConnectorBuilder::new()
     .with_tls_config(config)
