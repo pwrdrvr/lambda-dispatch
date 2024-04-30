@@ -27,10 +27,21 @@ pub mod test_mock_router {
     GetInvalidHeaders
   }
 
-  #[derive(Clone, Copy)]
+  #[derive(Clone, Copy, PartialEq)]
   pub enum ListenerType {
     Http,
     Https,
+  }
+
+  // Allow .into on ListenerType to convert to string
+  impl Into<String> for ListenerType {
+    fn into(self) -> String {
+      match self {
+        ListenerType::Http => "http",
+        ListenerType::Https => "https",
+      }
+      .to_string()
+    }
   }
 
   #[derive(Clone, Copy)]
