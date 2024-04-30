@@ -360,6 +360,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -501,6 +502,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -854,6 +856,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: 0,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -960,6 +963,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: 0,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1066,6 +1070,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1160,6 +1165,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1249,6 +1255,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1339,6 +1346,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1429,6 +1437,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1519,6 +1528,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1614,6 +1624,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1706,6 +1717,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1812,6 +1824,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -1915,6 +1928,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -2018,6 +2032,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 
@@ -2114,6 +2129,7 @@ mod tests {
         channel_panic_request_to_extension_after_start: false,
         channel_panic_request_to_extension_before_close: false,
         ping_panic_after_count: -1,
+        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
       },
     );
 

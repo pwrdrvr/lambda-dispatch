@@ -2,7 +2,7 @@
 pub mod test_mock_router {
   use std::sync::{atomic::AtomicUsize, Arc};
 
-  use crate::test_http2_server::test_http2_server::{run_http2_app, Serve};
+  use crate::test_http2_server::test_http2_server::{run_http2_app, run_http2_tls_app, Serve};
   use axum::{
     extract::Path,
     response::Response,
@@ -28,6 +28,12 @@ pub mod test_mock_router {
   }
 
   #[derive(Clone, Copy)]
+  pub enum ListenerType {
+    Http,
+    Https,
+  }
+
+  #[derive(Clone, Copy)]
   pub struct RouterParams {
     pub channel_non_200_status_after_count: isize,
     pub channel_non_200_status_code: StatusCode,
@@ -37,6 +43,7 @@ pub mod test_mock_router {
     pub channel_panic_request_to_extension_before_close: bool,
     pub ping_panic_after_count: isize,
     pub request_method: RequestMethod,
+    pub listener_type: ListenerType,
   }
 
   pub struct RouterResult {
@@ -224,7 +231,10 @@ pub mod test_mock_router {
       }),
     );
 
-    let mock_router_server = run_http2_app(app);
+    let mock_router_server = match params.listener_type {
+      ListenerType::Http => run_http2_app(app),
+      ListenerType::Https => run_http2_tls_app(app),
+    };
 
     RouterResult {
       release_request_tx,
