@@ -50,17 +50,25 @@ pub async fn relay_request_to_app(
     futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut router_response_stream), cx))
       .await
   {
-    if chunk.is_err() {
-      log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
-                          lambda_id_clone,
-                          channel_id_clone,
-                          requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
-                          bytes_sent,
-                          chunk.err());
-      return Err(LambdaRequestError::RouterConnectionError);
-    }
+    let chunk = match chunk {
+      Ok(value) => value,
+      Err(_) => {
+        log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
+        lambda_id_clone,
+        channel_id_clone,
+        requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+        bytes_sent,
+        chunk.err());
+        return Err(LambdaRequestError::RouterConnectionError);
+      }
+    };
 
-    let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
+    let chunk_data = match chunk.data_ref() {
+      Some(data) => data,
+      None => continue,
+    };
+
+    let chunk_len = chunk_data.len();
     // If chunk_len is zero the channel has closed
     if chunk_len == 0 {
       log::debug!(
@@ -73,7 +81,7 @@ pub async fn relay_request_to_app(
       );
       break;
     }
-    match app_req_tx.send(Ok(chunk.unwrap())).await {
+    match app_req_tx.send(Ok(chunk)).await {
       Ok(_) => {}
       Err(err) => {
         log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {}",
@@ -118,18 +126,26 @@ pub async fn relay_response_to_router(
   while let Some(chunk) =
     futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut app_res_stream), cx)).await
   {
-    if chunk.is_err() {
-      log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
-            pool_id_clone,
-            lambda_id_clone,
-            channel_id_clone,
-            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
-            bytes_read,
-            chunk.err());
-      return Err(LambdaRequestError::AppConnectionError);
-    }
+    let chunk = match chunk {
+      Ok(value) => value,
+      Err(_) => {
+        log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+              pool_id_clone,
+              lambda_id_clone,
+              channel_id_clone,
+              requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+              bytes_read,
+              chunk.err());
+        return Err(LambdaRequestError::AppConnectionError);
+      }
+    };
 
-    let chunk_len = chunk.as_ref().unwrap().data_ref().unwrap().len();
+    let chunk_data = match chunk.data_ref() {
+      Some(data) => data,
+      None => continue,
+    };
+
+    let chunk_len = chunk_data.len();
     // If chunk_len is zero the response
     if chunk_len == 0 {
       break;
@@ -138,12 +154,9 @@ pub async fn relay_response_to_router(
     bytes_read += chunk_len;
 
     if let Some(ref mut encoder) = encoder {
-      let chunk_data = chunk.as_ref().unwrap().data_ref().unwrap();
-      // FIXME: This will exit the entire channel when one request errors
       encoder
         .write_all(chunk_data)
         .map_err(|_| LambdaRequestError::RouterConnectionError)?;
-      // FIXME: This will exit the entire channel when one request errors
       encoder
         .flush()
         .map_err(|_| LambdaRequestError::RouterConnectionError)?;
@@ -151,7 +164,6 @@ pub async fn relay_response_to_router(
       let writer = encoder.get_mut();
       let bytes = writer.get_mut().split().into();
 
-      // FIXME: This will exit the entire channel when one request errors
       match tx.send(Ok(Frame::data(bytes))).await {
         Ok(_) => {}
         Err(err) => {
@@ -166,8 +178,7 @@ pub async fn relay_response_to_router(
         }
       }
     } else {
-      // FIXME: This will exit the entire channel when one request errors
-      match tx.send(Ok(chunk.unwrap())).await {
+      match tx.send(Ok(chunk)).await {
         Ok(_) => {}
         Err(err) => {
           log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
@@ -184,7 +195,9 @@ pub async fn relay_response_to_router(
   }
 
   if let Some(encoder) = encoder.take() {
-    let writer = encoder.finish().unwrap();
+    let writer = encoder
+      .finish()
+      .map_err(|_| LambdaRequestError::RouterConnectionError)?;
     let bytes = writer.into_inner().into();
 
     tx.send(Ok(Frame::data(bytes)))
