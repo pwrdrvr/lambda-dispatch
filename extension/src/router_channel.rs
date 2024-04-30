@@ -176,7 +176,6 @@ impl RouterChannel {
     //
     // Make the request to the router
     //
-
     let router_response = router_client.request(router_request).await.map_err(|err| {
       if err.is_connect() {
         LambdaRequestError::RouterUnreachable
@@ -589,10 +588,13 @@ mod tests {
       },
     );
 
-    let router_endpoint: Endpoint =
-      format!("http://localhost:{}", mock_router_server.server.addr.port())
-        .parse()
-        .unwrap();
+    let router_endpoint: Endpoint = format!(
+      "{}://localhost:{}",
+      listener_type.to_string(),
+      mock_router_server.server.addr.port()
+    )
+    .parse()
+    .unwrap();
 
     // Start app server
     let mock_app_server = MockServer::start();
@@ -694,10 +696,13 @@ mod tests {
       },
     );
 
-    let router_endpoint: Endpoint =
-      format!("http://localhost:{}", mock_router_server.server.addr.port())
-        .parse()
-        .unwrap();
+    let router_endpoint: Endpoint = format!(
+      "{}://localhost:{}",
+      listener_type.to_string(),
+      mock_router_server.server.addr.port()
+    )
+    .parse()
+    .unwrap();
 
     // Start app server
     let mock_app_server = MockServer::start();
@@ -828,10 +833,13 @@ mod tests {
         listener_type,
       },
     );
-    let router_endpoint: Endpoint =
-      format!("http://localhost:{}", mock_router_server.server.addr.port())
-        .parse()
-        .unwrap();
+    let router_endpoint: Endpoint = format!(
+      "{}://localhost:{}",
+      listener_type.to_string(),
+      mock_router_server.server.addr.port()
+    )
+    .parse()
+    .unwrap();
 
     // Start app server
     let mock_app_server = MockServer::start();

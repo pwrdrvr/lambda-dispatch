@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod test_mock_router {
-  use std::sync::{atomic::AtomicUsize, Arc};
+  use std::{fmt, sync::{atomic::AtomicUsize, Arc}};
 
   use crate::test_http2_server::test_http2_server::{run_http2_app, run_http2_tls_app, Serve};
   use axum::{
@@ -33,16 +33,14 @@ pub mod test_mock_router {
     Https,
   }
 
-  // Allow .into on ListenerType to convert to string
-  impl Into<String> for ListenerType {
-    fn into(self) -> String {
-      match self {
-        ListenerType::Http => "http",
-        ListenerType::Https => "https",
-      }
-      .to_string()
+  impl fmt::Display for ListenerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            ListenerType::Http => write!(f, "http"),
+            ListenerType::Https => write!(f, "https"),
+        }
     }
-  }
+}
 
   #[derive(Clone, Copy)]
   pub struct RouterParams {
