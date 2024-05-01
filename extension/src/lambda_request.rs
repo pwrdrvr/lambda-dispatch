@@ -167,7 +167,11 @@ impl LambdaRequest {
               );
 
               if err.is_fatal() {
-                return Err(err.into());
+                // Try to clean up the ping task
+                self.cancel_token.cancel();
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(1), ping_task).await;
+
+                return Err(err);
               }
 
               // Error is not fatal so just use it as an exit reason
@@ -177,16 +181,25 @@ impl LambdaRequest {
         }
       }
       Err(err) => {
+        // try_join_all returns JoinError when one of the futures panics
+        // If a future has panicked we are probably in a bad state and should exit
         log::error!(
           "LambdaId: {} - run - Error in futures::future::try_join_all: {:?}",
           self.lambda_id,
           err
         );
-        // TODO: Capture the channel exit error and return the worst one we find
-        panic!(
-          "LambdaId: {} - run - Error in futures::future::try_join_all: {}",
-          self.lambda_id, err
-        );
+
+        // Set the goaway signal so other tasks stop
+        self.goaway_received.store(true, Ordering::Release);
+
+        // Try to clean up the ping task
+        self.cancel_token.cancel();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), ping_task).await;
+
+        // This is a bit of a lie: we don't know if the app connection is unreachable
+        // but we do know we're in an non-deteministic state and that this
+        // Lambda should exit and be recreated
+        return Err(LambdaRequestError::AppConnectionUnreachable);
       }
     }
 

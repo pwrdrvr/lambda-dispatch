@@ -461,10 +461,18 @@ impl RouterChannel {
         }
       }
       Err(err) => {
-        panic!(
-          "PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all: {}",
-          self.pool_id, self.lambda_id, self.channel_id, err
+        // try_join_all will return an error if either of the futures panics
+
+        log::error!(
+          "PoolId: {}, LambdaId: {}, ChannelId: {} - pickup-request - Error in futures::future::try_join_all: {}",
+          self.pool_id,
+          self.lambda_id,
+          self.channel_id,
+          err
         );
+
+        // We don't have details about which future failed, so we return a generic error
+        return Err(LambdaRequestError::ChannelErrorOther);
       }
     }
 
