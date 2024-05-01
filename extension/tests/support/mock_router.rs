@@ -2,8 +2,6 @@ use std::{
   fmt,
   sync::{atomic::AtomicUsize, Arc},
 };
-
-use crate::test_http2_server::{run_http2_app, run_http2_tls_app, Serve};
 use axum::{
   extract::Path,
   response::Response,
@@ -14,6 +12,8 @@ use axum_extra::body::AsyncReadBody;
 use futures::stream::StreamExt;
 use hyper::StatusCode;
 use tokio::{io::AsyncWriteExt, sync::mpsc::Sender};
+
+use crate::support::http2_server::{run_http2_app, run_http2_tls_app, Serve};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum RequestMethod {

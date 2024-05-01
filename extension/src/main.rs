@@ -9,35 +9,14 @@ use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::timeout;
 
-use crate::app_client::create_app_client;
-use crate::lambda_service::LambdaService;
-use crate::options::{Options, Runtime};
-use crate::prelude::*;
-
-mod app_client;
-mod app_request;
-mod app_start;
-mod cert;
-mod counter_drop;
-mod endpoint;
-mod lambda_request;
-mod lambda_request_error;
-mod lambda_service;
-mod messages;
-mod options;
-mod ping;
-pub mod prelude;
-mod relay;
-mod router_channel;
-mod router_client;
-mod threads;
-mod time;
-mod utils;
-
-#[cfg(test)]
-mod test_http2_server;
-#[cfg(test)]
-mod test_mock_router;
+use extension::{
+  app_client::create_app_client,
+  app_start,
+  lambda_service::LambdaService,
+  options::{Options, Runtime},
+  prelude::*,
+  threads,
+};
 
 fn main() -> Result<()> {
   env_logger::Builder::new()
