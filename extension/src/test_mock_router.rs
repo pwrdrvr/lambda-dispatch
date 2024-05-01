@@ -22,6 +22,7 @@ pub enum RequestMethod {
   GetQueryEncoded,
   GetQueryUnencodedBrackets,
   GetQueryRepeated,
+  ShutdownWithoutResponse,
   PostSimple,
   PostEcho,
   GetGoAwayOnBody,
@@ -165,8 +166,6 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                             }
                         });
 
-
-
                         // Create a channel for the stream
                         let (mut tx, rx) = tokio::io::duplex(65_536);
 
@@ -178,7 +177,13 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                             }
 
                             // Send static request to extension
-                            if params.request_method == RequestMethod::PostSimple {
+                            if params.request_method == RequestMethod::ShutdownWithoutResponse {
+                              release_request_rx.lock().await.recv().await;
+
+                              // Close the body stream
+                              tx.shutdown().await.unwrap();
+                              return;
+                            } else if params.request_method == RequestMethod::PostSimple {
                                 let data = b"POST /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\nHELLO WORLD";
                                 tx.write_all(data).await.unwrap();
                             } else if params.request_method == RequestMethod::PostEcho {
@@ -230,7 +235,7 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                                 let data = b"\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
                             } else {
-                                let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+                                let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
                                 tx.write_all(data).await.unwrap();
 
                                 if params.channel_panic_request_to_extension_after_start {

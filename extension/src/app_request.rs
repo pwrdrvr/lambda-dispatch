@@ -125,16 +125,14 @@ pub async fn read_until_req_headers(
 
 #[cfg(test)]
 mod tests {
-  use std::{sync::Arc, time::SystemTime};
+  use std::time::SystemTime;
 
+  use crate::endpoint::Endpoint;
   use crate::router_client::create_router_client;
-  use crate::{endpoint::Endpoint, test_http2_server::run_http2_app};
+  use crate::test_mock_router;
 
   use super::*;
   use axum::http::HeaderValue;
-  use axum::response::Response;
-  use axum::{extract::Path, routing::post, Router};
-  use axum_extra::body::AsyncReadBody;
   use futures::channel::mpsc;
   use http_body_util::{BodyExt, StreamBody};
   use httpdate::fmt_http_date;
@@ -144,8 +142,7 @@ mod tests {
     body::{Bytes, Frame},
     Request, Uri,
   };
-  use tokio::io::AsyncWriteExt;
-  use tokio_test::{assert_err, assert_ok};
+  use tokio_test::assert_ok;
 
   #[tokio::test]
   async fn test_read_until_req_headers_valid_req() {
@@ -154,37 +151,21 @@ mod tests {
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let app = Router::new().route(
-      "/api/chunked/request/:lambda_id/:channel_id",
-      post(
-        move |Path((_lambda_id, _channel_id)): Path<(String, String)>| {
-          let request_count = Arc::clone(&request_count_clone);
-          async move {
-            // Increment the request count
-            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-            if request_count.load(std::sync::atomic::Ordering::SeqCst) == 1 {
-              let req =
-                b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\nHELLO WORLD";
-
-              (StatusCode::OK, &req[..])
-            } else {
-              let error_message = b"Request already made";
-              (StatusCode::CONFLICT, &error_message[..])
-            }
-          }
-        },
-      ),
-    );
-
-    let mock_router_server = run_http2_app(app);
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::Get,
+      channel_non_200_status_after_count: 1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: -1,
+      listener_type: test_mock_router::ListenerType::Http,
+    });
 
     let channel_url: Uri = format!(
       "http://localhost:{}/api/chunked/request/{}/{}",
-      mock_router_server.addr.port(),
+      mock_router_server.server.addr.port(),
       lambda_id,
       channel_id
     )
@@ -249,7 +230,12 @@ mod tests {
     assert_eq!(goaway, false);
     assert_eq!(left_over_buf.is_empty(), false);
     assert_eq!(left_over_buf, b"HELLO WORLD");
-    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
   }
 
   #[tokio::test]
@@ -259,39 +245,31 @@ mod tests {
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let app = Router::new()
-      .route(
-        "/api/chunked/request/:lambda_id/:channel_id",
-        post(
-          move |Path((_lambda_id, _channel_id)): Path<(String, String)>| {
-            let request_count = Arc::clone(&request_count_clone);
-            async move {
-              // Increment the request count
-              request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::GetGoAwayOnBody,
+      channel_non_200_status_after_count: -1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: -1,
+      listener_type: test_mock_router::ListenerType::Http,
+    });
 
-              if request_count.load(std::sync::atomic::Ordering::SeqCst) == 1 {
-                let req =
-                  b"GET /_lambda_dispatch/goaway HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\nHELLO WORLD";
-
-                (StatusCode::OK, &req[..])
-              } else {
-                let error_message = b"Request already made";
-                (StatusCode::CONFLICT, &error_message[..])
-              }
-            }
-          },
-        ),
-
-      );
-
-    let mock_router_server = run_http2_app(app);
+    // Release the response before we make the request
+    // This way we get all the bytes in one chunk
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
 
     let channel_url: Uri = format!(
       "http://localhost:{}/api/chunked/request/{}/{}",
-      mock_router_server.addr.port(),
+      mock_router_server.server.addr.port(),
       lambda_id,
       channel_id
     )
@@ -351,7 +329,12 @@ mod tests {
     assert_eq!(app_req_uri, &Uri::from_static("/"));
     assert_eq!(goaway, true);
     assert_eq!(left_over_buf.is_empty(), true);
-    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
   }
 
   #[tokio::test]
@@ -361,52 +344,21 @@ mod tests {
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let app = Router::new().route(
-      "/api/chunked/request/:lambda_id/:channel_id",
-      post(
-        move |Path((_lambda_id, _channel_id)): Path<(String, String)>| {
-          let request_count = Arc::clone(&request_count_clone);
-          let release_request_rx = Arc::clone(&release_request_rx);
-
-          async move {
-            // Increment the request count
-            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-            // Create a channel for the stream
-            let (mut tx, rx) = tokio::io::duplex(65_536);
-
-            // Spawn a task to write to the stream
-            tokio::spawn(async move {
-              // Wait for the release
-              release_request_rx.lock().await.recv().await.unwrap();
-
-              // Close the stream
-              tx.shutdown().await.unwrap();
-            });
-
-            let body = AsyncReadBody::new(rx);
-
-            let response = Response::builder()
-              .header("content-type", "application/octet-stream")
-              .body(body)
-              .unwrap();
-
-            response
-          }
-        },
-      ),
-    );
-
-    let mock_router_server = run_http2_app(app);
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::ShutdownWithoutResponse,
+      channel_non_200_status_after_count: -1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: -1,
+      listener_type: test_mock_router::ListenerType::Http,
+    });
 
     let channel_url: Uri = format!(
       "http://localhost:{}/api/chunked/request/{}/{}",
-      mock_router_server.addr.port(),
+      mock_router_server.server.addr.port(),
       lambda_id,
       channel_id
     )
@@ -441,9 +393,12 @@ mod tests {
     // Release the request after a few seconds
     tokio::spawn(async move {
       tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      release_request_tx.send(()).await.unwrap();
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
     });
-
     let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
 
     // Act
@@ -463,8 +418,17 @@ mod tests {
         "application/octet-stream"
       ))
     );
-    assert_err!(&result);
-    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(result.is_err());
+    assert_eq!(
+      result.err().unwrap(),
+      LambdaRequestError::RouterConnectionError
+    );
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
   }
 
   #[tokio::test]
@@ -474,60 +438,21 @@ mod tests {
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
-    // Use an arc int to count how many times the request endpoint was called
-    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let request_count_clone = Arc::clone(&request_count);
-    let app = Router::new().route(
-      "/api/chunked/request/:lambda_id/:channel_id",
-      post(
-        move |Path((_lambda_id, _channel_id)): Path<(String, String)>| {
-          let request_count = Arc::clone(&request_count_clone);
-          let release_request_rx = Arc::clone(&release_request_rx);
-
-          async move {
-            // Increment the request count
-            request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-            // Create a channel for the stream
-            let (mut tx, rx) = tokio::io::duplex(65_536);
-
-            // Spawn a task to write to the stream
-            tokio::spawn(async move {
-              // Write some of the headers
-              let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
-              tx.write_all(data).await.unwrap();
-
-              // Wait for the release
-              release_request_rx.lock().await.recv().await.unwrap();
-
-              // Write the rest of the headers
-              let data = b"Test-Headers: bar\r\nTest-Headerss: baz\r\n\r\nHELLO WORLD";
-              tx.write_all(data).await.unwrap();
-
-              // Close the stream
-              tx.shutdown().await.unwrap();
-            });
-
-            let body = AsyncReadBody::new(rx);
-
-            let response = Response::builder()
-              .header("content-type", "application/octet-stream")
-              .body(body)
-              .unwrap();
-
-            response
-          }
-        },
-      ),
-    );
-
-    let mock_router_server = run_http2_app(app);
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::Get,
+      channel_non_200_status_after_count: 1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: -1,
+      listener_type: test_mock_router::ListenerType::Http,
+    });
 
     let channel_url: Uri = format!(
       "http://localhost:{}/api/chunked/request/{}/{}",
-      mock_router_server.addr.port(),
+      mock_router_server.server.addr.port(),
       lambda_id,
       channel_id
     )
@@ -559,9 +484,14 @@ mod tests {
     let (parts, mut res_stream) = res.into_parts();
 
     // Release the request after a few seconds
+    // This will pause the headers, then finish them with the body too
     tokio::spawn(async move {
       tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      release_request_tx.send(()).await.unwrap();
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
     });
 
     let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
@@ -602,7 +532,9 @@ mod tests {
     assert_eq!(left_over_buf.is_empty(), false);
     assert_eq!(left_over_buf, b"HELLO WORLD");
     assert_eq!(
-      request_count.load(std::sync::atomic::Ordering::SeqCst),
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
       1,
       "request count"
     );
