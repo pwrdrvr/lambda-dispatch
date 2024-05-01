@@ -304,10 +304,12 @@ impl RouterChannel {
     })?;
 
     // Relay the request body to the contained app
-    // We start a task for this because we need to relay the bytes
-    // between the incoming request and the outgoing request
-    // and we need to set this up before we actually send the request
-    // to the contained app
+    // This is setup before the request is sent
+    // because most servers will not send response headers
+    // until they have received the request body and run the request.
+    // Moving this after the request is sent will deadlock in cases
+    // like the above.
+    // FIXME: We need the ability to cancel this task if the app connection errors
     let relay_request_to_app_task = tokio::task::spawn(relay_request_to_app(
       left_over_buf,
       self.pool_id.clone(),
@@ -319,7 +321,7 @@ impl RouterChannel {
     ));
 
     //
-    // Send the request
+    // Send the request to the contained app.
     // request waits for tx connection to be ready.
     // https://github.com/hyperium/hyper-util/blob/5688b2733eee146a1df1fc3b5263cd2021974d9b/src/client/legacy/client.rs#L574-L576
     //
@@ -327,6 +329,8 @@ impl RouterChannel {
       Ok(res) => res,
       Err(err) => {
         if err.is_connect() {
+          // FIXME: Cancel the request relay
+          // FIXME: Close the router request/response
           return Err(LambdaRequestError::AppConnectionUnreachable);
         }
         return Err(LambdaRequestError::AppConnectionError);
