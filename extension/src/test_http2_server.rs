@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::sync::Arc;
 use std::{net::SocketAddr, sync::mpsc, thread};
 

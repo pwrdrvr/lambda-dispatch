@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::{
   fmt,
   sync::{atomic::AtomicUsize, Arc},
