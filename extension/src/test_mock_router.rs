@@ -18,6 +18,7 @@ use tokio::{io::AsyncWriteExt, sync::mpsc::Sender};
 #[derive(Clone, Copy, PartialEq)]
 pub enum RequestMethod {
   Get,
+  GetNoHost,
   GetQuerySimple,
   GetQueryEncoded,
   GetQueryUnencodedBrackets,
@@ -233,6 +234,9 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                                 tx.write_all(data.as_bytes()).await.unwrap();
 
                                 let data = b"\r\n\r\n";
+                                tx.write_all(data).await.unwrap();
+                            } else if params.request_method == RequestMethod::GetNoHost {
+                                let data = b"GET /bananas/no_host_header HTTP/1.1\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
                             } else {
                                 let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
