@@ -490,7 +490,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::USE_PROXY,
       Some(ChannelResult::RouterStatusOther),
-      test_mock_router::test_mock_router::ListenerType::Http,
+      test_mock_router::ListenerType::Http,
     )
     .await;
   }
@@ -500,7 +500,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::USE_PROXY,
       Some(ChannelResult::RouterStatusOther),
-      test_mock_router::test_mock_router::ListenerType::Https,
+      test_mock_router::ListenerType::Https,
     )
     .await;
   }
@@ -510,7 +510,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::BAD_REQUEST,
       Some(ChannelResult::RouterStatus4xx),
-      test_mock_router::test_mock_router::ListenerType::Http,
+      test_mock_router::ListenerType::Http,
     )
     .await;
   }
@@ -520,7 +520,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::BAD_REQUEST,
       Some(ChannelResult::RouterStatus4xx),
-      test_mock_router::test_mock_router::ListenerType::Https,
+      test_mock_router::ListenerType::Https,
     )
     .await;
   }
@@ -530,7 +530,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::CONFLICT,
       Some(ChannelResult::GoAwayReceived),
-      test_mock_router::test_mock_router::ListenerType::Http,
+      test_mock_router::ListenerType::Http,
     )
     .await;
   }
@@ -540,7 +540,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::CONFLICT,
       Some(ChannelResult::GoAwayReceived),
-      test_mock_router::test_mock_router::ListenerType::Https,
+      test_mock_router::ListenerType::Https,
     )
     .await;
   }
@@ -550,7 +550,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::INTERNAL_SERVER_ERROR,
       Some(ChannelResult::RouterStatus5xx),
-      test_mock_router::test_mock_router::ListenerType::Http,
+      test_mock_router::ListenerType::Http,
     )
     .await;
   }
@@ -560,7 +560,7 @@ mod tests {
     fixture_channel_status_code(
       StatusCode::INTERNAL_SERVER_ERROR,
       Some(ChannelResult::RouterStatus5xx),
-      test_mock_router::test_mock_router::ListenerType::Https,
+      test_mock_router::ListenerType::Https,
     )
     .await;
   }
@@ -568,25 +568,23 @@ mod tests {
   async fn fixture_channel_status_code(
     status_code: StatusCode,
     expected_result: Option<ChannelResult>,
-    listener_type: test_mock_router::test_mock_router::ListenerType,
+    listener_type: test_mock_router::ListenerType,
   ) {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
     let channel_id = "channel_id".to_string();
 
-    let mock_router_server = test_mock_router::test_mock_router::setup_router(
-      test_mock_router::test_mock_router::RouterParams {
-        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
-        channel_non_200_status_after_count: 0,
-        channel_non_200_status_code: status_code,
-        channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start_on_count: -1,
-        channel_panic_request_to_extension_after_start: false,
-        channel_panic_request_to_extension_before_close: false,
-        ping_panic_after_count: -1,
-        listener_type,
-      },
-    );
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::Get,
+      channel_non_200_status_after_count: 0,
+      channel_non_200_status_code: status_code,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: -1,
+      listener_type,
+    });
 
     let router_endpoint: Endpoint = format!(
       "{}://localhost:{}",
@@ -660,41 +658,31 @@ mod tests {
 
   #[tokio::test]
   async fn test_channel_read_request_send_to_app_http() {
-    fixture_channel_read_request_send_to_app(
-      test_mock_router::test_mock_router::ListenerType::Http,
-    )
-    .await;
+    fixture_channel_read_request_send_to_app(test_mock_router::ListenerType::Http).await;
   }
 
   #[tokio::test]
   async fn test_channel_read_request_send_to_app_https() {
-    fixture_channel_read_request_send_to_app(
-      test_mock_router::test_mock_router::ListenerType::Https,
-    )
-    .await;
+    fixture_channel_read_request_send_to_app(test_mock_router::ListenerType::Https).await;
   }
 
-  async fn fixture_channel_read_request_send_to_app(
-    listener_type: test_mock_router::test_mock_router::ListenerType,
-  ) {
+  async fn fixture_channel_read_request_send_to_app(listener_type: test_mock_router::ListenerType) {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    let mock_router_server = test_mock_router::test_mock_router::setup_router(
-      test_mock_router::test_mock_router::RouterParams {
-        request_method: test_mock_router::test_mock_router::RequestMethod::Get,
-        channel_non_200_status_after_count: 1,
-        channel_non_200_status_code: StatusCode::CONFLICT,
-        channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start_on_count: -1,
-        channel_panic_request_to_extension_after_start: false,
-        channel_panic_request_to_extension_before_close: false,
-        ping_panic_after_count: 0,
-        listener_type,
-      },
-    );
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::Get,
+      channel_non_200_status_after_count: 1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: 0,
+      listener_type,
+    });
 
     let router_endpoint: Endpoint = format!(
       "{}://localhost:{}",
@@ -804,35 +792,31 @@ mod tests {
 
   #[tokio::test]
   async fn test_channel_goaway_on_body_http() {
-    fixture_channel_goaway_on_body(test_mock_router::test_mock_router::ListenerType::Http).await;
+    fixture_channel_goaway_on_body(test_mock_router::ListenerType::Http).await;
   }
 
   #[tokio::test]
   async fn test_channel_goaway_on_body_https() {
-    fixture_channel_goaway_on_body(test_mock_router::test_mock_router::ListenerType::Https).await;
+    fixture_channel_goaway_on_body(test_mock_router::ListenerType::Https).await;
   }
 
-  async fn fixture_channel_goaway_on_body(
-    listener_type: test_mock_router::test_mock_router::ListenerType,
-  ) {
+  async fn fixture_channel_goaway_on_body(listener_type: test_mock_router::ListenerType) {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    let mock_router_server = test_mock_router::test_mock_router::setup_router(
-      test_mock_router::test_mock_router::RouterParams {
-        request_method: test_mock_router::test_mock_router::RequestMethod::GetGoAwayOnBody,
-        channel_non_200_status_after_count: 1,
-        channel_non_200_status_code: StatusCode::CONFLICT,
-        channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start_on_count: -1,
-        channel_panic_request_to_extension_after_start: false,
-        channel_panic_request_to_extension_before_close: false,
-        ping_panic_after_count: 0,
-        listener_type,
-      },
-    );
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::GetGoAwayOnBody,
+      channel_non_200_status_after_count: 1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: 0,
+      listener_type,
+    });
     let router_endpoint: Endpoint = format!(
       "{}://localhost:{}",
       listener_type.to_string(),
@@ -934,19 +918,17 @@ mod tests {
     let channel_id = "channel_id".to_string();
 
     // Start router server
-    let mock_router_server = test_mock_router::test_mock_router::setup_router(
-      test_mock_router::test_mock_router::RouterParams {
-        request_method: test_mock_router::test_mock_router::RequestMethod::GetInvalidHeaders,
-        channel_non_200_status_after_count: 2,
-        channel_non_200_status_code: StatusCode::CONFLICT,
-        channel_panic_response_from_extension_on_count: -1,
-        channel_panic_request_to_extension_before_start_on_count: -1,
-        channel_panic_request_to_extension_after_start: false,
-        channel_panic_request_to_extension_before_close: false,
-        ping_panic_after_count: 0,
-        listener_type: test_mock_router::test_mock_router::ListenerType::Http,
-      },
-    );
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::GetInvalidHeaders,
+      channel_non_200_status_after_count: 2,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: 0,
+      listener_type: test_mock_router::ListenerType::Http,
+    });
     let router_endpoint: Endpoint =
       format!("http://localhost:{}", mock_router_server.server.addr.port())
         .parse()

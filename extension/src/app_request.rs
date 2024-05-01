@@ -128,7 +128,7 @@ mod tests {
   use std::{sync::Arc, time::SystemTime};
 
   use crate::router_client::create_router_client;
-  use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
+  use crate::{endpoint::Endpoint, test_http2_server::run_http2_app};
 
   use super::*;
   use axum::http::HeaderValue;
