@@ -18,6 +18,7 @@ use tokio::{io::AsyncWriteExt, sync::mpsc::Sender};
 #[derive(Clone, Copy, PartialEq)]
 pub enum RequestMethod {
   Get,
+  GetDoubleSlashPath,
   GetNoHost,
   GetQuerySimple,
   GetQueryEncoded,
@@ -193,6 +194,9 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
 
                                 let data = "a".repeat(10 * 1024);
                                 tx.write_all(data.as_bytes()).await.unwrap();
+                            } else if params.request_method == RequestMethod::GetDoubleSlashPath {
+                                let data = b"GET // HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
+                                tx.write_all(data).await.unwrap(); 
                             } else if params.request_method == RequestMethod::GetQuerySimple {
                                 let data = b"GET /bananas_query_simple?cat=dog&frog=log HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
@@ -214,6 +218,7 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                             } else if params.request_method == RequestMethod::GetEnormousHeaders {
                                 let data = b"GET /bananas/enormous_headers HTTP/1.1\r\nHost: localhost\r\n";
                                 tx.write_all(data).await.unwrap();
+            
 
                                 let header_value = "a".repeat(1024 * 31); // Each header value is 31 KB
                                 for i in 0..4 {
