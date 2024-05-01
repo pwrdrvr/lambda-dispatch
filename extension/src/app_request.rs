@@ -64,7 +64,7 @@ pub async fn read_until_req_headers(
         // The app_url is only the path
         // Next.js, for one, gives a 308 redirect if you give it `http://localhost:3000/`
         // and it mangles that to `http:/localhost:3000/`
-        let app_url = app_endpoint.url().join(req.path.unwrap()).unwrap();
+        let app_url = format!("{}{}", app_endpoint, req.path.unwrap());
         let app_url = Uri::from_str(app_url.as_str()).unwrap();
 
         let mut app_req_bld = Request::builder()
@@ -457,14 +457,11 @@ mod tests {
     assert_ok!(&result);
     let (app_req_builder, goaway, left_over_buf) = result.unwrap();
     let host_header = app_req_builder.headers_ref().unwrap().get("host");
-    assert_eq!(host_header, None);
+    assert_eq!(host_header, Some(&HeaderValue::from_static("localhost")));
     let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
     assert_eq!(test_header, Some(&HeaderValue::from_static("foo")));
     let app_req_uri = app_req_builder.uri_ref().unwrap();
-    assert_eq!(
-      app_req_uri,
-      &Uri::from_static("http://localhost:3000/bananas/no_host_header")
-    );
+    assert_eq!(app_req_uri, &Uri::from_static("http://localhost:3000//"));
     assert_eq!(goaway, false);
     assert_eq!(left_over_buf.is_empty(), true);
     assert_eq!(
