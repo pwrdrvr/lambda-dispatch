@@ -374,6 +374,108 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn test_read_until_req_headers_double_slash_path() {
+    let lambda_id = "lambda_id".to_string();
+    let pool_id = "pool_id".to_string();
+    let channel_id = "channel_id".to_string();
+
+    // Start router server
+    let mock_router_server = test_mock_router::setup_router(test_mock_router::RouterParams {
+      request_method: test_mock_router::RequestMethod::GetDoubleSlashPath,
+      channel_non_200_status_after_count: 1,
+      channel_non_200_status_code: StatusCode::CONFLICT,
+      channel_panic_response_from_extension_on_count: -1,
+      channel_panic_request_to_extension_before_start_on_count: -1,
+      channel_panic_request_to_extension_after_start: false,
+      channel_panic_request_to_extension_before_close: false,
+      ping_panic_after_count: -1,
+      listener_type: test_mock_router::ListenerType::Http,
+    });
+
+    // Let the router return right away
+    tokio::spawn(async move {
+      mock_router_server
+        .release_request_tx
+        .send(())
+        .await
+        .unwrap();
+    });
+
+    let channel_url: Uri = format!(
+      "http://localhost:{}/api/chunked/request/{}/{}",
+      mock_router_server.server.addr.port(),
+      lambda_id,
+      channel_id
+    )
+    .parse()
+    .unwrap();
+
+    // Setup our connection to the router
+    let router_client = create_router_client();
+
+    // Create the router request
+    let (_tx, recv) = mpsc::channel::<crate::prelude::Result<Frame<Bytes>>>(32 * 1024);
+    let boxed_body = BodyExt::boxed(StreamBody::new(recv));
+    let req = Request::builder()
+      .uri(&channel_url)
+      .method("POST")
+      .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
+      .header(hyper::header::HOST, channel_url.host().unwrap())
+      // The content-type that we're sending to the router is opaque
+      // as it contains another HTTP request/response, so may start as text
+      // with request/headers and then be binary after that - it should not be parsed
+      // by anything other than us
+      .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
+      .header("X-Pool-Id", pool_id.to_string())
+      .header("X-Lambda-Id", &lambda_id)
+      .header("X-Channel-Id", &channel_id)
+      .body(boxed_body)
+      .unwrap();
+
+    let res = router_client.request(req).await.unwrap();
+    let (parts, mut res_stream) = res.into_parts();
+
+    let app_endpoint = "http://localhost:3000".parse::<Endpoint>().unwrap();
+
+    // Act
+    let result = read_until_req_headers(
+      app_endpoint,
+      &mut res_stream,
+      &pool_id,
+      &lambda_id,
+      &channel_id,
+    )
+    .await;
+
+    // Assert
+    assert_eq!(
+      parts.headers.get(HeaderName::from_static("content-type")),
+      Some(&hyper::http::HeaderValue::from_static(
+        "application/octet-stream"
+      ))
+    );
+    assert_ok!(&result);
+    let (app_req_builder, goaway, left_over_buf) = result.unwrap();
+    let host_header = app_req_builder.headers_ref().unwrap().get("host");
+    assert_eq!(host_header, None);
+    let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
+    assert_eq!(test_header, Some(&HeaderValue::from_static("foo")));
+    let app_req_uri = app_req_builder.uri_ref().unwrap();
+    assert_eq!(
+      app_req_uri,
+      &Uri::from_static("http://localhost:3000/bananas/no_host_header")
+    );
+    assert_eq!(goaway, false);
+    assert_eq!(left_over_buf.is_empty(), true);
+    assert_eq!(
+      mock_router_server
+        .request_count
+        .load(std::sync::atomic::Ordering::SeqCst),
+      1
+    );
+  }
+
+  #[tokio::test]
   async fn test_read_until_req_headers_go_away_path() {
     let lambda_id = "lambda_id".to_string();
     let pool_id = "pool_id".to_string();
