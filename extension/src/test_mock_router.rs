@@ -24,7 +24,9 @@ pub mod test_mock_router {
     PostSimple,
     PostEcho,
     GetGoAwayOnBody,
-    GetInvalidHeaders
+    GetInvalidHeaders,
+    GetEnormousHeaders,
+    GetOversizedHeader
   }
 
   #[derive(Clone, Copy, PartialEq)]
@@ -88,6 +90,17 @@ pub mod test_mock_router {
           request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
           let request_count = request_count.load(std::sync::atomic::Ordering::SeqCst);
 
+          // Bail after request count if desired
+          if params.channel_non_200_status_after_count >= 0 && request_count > params.channel_non_200_status_after_count as usize {
+            let body = AsyncReadBody::new(tokio::io::empty());
+            let response = Response::builder()
+              .status(params.channel_non_200_status_code)
+              .body(body)
+              .unwrap();
+
+            return response;
+          }
+
           // Spawn a task to read from the request (receiving response from extension)
           // We do not do anything with the response other than log it
           // This would normally go back to the client of the router
@@ -111,6 +124,33 @@ pub mod test_mock_router {
                   buf
               }).await;
               assert_eq!(String::from_utf8(buf).unwrap(), "a".repeat(10 * 1024));
+            } else if params.request_method == RequestMethod::GetEnormousHeaders {
+              // Read the bytes
+              let buf = parts.1.into_data_stream().fold(Vec::new(), |mut buf, chunk| async move {
+                let chunk = chunk.unwrap();
+                buf.extend_from_slice(&chunk);
+                buf
+              }).await;
+              let body_str = String::from_utf8(buf).unwrap();
+
+              let value = "a".repeat(1024 * 31);
+              assert!(body_str.contains(format!("test-header-0: {}", value).as_str()));
+              assert!(body_str.contains(format!("test-header-1: {}", value).as_str()));
+              assert!(body_str.contains(format!("test-header-2: {}", value).as_str()));
+              assert!(body_str.contains(format!("test-header-3: {}", value).as_str()));
+            } else if params.request_method == RequestMethod::GetOversizedHeader {
+              // Read the bytes
+              let buf = parts.1.into_data_stream().fold(Vec::new(), |mut buf, chunk| async move {
+                let chunk = chunk.unwrap();
+                buf.extend_from_slice(&chunk);
+                buf
+              }).await;
+              let buf_len = buf.len();
+              let body_str = String::from_utf8(buf).unwrap();
+
+              let value = "a".repeat(1024 * 64);
+              assert!(buf_len > 64 * 1024, "Body length should have been > 64 KB: {}", buf_len);
+              assert!(body_str.contains(format!("test-header: {}", value).as_str()));
             } else {
               // Read and discard the response body chunks
               parts
@@ -118,23 +158,13 @@ pub mod test_mock_router {
                 .into_data_stream()
                 .for_each(|chunk| async {
                   let _chunk = chunk.unwrap();
-                  // println!("Chunk: {:?}", chunk);
+                  // println!("Chunk: {:?}", _chunk);
                 })
                 .await;
             }
           });
 
-          // Bail after request count if desired
-
-          if params.channel_non_200_status_after_count >= 0 && request_count > params.channel_non_200_status_after_count as usize {
-            let body = AsyncReadBody::new(tokio::io::empty());
-            let response = Response::builder()
-              .status(params.channel_non_200_status_code)
-              .body(body)
-              .unwrap();
-
-            return response;
-          }
+ 
 
           // Create a channel for the stream
           let (mut tx, rx) = tokio::io::duplex(65_536);
@@ -174,7 +204,31 @@ pub mod test_mock_router {
             } else if params.request_method == RequestMethod::GetInvalidHeaders {
               let data = b"GET /bananas/invalid_headers HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n:\r\n\r\n";
               tx.write_all(data).await.unwrap();
-            }else {
+            } else if params.request_method == RequestMethod::GetEnormousHeaders {
+              let data = b"GET /bananas/enormous_headers HTTP/1.1\r\nHost: localhost\r\n";
+              tx.write_all(data).await.unwrap();
+              
+              let header_value = "a".repeat(1024 * 31); // Each header value is 31 KB
+              for i in 0..4 {
+                  let header = format!("Test-Header-{}: {}\r\n", i, header_value);
+                  tx.write_all(header.as_bytes()).await.unwrap();
+              }
+
+              let data = b"\r\n";
+              tx.write_all(data).await.unwrap();
+            } else if params.request_method == RequestMethod::GetOversizedHeader {
+              let data = b"GET /bananas/oversized_header HTTP/1.1\r\nHost: localhost\r\n";
+              tx.write_all(data).await.unwrap();
+
+              let data = b"Test-Header: ";
+              tx.write_all(data).await.unwrap();
+
+              let data = "a".repeat(64 * 1024);
+              tx.write_all(data.as_bytes()).await.unwrap();
+
+              let data = b"\r\n\r\n";
+              tx.write_all(data).await.unwrap();
+            } else {
               let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
               tx.write_all(data).await.unwrap();
 
