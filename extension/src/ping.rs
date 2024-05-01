@@ -112,10 +112,11 @@ pub async fn send_ping_requests(
         && requests_in_flight == 0
       {
         log::info!(
-          "PoolId: {}, LambdaId: {}, Last Active: {} ms ago, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Last Active",
+          "PoolId: {}, LambdaId: {}, Last Active: {} ms ago, Requests: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Last Active",
           pool_id,
           lambda_id,
           last_active_ago_ms,
+          count,
           requests_in_flight,
           elapsed,
           rps
@@ -123,10 +124,11 @@ pub async fn send_ping_requests(
         ping_result.get_or_insert(PingResult::LastActive);
       } else if time::current_time_millis() + close_before_deadline_ms > deadline_ms {
         log::info!(
-          "PoolId: {}, LambdaId: {}, Deadline: {} ms Away, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
+          "PoolId: {}, LambdaId: {}, Deadline: {} ms Away, Requests: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Requesting close: Deadline",
           pool_id,
           lambda_id,
           deadline_ms - time::current_time_millis(),
+          count,
           requests_in_flight,
           elapsed,
           rps
