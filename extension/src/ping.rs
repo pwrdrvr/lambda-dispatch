@@ -295,7 +295,7 @@ mod tests {
   use std::sync::Arc;
 
   use crate::router_client::create_router_client;
-  use crate::{endpoint::Endpoint, test_http2_server::test_http2_server::run_http2_app};
+  use crate::{endpoint::Endpoint, test_http2_server::run_http2_app};
 
   use axum::{extract::Path, routing::get, Router};
   use hyper::StatusCode;

@@ -233,7 +233,7 @@ mod tests {
   use crate::app_client::create_app_client;
   use crate::messages::ExitReason;
   use crate::router_client::create_router_client;
-  use crate::test_http2_server::test_http2_server::run_http2_app;
+  use crate::test_http2_server::run_http2_app;
 
   use axum::response::Response;
   use axum::routing::get;

@@ -41,7 +41,7 @@ impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {
 
 #[cfg(test)]
 mod tests {
-  use crate::test_http2_server::test_http2_server::run_http2_tls_app;
+  use crate::test_http2_server::run_http2_tls_app;
 
   use super::*;
 
