@@ -16,7 +16,7 @@ jobs:
     steps:
       - id: check
         run: |
-          echo "has-token-access=$(if [[ '${{ github.event.pull_request.head.repo.fork }}' == 'false' && '${{ github.actor }}' != 'dependabot[bot]' ]]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
+          echo "has-token-access=$(if [[ '${{ github.event.pull_request.head.repo.fork }}' != 'true' && '${{ github.actor }}' != 'dependabot[bot]' ]]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
 
   dotnet-tests:
     needs: check-access
