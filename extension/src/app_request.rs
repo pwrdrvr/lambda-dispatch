@@ -60,10 +60,10 @@ pub async fn read_until_req_headers(
         );
 
         let left_over_buf = buf[offset..].to_vec();
+
         // The app_url is only the path
         // Next.js, for one, gives a 308 redirect if you give it `http://localhost:3000/`
         // and it mangles that to `http:/localhost:3000/`
-
         let app_url = app_endpoint.url().join(req.path.unwrap()).unwrap();
         let app_url = Uri::from_str(app_url.as_str()).unwrap();
 
@@ -143,6 +143,30 @@ mod tests {
     Request, Uri,
   };
   use tokio_test::assert_ok;
+  use url::Url;
+
+  #[tokio::test]
+  async fn test_url_join() {
+    let base_url = Url::parse("http://example.com").unwrap();
+    let joined_url = base_url.join("http://foo/bar").unwrap();
+    assert_eq!(joined_url.as_str(), "http://foo/bar");
+
+    let base_url = Url::parse("http://example.com:54321").unwrap();
+    let joined_url = base_url.join("").unwrap();
+    assert_eq!(joined_url.as_str(), "http://example.com:54321/");
+
+    let base_url = Url::parse("http://example.com").unwrap();
+    let joined_url = base_url.join("http:///foo").unwrap();
+    assert_eq!(joined_url.as_str(), "http://foo/");
+
+    let base_url = Url::parse("http://example.com").unwrap();
+    // This case results in:
+    //   called `Result::unwrap()` on an `Err` value: EmptyHost
+    // To reproduce, load a router URL with the path `//`
+    let joined_url = base_url.join("//");
+    assert!(joined_url.is_err());
+    assert_eq!(joined_url.err().unwrap(), url::ParseError::EmptyHost);
+  }
 
   #[tokio::test]
   async fn test_read_until_req_headers_valid_req() {
