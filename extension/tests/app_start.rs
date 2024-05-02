@@ -131,7 +131,7 @@ async fn test_health_check_contained_app_blackhole() {
     health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
   let duration = start.elapsed();
 
-  assert!(result, "Health check should fail");
+  assert!(!result, "Health check should fail");
   assert!(
     duration >= std::time::Duration::from_secs(2),
     "Connection should take at least 2 seconds"
@@ -161,7 +161,7 @@ async fn test_health_check_contained_app_error() {
     health_check_contained_app(goaway_received, &mock_app_healthcheck_url, &app_client).await;
   let duration = start.elapsed();
 
-  assert!(result, "Health check should fail");
+  assert!(!result, "Health check should fail");
   assert!(
     duration >= std::time::Duration::from_secs(2),
     "Connection should take at least 2 seconds"
