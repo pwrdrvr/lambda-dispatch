@@ -1,6 +1,4 @@
-# Packaging DotNet 8 for Lambda
 
-https://coderjony.com/blogs/running-net-8-lambda-functions-on-aws-using-custom-runtime-and-lambda-internals-for-net-developers?sc_channel=sm&sc_campaign=Developer_Campaigns&sc_publisher=TWITTER&sc_geo=GLOBAL&sc_outcome=awareness&trk=Developer_Campaigns&linkId=250770379
 
 # Testing Lambda Locally
 
@@ -15,6 +13,7 @@ https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool
 * [LambdaTestTool for DotNet 8](https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool)
   * `dotnet tool install -g Amazon.Lambda.TestTool-8.0`
   * `dotnet lambda-test-tool-8.0 --help`
+* [Rust](https://www.rust-lang.org/tools/install)
 
 ## Install Lambda Templates
 
@@ -22,35 +21,52 @@ https://github.com/aws/aws-lambda-dotnet/tree/master/Tools/LambdaTestTool
 dotnet new -i Amazon.Lambda.Templates
 ```
 
-## Building
+## Building and Running Unit Tests
+
+### Router - DotNet
 
 ```sh
+# Build
 dotnet build
+
+# Run Unit Tests without Coverage Report
+dotnet test
+
+# One Time Install of ReportGenerator
+dotnet tool install --global dotnet-reportgenerator-globaltool
+
+# Run Unit Tests with HTML Coverage Report
+dotnet test --collect:"XPlat Code Coverage" && reportgenerator "-reports:test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:test/coverage/html_report" -reporttypes:Html
+```
+
+## Extension - Rust
+
+```sh
+# Build
+cargo build
+
+# Run Unit Tests
+cargo test
+
+# One Time Install of llvm-cov
+cargo install cargo-llvm-cov
+
+# Run Unit Tests with Coverage Report
+cargo llvm-cov --all-features --workspace --html
 ```
 
 ## Running Locally
 
-### DotNet Router
+See [Development Current Commands](./DEVELOPMENT-CURRENT-COMMANDS.md) for command lines to bring everything up locally.
 
-```sh
-dotnet run --project PwrDrvr.LambdaDispatch.Router
 
-DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_MaxConcurrentCount=10 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
-```
+# Appendix
 
-### Rust Lambda Extension
+## Packaging DotNet 8 for Lambda
 
-```sh
-LAMBDA_DISPATCH_RUNTIME=default_multi_thread LAMBDA_DISPATCH_FORCE_DEADLINE=60 AWS_LAMBDA_FUNCTION_VERSION=\$LATEST AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512 AWS_LAMBDA_FUNCTION_NAME=dogs AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token cargo run --release --bin extension 2>&1 | tee extension.log
-```
+https://coderjony.com/blogs/running-net-8-lambda-functions-on-aws-using-custom-runtime-and-lambda-internals-for-net-developers?sc_channel=sm&sc_campaign=Developer_Campaigns&sc_publisher=TWITTER&sc_geo=GLOBAL&sc_outcome=awareness&trk=Developer_Campaigns&linkId=250770379
 
-### DotNet Lambda Extension
-
-```sh
-DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 AWS_LAMBDA_RUNTIME_API=localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Extension/bin/Release/net8.0/bootstrap 2>&1 | tee extension.log
-```
-
-## Rust Unit Tests
+## Rust Unit Test Notes
 
 - https://github.com/mozilla/grcov
   - Runs into a problem with zip not being supported by the toolchain
