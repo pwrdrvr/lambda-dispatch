@@ -6,6 +6,7 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
 mod support;
+mod utils;
 use support::http2_server::run_http2_tls_app;
 
 use extension::cert::*;
