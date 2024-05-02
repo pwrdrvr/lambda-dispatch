@@ -45,6 +45,9 @@ cargo build
 # Run Unit Tests
 cargo test
 
+# One Time Install of llvm-cov
+cargo install cargo-llvm-cov
+
 # Run Unit Tests with Coverage Report
 cargo llvm-cov --all-features --workspace --html
 ```
