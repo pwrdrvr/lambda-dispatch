@@ -61,3 +61,4 @@ tower-test = "0.4.0"
 tokio-test = "0.4.4"
 axum-extra = { version = "0.9.3", features = ["async-read-body"] }
 lazy_static = "1.4.0"
+cargo-llvm-cov = "0.6.9"
