@@ -32,6 +32,9 @@ dotnet build
 # Run Unit Tests without Coverage Report
 dotnet test
 
+# One Time Install of ReportGenerator
+dotnet tool install --global dotnet-reportgenerator-globaltool
+
 # Run Unit Tests with HTML Coverage Report
 dotnet test --collect:"XPlat Code Coverage" && reportgenerator "-reports:/Users/huntharo/pwrdrvr/lambda-dispatch/test/coverage/projects/PwrDrvr.LambdaDispatch.Router.Tests/coverage.opencover.xml" "-targetdir:/Users/huntharo/pwrdrvr/lambda-dispatch/test/coverage/html_report" -reporttypes:Html
 ```
