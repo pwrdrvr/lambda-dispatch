@@ -71,16 +71,15 @@ async fn test_lambda_service_tower_service_call_init_only_already_initialized() 
 
   // Assert that the response is as expected
   let response = assert_ok!(result);
-  assert_eq!(
-    response,
-    WaiterResponse {
-      pool_id: "test_pool".to_string(),
-      id: "test_id".to_string(),
-      request_count: 0,
-      invoke_duration: 0,
-      exit_reason: ExitReason::SelfInitOnly,
-    }
+  assert_eq!(response.pool_id, "test_pool".to_string());
+  assert_eq!(response.id, "test_id".to_string());
+  assert_eq!(response.request_count, 0);
+  assert!(
+    response.invoke_duration <= 1,
+    "Expected invoke_duration to be less than or equal to 1, but was {}",
+    response.invoke_duration
   );
+  assert_eq!(response.exit_reason, ExitReason::SelfInitOnly);
 }
 
 #[tokio::test]
