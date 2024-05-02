@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod tests {
   use chrono::{DateTime, Utc};
-  use extension::messages::{ExitReason, ValidationError, WaiterRequest, WaiterResponse};
+  use extension::{
+    messages::{ExitReason, ValidationError, WaiterRequest, WaiterResponse},
+    prelude::*,
+  };
   use hyper::Uri;
   use serde_json::json;
 

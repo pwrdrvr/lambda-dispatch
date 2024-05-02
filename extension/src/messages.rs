@@ -70,60 +70,24 @@ pub enum ExitReason {
   ChannelErrorOther,
 }
 
-impl ExitReason {
-  pub fn worse(self, other: Self) -> Self {
-    use ExitReason::*;
-
-    let ordered_reasons = [
-      RouterLambdaInvokeInvalid,
-      RouterUnreachable,
-      RouterConnectionError,
-      ChannelErrorOther,
-      AppConnectionError,
-      AppConnectionClosed,
-      RouterStatus5xx,
-      RouterStatus4xx,
-      RouterStatusOther,
-      RouterGoAway,
-      SelfLastActive,
-      SelfDeadline,
-      SelfStaleRequest,
-      SelfInitOnly,
-    ];
-
-    for reason in ordered_reasons {
-      if self == reason || other == reason {
-        return reason;
-      }
+impl Severity for ExitReason {
+  fn severity(&self) -> usize {
+    match self {
+      Self::RouterLambdaInvokeInvalid => 0,
+      Self::RouterUnreachable => 1,
+      Self::RouterConnectionError => 2,
+      Self::ChannelErrorOther => 3,
+      Self::AppConnectionError => 4,
+      Self::AppConnectionClosed => 5,
+      Self::RouterStatus5xx => 6,
+      Self::RouterStatus4xx => 7,
+      Self::RouterStatusOther => 8,
+      Self::RouterGoAway => 9,
+      Self::SelfLastActive => 10,
+      Self::SelfDeadline => 11,
+      Self::SelfStaleRequest => 12,
+      Self::SelfInitOnly => 13,
     }
-
-    self // If no match is found, return the current value
-  }
-
-  // This function will cause a compile-time error if a new variant is added to the enum
-  // but not added to the match expression.
-  #[allow(dead_code)]
-  fn ensure_all_variants_handled(variant: Self) {
-    use ExitReason::*;
-
-    match variant {
-      // HEY - If you add here you need to add to the `worse` function array above
-      RouterLambdaInvokeInvalid => {}
-      RouterUnreachable => {}
-      RouterConnectionError => {}
-      ChannelErrorOther => {}
-      AppConnectionError => {}
-      AppConnectionClosed => {}
-      RouterStatus5xx => {}
-      RouterStatus4xx => {}
-      RouterStatusOther => {}
-      RouterGoAway => {}
-      SelfLastActive => {}
-      SelfDeadline => {}
-      SelfStaleRequest => {}
-      SelfInitOnly => {}
-    }
-    // HEY - If you add here you need to add to the `worse` function array above
   }
 }
 
