@@ -2,8 +2,6 @@ use std::{
   fmt,
   sync::{atomic::AtomicUsize, Arc},
 };
-
-use crate::test_http2_server::{run_http2_app, run_http2_tls_app, Serve};
 use axum::{
   extract::Path,
   response::Response,
@@ -15,6 +13,9 @@ use futures::stream::StreamExt;
 use hyper::StatusCode;
 use tokio::{io::AsyncWriteExt, sync::mpsc::Sender};
 
+use crate::support::http2_server::{run_http2_app, run_http2_tls_app, Serve};
+
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum RequestMethod {
   Get,
@@ -33,6 +34,7 @@ pub enum RequestMethod {
   GetOversizedHeader,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum ListenerType {
   Http,
@@ -61,6 +63,7 @@ pub struct RouterParams {
   pub listener_type: ListenerType,
 }
 
+#[allow(dead_code)]
 pub struct RouterResult {
   pub release_request_tx: Sender<()>,
   pub request_count: Arc<AtomicUsize>,
@@ -69,6 +72,7 @@ pub struct RouterResult {
   pub server: Serve,
 }
 
+#[allow(dead_code)]
 pub fn setup_router(params: RouterParams) -> RouterResult {
   // Start router server
   let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);

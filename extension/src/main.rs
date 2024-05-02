@@ -9,35 +9,14 @@ use std::io::Write;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::timeout;
 
-use crate::app_client::create_app_client;
-use crate::lambda_service::LambdaService;
-use crate::options::{Options, Runtime};
-use crate::prelude::*;
-
-mod app_client;
-mod app_request;
-mod app_start;
-mod cert;
-mod counter_drop;
-mod endpoint;
-mod lambda_request;
-mod lambda_request_error;
-mod lambda_service;
-mod messages;
-mod options;
-mod ping;
-pub mod prelude;
-mod relay;
-mod router_channel;
-mod router_client;
-mod threads;
-mod time;
-mod utils;
-
-#[cfg(test)]
-mod test_http2_server;
-#[cfg(test)]
-mod test_mock_router;
+use extension::{
+  app_client::create_app_client,
+  app_start,
+  lambda_service::LambdaService,
+  options::{Options, Runtime},
+  prelude::*,
+  threads,
+};
 
 fn main() -> Result<()> {
   env_logger::Builder::new()
@@ -257,19 +236,24 @@ async fn my_extension(
 mod tests {
   use super::*;
   use httpmock::{Method::GET, MockServer};
+  use lazy_static::lazy_static;
+  use std::sync::{Arc, Mutex};
   use tokio::runtime::Runtime;
   use tokio_test::assert_ok;
 
+  lazy_static! {
+    static ref TEST_MUTEX: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
+  }
+
   #[test]
   fn test_startup() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     // Start app server
     let app_server = MockServer::start();
     let app_healthcheck_mock = app_server.mock(|when, then| {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
-
-    // let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
 
     // Set the environment variable
     std::env::set_var("AWS_LAMBDA_RUNTIME_API", "localhost:9001");
@@ -292,14 +276,13 @@ mod tests {
 
   #[test]
   fn test_startup_default_multi_thread() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     // Start app server
     let app_server = MockServer::start();
     let app_healthcheck_mock = app_server.mock(|when, then| {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
-
-    // let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
 
     // Set the environment variable
     std::env::set_var("AWS_LAMBDA_RUNTIME_API", "localhost:9001");
@@ -323,14 +306,13 @@ mod tests {
 
   #[test]
   fn test_startup_multi_thread() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     // Start app server
     let app_server = MockServer::start();
     let app_healthcheck_mock = app_server.mock(|when, then| {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
-
-    // let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
 
     // Set the environment variable
     std::env::set_var("AWS_LAMBDA_RUNTIME_API", "localhost:9001");
@@ -354,14 +336,13 @@ mod tests {
 
   #[test]
   fn test_startup_multi_thread_tokio_worker_threads() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     // Start app server
     let app_server = MockServer::start();
     let app_healthcheck_mock = app_server.mock(|when, then| {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
-
-    // let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
 
     // Set the environment variable
     std::env::set_var("AWS_LAMBDA_RUNTIME_API", "localhost:9001");
@@ -393,8 +374,6 @@ mod tests {
       then.status(200).body("OK");
     });
 
-    // let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
-
     // Set the environment variable
     std::env::set_var("AWS_LAMBDA_RUNTIME_API", "localhost:9001");
     std::env::set_var("AWS_LAMBDA_FUNCTION_NAME", "test_function");
@@ -424,8 +403,6 @@ mod tests {
       when.method(GET).path("/health");
       then.status(200).body("OK");
     });
-
-    // let app_healthcheck_url: Uri = format!("{}/health", app_server.base_url()).parse().unwrap();
 
     // Set the environment variable
     std::env::set_var("AWS_LAMBDA_RUNTIME_API", "localhost:9001");
