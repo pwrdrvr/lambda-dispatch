@@ -231,6 +231,8 @@ pub async fn send_ping_requests(
               lambda_id
             );
             ping_result.get_or_insert(PingResult::GoAway);
+
+            // This is from a goaway, so we do not need to ask the router to close our invoke
             goaway_received.store(true, Ordering::Release);
             break;
           }
@@ -249,6 +251,9 @@ pub async fn send_ping_requests(
               lambda_id,
               parts.status
             );
+
+            // TODO: This is not from a goaway, so we need to ask
+            // the router to close our invoke
             goaway_received.store(true, Ordering::Release);
             break;
           }
@@ -261,6 +266,9 @@ pub async fn send_ping_requests(
             lambda_id,
             err
           );
+
+          // TODO: This is not from a goaway, so we need to ask
+          // the router to close our invoke
           goaway_received.store(true, Ordering::Release);
           break;
         }

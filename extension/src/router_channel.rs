@@ -200,6 +200,8 @@ impl RouterChannel {
       {
         log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
                   self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+
+        // This is from a goaway so we do not need to ask to close
         self
           .goaway_received
           .store(true, std::sync::atomic::Ordering::Release);
@@ -222,6 +224,9 @@ impl RouterChannel {
           self.lambda_id,
           self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
           router_response_parts.status);
+
+      // TODO: This is not from a goaway, so we need to ask
+      // the router to close our invoke
       self.goaway_received.store(true, Ordering::Release);
       return Ok(channel_result);
     }
@@ -272,6 +277,8 @@ impl RouterChannel {
         channel_result = Some(ChannelResult::GoAwayReceived);
         log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                     self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+
+        // This is from a goaway so we do not need to ask to close
         self
           .goaway_received
           .store(true, std::sync::atomic::Ordering::Release);
