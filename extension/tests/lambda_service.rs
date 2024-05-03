@@ -279,7 +279,6 @@ async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok()
   let response = service.fetch_response(event).await;
 
   // Assert
-  // TODO: This should succeed but return an error indicating the router should backoff
   // The reason is the response from the channel request is invalid: a 200 OK with no response body
   assert!(
     response.is_ok(),
@@ -288,6 +287,7 @@ async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok()
   );
   // Get the WaiterResponse out of the response
   let resp = response.unwrap();
+  assert_eq!(resp.exit_reason, ExitReason::RouterGoAway);
   assert_eq!(resp.id, "test_id", "Lambda ID");
   assert_eq!(resp.pool_id, "test_pool", "Pool ID");
   assert_eq!(
