@@ -84,17 +84,11 @@ async fn test_lambda_service_tower_service_call_init_only_already_initialized() 
 
 #[tokio::test]
 async fn test_lambda_service_tower_service_call_fatal_error_app_unreachable() {
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 5,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(5)
+      .build(),
+  );
 
   log::info!(
     "Router server running on port: {}",
@@ -221,17 +215,11 @@ async fn test_fixture_invalid_router_payload(request: WaiterRequest) {
 
 #[tokio::test]
 async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok() {
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 0,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(0)
+      .build(),
+  );
 
   log::info!(
     "Router server running on port: {}",
@@ -569,17 +557,12 @@ async fn test_lambda_service_request_already_inited_router_blackhole() {
 #[tokio::test]
 async fn test_lambda_service_router_connects_ping_panics() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: 0,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(1)
+      .ping_panic_after_count(0)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();
@@ -674,17 +657,11 @@ async fn test_lambda_service_router_connects_ping_panics() {
 #[tokio::test]
 async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: -1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: 0,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .ping_panic_after_count(0)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();
@@ -779,17 +756,11 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
 #[tokio::test]
 async fn test_lambda_service_loop_100_valid_get_requests() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 100,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(100)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();
@@ -869,17 +840,12 @@ async fn test_lambda_service_loop_100_valid_get_requests() {
 #[tokio::test]
 async fn test_lambda_service_loop_100_valid_post_requests() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::PostSimple,
-    channel_non_200_status_after_count: 100,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::PostSimple)
+      .channel_non_200_status_after_count(100)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -952,17 +918,12 @@ async fn test_lambda_service_loop_100_valid_post_requests() {
 #[tokio::test]
 async fn test_lambda_service_valid_10kb_echo_post_requests() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::PostEcho,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::PostEcho)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1036,17 +997,12 @@ async fn test_lambda_service_valid_10kb_echo_post_requests() {
 #[tokio::test]
 async fn test_lambda_service_valid_124kb_of_headers() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetEnormousHeaders,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetEnormousHeaders)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1129,17 +1085,12 @@ async fn test_lambda_service_valid_124kb_of_headers() {
 #[tokio::test]
 async fn test_lambda_service_valid_oversized_headers() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetOversizedHeader,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetOversizedHeader)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1216,17 +1167,12 @@ async fn test_lambda_service_valid_oversized_headers() {
 #[tokio::test]
 async fn test_lambda_service_get_query_string_simple() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetQuerySimple,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetQuerySimple)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1300,17 +1246,12 @@ async fn test_lambda_service_get_query_string_simple() {
 #[tokio::test]
 async fn test_lambda_service_get_query_string_repeated() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetQueryRepeated,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetQueryRepeated)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1384,17 +1325,12 @@ async fn test_lambda_service_get_query_string_repeated() {
 #[tokio::test]
 async fn test_lambda_service_get_query_string_encoded() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetQueryEncoded,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetQueryEncoded)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1472,17 +1408,12 @@ async fn test_lambda_service_get_query_string_encoded() {
 #[tokio::test]
 async fn test_lambda_service_get_query_string_unencoded_brackets() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetQueryUnencodedBrackets,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetQueryUnencodedBrackets)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = wiremock::MockServer::start().await;
@@ -1558,17 +1489,11 @@ async fn test_lambda_service_get_query_string_unencoded_brackets() {
 #[tokio::test]
 async fn test_lambda_service_loop_100_requests_contained_app_connection_close_header() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 100,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(100)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();
@@ -1658,19 +1583,14 @@ async fn test_lambda_service_loop_100_requests_contained_app_connection_close_he
 #[tokio::test]
 async fn test_lambda_service_router_connects_channel_request_panics() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    // We have 2 channels
-    // The 2nd channel should not finish all 100 requests after the 1st channel panics
-    channel_non_200_status_after_count: 100,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: 1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_panic_response_from_extension_on_count(1)
+      // We have 2 channels
+      // The 2nd channel should not finish all 100 requests after the 1st channel panics
+      .channel_non_200_status_after_count(100)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();
@@ -1760,19 +1680,14 @@ async fn test_lambda_service_router_connects_channel_request_panics() {
 #[tokio::test]
 async fn test_lambda_service_router_connects_channel_response_panics() {
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    // We have 2 channels
-    // The 2nd channel should not finish all 100 requests after the 1st channel panics
-    channel_non_200_status_after_count: 100,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: 1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(100)
+      // We have 2 channels
+      // The 2nd channel should not finish all 100 requests after the 1st channel panics
+      .channel_panic_response_from_extension_on_count(1)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();
@@ -1864,17 +1779,11 @@ async fn test_lambda_service_initialized_app_unopened_port_timeout() {
   let port = 54321;
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 100,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(100)
+      .build(),
+  );
 
   let mut options = Options::default();
   options.async_init_timeout = std::time::Duration::from_millis(1000);
@@ -1952,17 +1861,12 @@ async fn fixture_lambda_service_channel_status_code(
   status_code: StatusCode,
   expected_result: ExitReason,
 ) {
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 0,
-    channel_non_200_status_code: status_code,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(0)
+      .channel_non_200_status_code(status_code)
+      .build(),
+  );
 
   // Start app server
   let mock_app_server = MockServer::start();

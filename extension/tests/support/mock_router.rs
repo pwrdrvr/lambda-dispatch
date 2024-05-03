@@ -52,6 +52,7 @@ impl fmt::Display for ListenerType {
 
 #[derive(Clone, Copy)]
 pub struct RouterParams {
+  pub channel_return_request_without_wait_before_count: isize,
   pub channel_non_200_status_after_count: isize,
   pub channel_non_200_status_code: StatusCode,
   pub channel_panic_response_from_extension_on_count: isize,
@@ -70,6 +71,81 @@ pub struct RouterResult {
   pub ping_count: Arc<AtomicUsize>,
   pub close_count: Arc<AtomicUsize>,
   pub server: Serve,
+}
+
+#[allow(dead_code)]
+
+pub struct RouterParamsBuilder {
+    params: RouterParams,
+}
+
+#[allow(dead_code)]
+impl RouterParamsBuilder {
+    pub fn new() -> RouterParamsBuilder {
+        RouterParamsBuilder {
+            params: RouterParams {
+                request_method: RequestMethod::Get,
+                channel_return_request_without_wait_before_count: -1,
+                channel_non_200_status_after_count: -1,
+                channel_non_200_status_code: StatusCode::CONFLICT,
+                channel_panic_response_from_extension_on_count: -1,
+                channel_panic_request_to_extension_before_start_on_count: -1,
+                channel_panic_request_to_extension_after_start: false,
+                channel_panic_request_to_extension_before_close: false,
+                ping_panic_after_count: -1,
+                listener_type: ListenerType::Http,
+            },
+        }
+    }
+
+    pub fn request_method(mut self, request_method: RequestMethod) -> Self {
+        self.params.request_method = request_method;
+        self
+    }
+
+    pub fn channel_non_200_status_after_count(mut self, count: isize) -> Self {
+        self.params.channel_non_200_status_after_count = count;
+        self
+    }
+
+    pub fn channel_non_200_status_code(mut self, status_code: StatusCode) -> Self {
+        self.params.channel_non_200_status_code = status_code;
+        self
+    }
+
+    pub fn channel_panic_response_from_extension_on_count(mut self, count: isize) -> Self {
+        self.params.channel_panic_response_from_extension_on_count = count;
+        self
+    }
+
+    pub fn channel_panic_request_to_extension_before_start_on_count(mut self, count: isize) -> Self {
+        self.params.channel_panic_request_to_extension_before_start_on_count = count;
+        self
+    }
+
+    pub fn channel_panic_request_to_extension_after_start(mut self, panic: bool) -> Self {
+        self.params.channel_panic_request_to_extension_after_start = panic;
+        self
+    }
+
+    pub fn channel_panic_request_to_extension_before_close(mut self, panic: bool) -> Self {
+        self.params.channel_panic_request_to_extension_before_close = panic;
+        self
+    }
+
+    pub fn ping_panic_after_count(mut self, count: isize) -> Self {
+        self.params.ping_panic_after_count = count;
+        self
+    }
+
+    pub fn listener_type(mut self, listener_type: ListenerType) -> Self {
+        self.params.listener_type = listener_type;
+        self
+    }
+
+    pub fn build(self) -> RouterParams {
+        self.params
+    }
 }
 
 #[allow(dead_code)]
@@ -264,7 +340,9 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                             // Keep in mind that this is HTTP/1.1 WITHOUT CHUNKING and WITHOUT CONTENT-LENGTH header
                             // We are sending this over HTTP2 so closing the stream is the only way to indicate the end of the body,
                             // similar to Transfer-Encoding: chunked
-                            release_request_rx.lock().await.recv().await;
+                            if request_count < params.channel_return_request_without_wait_before_count as usize {
+                                release_request_rx.lock().await.recv().await;
+                            }
 
                             if params.channel_panic_request_to_extension_before_close {
                                 panic!("Panic! Request to extension, before close");
