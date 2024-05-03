@@ -268,6 +268,8 @@ async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok()
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -559,7 +561,8 @@ async fn test_lambda_service_router_connects_ping_panics() {
   // Start router server
   let mock_router_server = mock_router::setup_router(
     mock_router::RouterParamsBuilder::new()
-      .channel_non_200_status_after_count(1)
+      .channel_non_200_status_after_count(100)
+      .channel_return_request_without_wait_before_count(2)
       .ping_panic_after_count(0)
       .build(),
   );
@@ -581,11 +584,12 @@ async fn test_lambda_service_router_connects_ping_panics() {
   });
 
   // Blow up the mock router server
-  // Release the request after a few seconds
   tokio::spawn(async move {
     tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -651,7 +655,7 @@ async fn test_lambda_service_router_connects_ping_panics() {
   // Healthcheck not called
   mock_app_healthcheck.assert_hits(0);
   // Bananas called once
-  mock_app_bananas.assert_hits(1);
+  mock_app_bananas.assert_hits(2);
 }
 
 #[tokio::test]
@@ -659,6 +663,8 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
   // Start router server
   let mock_router_server = mock_router::setup_router(
     mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(2)
+      .channel_return_request_without_wait_before_count(2)
       .ping_panic_after_count(0)
       .build(),
   );
@@ -683,6 +689,8 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
     tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -750,7 +758,7 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
   // Healthcheck not called
   mock_app_healthcheck.assert_hits(0);
   // Bananas called once
-  mock_app_bananas.assert_hits(1);
+  mock_app_bananas.assert_hits(2);
 }
 
 #[tokio::test]
@@ -780,6 +788,8 @@ async fn test_lambda_service_loop_100_valid_get_requests() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -865,6 +875,8 @@ async fn test_lambda_service_loop_100_valid_post_requests() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -944,6 +956,8 @@ async fn test_lambda_service_valid_10kb_echo_post_requests() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1032,6 +1046,8 @@ async fn test_lambda_service_valid_124kb_of_headers() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1114,6 +1130,8 @@ async fn test_lambda_service_valid_oversized_headers() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1193,6 +1211,8 @@ async fn test_lambda_service_get_query_string_simple() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1272,6 +1292,8 @@ async fn test_lambda_service_get_query_string_repeated() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1355,6 +1377,8 @@ async fn test_lambda_service_get_query_string_encoded() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1436,6 +1460,8 @@ async fn test_lambda_service_get_query_string_unencoded_brackets() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1516,6 +1542,8 @@ async fn test_lambda_service_loop_100_requests_contained_app_connection_close_he
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1610,6 +1638,8 @@ async fn test_lambda_service_router_connects_channel_request_panics() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1707,6 +1737,8 @@ async fn test_lambda_service_router_connects_channel_response_panics() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1879,6 +1911,8 @@ async fn fixture_lambda_service_channel_status_code(
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1929,4 +1963,113 @@ async fn fixture_lambda_service_channel_status_code(
 
   // Assert app server's healthcheck endpoint did not get called
   mock_app_healthcheck.assert_hits(0);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_lambda_service_router_connects_app_panics_graceful_close() {
+  // Start router server
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(100)
+      .channel_return_request_without_wait_before_count(2)
+      .build(),
+  );
+
+  // Start app server
+  let mock_app_server = MockServer::start();
+  let mock_app_healthcheck = mock_app_server.mock(|when, then| {
+    when.method(GET).path("/health");
+    then.status(200).body("OK");
+  });
+  let mock_app_bananas = mock_app_server.mock(|when, then| {
+    when.method(GET).path("/bananas");
+    then
+      .status(200)
+      .header("Content-Type", "text/plain")
+      .body("Bananas");
+  });
+  // TODO: Change the mock server to return this route
+  // after first request to /bananas
+  let mock_app_bananas_panic = mock_app_server.mock(|when, then| {
+    when.method(GET).path("/bananas/panic");
+    then
+      .status(200)
+      .header("Content-Type", "text/plain")
+      // Let's see if this panics and closes the client socket
+      .body((if false { Some("") } else { None }).unwrap());
+  });
+
+  let mut options = Options::default();
+
+  // We want a port that is not open
+  // options.port = 54321;
+  options.port = mock_app_server.address().port();
+  let initialized = true;
+
+  let app_client = create_app_client();
+  let service = LambdaService::new(
+    options,
+    Arc::new(AtomicBool::new(initialized)),
+    format!("{}/health", mock_app_server.base_url())
+      .parse()
+      .unwrap(),
+    app_client,
+  );
+  let request = WaiterRequest {
+    pool_id: Some("test_pool".to_string()),
+    id: "test_id".to_string(),
+    router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
+    // We are using 2 channels
+    // The 1st channel will give back a request to run right away
+    // The 2nd channel will wait for the unlock signal, which we will unlock
+    // only from a close() request, not from this test
+    number_of_channels: 2,
+    sent_time: "2022-01-01T00:00:00Z".to_string(),
+    init_only: false,
+  };
+  let mut context = lambda_runtime::Context::default();
+  context.deadline = current_time_millis() + 60 * 1000;
+  let event = LambdaEvent {
+    payload: request,
+    context,
+  };
+
+  // Act
+  let start = std::time::Instant::now();
+  let response = service.fetch_response(event).await;
+  let duration = std::time::Instant::now().duration_since(start);
+
+  //
+  // NOTE: We do NOT release the wait in the mock router
+  // The wait is released by the call to `close` from `ping`
+  //
+
+  // Assert
+  assert!(response.is_err(), "fetch_response should fail");
+  match response {
+    Ok(waiter_response) => {
+      assert!(
+        false,
+        "Expected Ok with ExitReason, got ExitReason: {:?}",
+        waiter_response.exit_reason
+      );
+    }
+    Err(err) => {
+      assert_eq!(err, LambdaRequestError::AppConnectionUnreachable,);
+    }
+  }
+  assert!(
+    duration <= std::time::Duration::from_secs(2),
+    "Should take at most 2 seconds"
+  );
+
+  // Healthcheck not called
+  mock_app_healthcheck.assert_hits(0);
+  // Bananas called less than 100 times
+  assert!(
+    mock_app_bananas.hits() < 100,
+    "Bananas should not be called 100 times"
+  );
+  mock_app_bananas.assert_hits(2);
 }

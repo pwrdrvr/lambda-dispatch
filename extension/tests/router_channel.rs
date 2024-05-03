@@ -231,6 +231,8 @@ async fn fixture_channel_read_request_send_to_app(listener_type: mock_router::Li
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -352,6 +354,8 @@ async fn fixture_channel_goaway_on_body(listener_type: mock_router::ListenerType
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -457,6 +461,8 @@ async fn test_channel_invalid_request_headers_should_continue() {
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();

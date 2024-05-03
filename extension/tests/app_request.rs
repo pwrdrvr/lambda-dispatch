@@ -56,6 +56,8 @@ async fn test_read_until_req_headers_valid_req() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -153,6 +155,8 @@ async fn test_read_until_req_headers_no_host_header() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -250,6 +254,8 @@ async fn test_read_until_req_headers_double_slash_path() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -344,6 +350,8 @@ async fn test_read_until_req_headers_go_away_path() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -471,6 +479,8 @@ async fn test_read_until_req_headers_connection_closed() {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -559,6 +569,8 @@ async fn test_read_until_req_headers_partial_reads() {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();

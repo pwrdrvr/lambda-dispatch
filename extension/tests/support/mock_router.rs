@@ -11,7 +11,7 @@ use axum::{
 use axum_extra::body::AsyncReadBody;
 use futures::stream::StreamExt;
 use hyper::StatusCode;
-use tokio::{io::AsyncWriteExt, sync::mpsc::Sender};
+use tokio::io::AsyncWriteExt;
 
 use crate::support::http2_server::{run_http2_app, run_http2_tls_app, Serve};
 
@@ -66,7 +66,7 @@ pub struct RouterParams {
 
 #[allow(dead_code)]
 pub struct RouterResult {
-  pub release_request_tx: Sender<()>,
+  pub release_request_tx: Arc<tokio::sync::Mutex<tokio::sync::mpsc::Sender<()>>>,
   pub request_count: Arc<AtomicUsize>,
   pub ping_count: Arc<AtomicUsize>,
   pub close_count: Arc<AtomicUsize>,
@@ -100,6 +100,11 @@ impl RouterParamsBuilder {
 
     pub fn request_method(mut self, request_method: RequestMethod) -> Self {
         self.params.request_method = request_method;
+        self
+    }
+
+    pub fn channel_return_request_without_wait_before_count(mut self, count: isize) -> Self {
+        self.params.channel_return_request_without_wait_before_count = count;
         self
     }
 
@@ -153,8 +158,10 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
   // Start router server
   let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
   let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
+  let release_request_tx = Arc::new(tokio::sync::Mutex::new(release_request_tx));
+  let release_request_tx_close = Arc::clone(&release_request_tx);
   // Use an arc int to count how many times the request endpoint was called
-  let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+  let request_count: Arc<AtomicUsize> = Arc::new(std::sync::atomic::AtomicUsize::new(0));
   let request_count_clone = Arc::clone(&request_count);
   let ping_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
   let ping_count_clone = Arc::clone(&ping_count);
@@ -171,8 +178,7 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
 
                     async move {
                         // Increment the request count
-                        request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let request_count = request_count.load(std::sync::atomic::Ordering::SeqCst);
+                        let request_count = 1 + request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
                         // Bail after request count if desired
                         if params.channel_non_200_status_after_count >= 0 && request_count > params.channel_non_200_status_after_count as usize {
@@ -298,7 +304,6 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                             } else if params.request_method == RequestMethod::GetEnormousHeaders {
                                 let data = b"GET /bananas/enormous_headers HTTP/1.1\r\nHost: localhost\r\n";
                                 tx.write_all(data).await.unwrap();
-            
 
                                 let header_value = "a".repeat(1024 * 31); // Each header value is 31 KB
                                 for i in 0..4 {
@@ -336,16 +341,16 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                                 tx.write_all(data).await.unwrap();
                             }
 
+                            if params.channel_panic_request_to_extension_before_close {
+                                panic!("Panic! Request to extension, before close");
+                            }
+
                             // Wait for the release before indicating that the body is finished
                             // Keep in mind that this is HTTP/1.1 WITHOUT CHUNKING and WITHOUT CONTENT-LENGTH header
                             // We are sending this over HTTP2 so closing the stream is the only way to indicate the end of the body,
                             // similar to Transfer-Encoding: chunked
-                            if request_count < params.channel_return_request_without_wait_before_count as usize {
+                            if request_count >= params.channel_return_request_without_wait_before_count as usize {
                                 release_request_rx.lock().await.recv().await;
-                            }
-
-                            if params.channel_panic_request_to_extension_before_close {
-                                panic!("Panic! Request to extension, before close");
                             }
 
                             // Close the body stream
@@ -384,6 +389,10 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
             "/api/chunked/close/:lambda_id",
             get(move |Path(lambda_id): Path<String>| async move {
                 let close_count = Arc::clone(&close_count_clone);
+                
+                // Release any waiting requests
+                release_request_tx_close.lock().await.send(()).await.unwrap();
+                
                 // Increment
                 close_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 log::info!("Close! LambdaID: {}", lambda_id);
