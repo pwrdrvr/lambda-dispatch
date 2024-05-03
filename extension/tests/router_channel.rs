@@ -100,17 +100,13 @@ async fn fixture_channel_status_code(
   let pool_id = "pool_id".to_string();
   let channel_id = "channel_id".to_string();
 
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 0,
-    channel_non_200_status_code: status_code,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(0)
+      .channel_non_200_status_code(status_code)
+      .listener_type(listener_type)
+      .build(),
+  );
 
   let router_endpoint: Endpoint = format!(
     "{}://localhost:{}",
@@ -198,17 +194,12 @@ async fn fixture_channel_read_request_send_to_app(listener_type: mock_router::Li
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: 0,
-    listener_type,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(1)
+      .listener_type(listener_type)
+      .build(),
+  );
 
   let router_endpoint: Endpoint = format!(
     "{}://localhost:{}",
@@ -332,17 +323,14 @@ async fn fixture_channel_goaway_on_body(listener_type: mock_router::ListenerType
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetGoAwayOnBody,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: 0,
-    listener_type,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetGoAwayOnBody)
+      .channel_non_200_status_after_count(1)
+      .listener_type(listener_type)
+      .ping_panic_after_count(0)
+      .build(),
+  );
   let router_endpoint: Endpoint = format!(
     "{}://localhost:{}",
     listener_type.to_string(),
@@ -444,17 +432,13 @@ async fn test_channel_invalid_request_headers_should_continue() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetInvalidHeaders,
-    channel_non_200_status_after_count: 2,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: 0,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetInvalidHeaders)
+      .channel_non_200_status_after_count(2)
+      .ping_panic_after_count(0)
+      .build(),
+  );
   let router_endpoint: Endpoint =
     format!("http://localhost:{}", mock_router_server.server.addr.port())
       .parse()

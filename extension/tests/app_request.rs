@@ -5,7 +5,7 @@ use httpdate::fmt_http_date;
 use hyper::{
   body::{Bytes, Frame},
   http::HeaderName,
-  Request, StatusCode, Uri,
+  Request, Uri,
 };
 use std::time::SystemTime;
 use tokio_test::assert_ok;
@@ -49,17 +49,8 @@ async fn test_read_until_req_headers_valid_req() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: -1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server =
+    mock_router::setup_router(mock_router::RouterParamsBuilder::new().build());
 
   // Let the router return right away
   tokio::spawn(async move {
@@ -152,17 +143,11 @@ async fn test_read_until_req_headers_no_host_header() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetNoHost,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetNoHost)
+      .build(),
+  );
 
   // Let the router return right away
   tokio::spawn(async move {
@@ -254,17 +239,12 @@ async fn test_read_until_req_headers_double_slash_path() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetDoubleSlashPath,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetDoubleSlashPath)
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   // Let the router return right away
   tokio::spawn(async move {
@@ -353,17 +333,11 @@ async fn test_read_until_req_headers_go_away_path() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::GetGoAwayOnBody,
-    channel_non_200_status_after_count: -1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::GetGoAwayOnBody)
+      .build(),
+  );
 
   // Release the response before we make the request
   // This way we get all the bytes in one chunk
@@ -452,17 +426,11 @@ async fn test_read_until_req_headers_connection_closed() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::ShutdownWithoutResponse,
-    channel_non_200_status_after_count: -1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .request_method(mock_router::RequestMethod::ShutdownWithoutResponse)
+      .build(),
+  );
 
   let channel_url: Uri = format!(
     "http://localhost:{}/api/chunked/request/{}/{}",
@@ -546,17 +514,11 @@ async fn test_read_until_req_headers_partial_reads() {
   let channel_id = "channel_id".to_string();
 
   // Start router server
-  let mock_router_server = mock_router::setup_router(mock_router::RouterParams {
-    request_method: mock_router::RequestMethod::Get,
-    channel_non_200_status_after_count: 1,
-    channel_non_200_status_code: StatusCode::CONFLICT,
-    channel_panic_response_from_extension_on_count: -1,
-    channel_panic_request_to_extension_before_start_on_count: -1,
-    channel_panic_request_to_extension_after_start: false,
-    channel_panic_request_to_extension_before_close: false,
-    ping_panic_after_count: -1,
-    listener_type: mock_router::ListenerType::Http,
-  });
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(1)
+      .build(),
+  );
 
   let channel_url: Uri = format!(
     "http://localhost:{}/api/chunked/request/{}/{}",
