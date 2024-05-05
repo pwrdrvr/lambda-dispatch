@@ -206,7 +206,7 @@ impl LambdaService {
           exit_reason
         );
 
-        resp.exit_reason = exit_reason;
+        resp.exit_reason = resp.exit_reason.worse(exit_reason);
       }
       Err(err) => {
         log::error!(

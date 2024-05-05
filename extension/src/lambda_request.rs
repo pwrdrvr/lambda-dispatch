@@ -235,7 +235,8 @@ impl LambdaRequest {
     exit_reason = self
       .wait_for_ping_loop(ping_task.take().unwrap(), exit_reason)
       .await
-      .unwrap_or(exit_reason);
+      .unwrap_or(exit_reason)
+      .worse(exit_reason);
 
     Ok(exit_reason)
   }
