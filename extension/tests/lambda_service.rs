@@ -1,6 +1,7 @@
+use axum::{body::Body, http::HeaderValue, routing::get, Router};
 use futures::task::noop_waker;
 use httpmock::{Method::GET, MockServer};
-use hyper::{StatusCode, Uri};
+use hyper::{HeaderMap, StatusCode, Uri};
 use lambda_runtime::LambdaEvent;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::net::TcpListener;
@@ -18,6 +19,8 @@ use extension::{
   options::Options,
   time::current_time_millis,
 };
+
+use crate::support::http2_server::run_http1_app;
 
 async fn start_mock_server() -> u16 {
   let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -562,7 +565,7 @@ async fn test_lambda_service_router_connects_ping_panics() {
   let mock_router_server = mock_router::setup_router(
     mock_router::RouterParamsBuilder::new()
       .channel_non_200_status_after_count(100)
-      .channel_return_request_without_wait_before_count(2)
+      .channel_return_request_without_wait_before_count(1)
       .ping_panic_after_count(0)
       .build(),
   );
@@ -585,6 +588,13 @@ async fn test_lambda_service_router_connects_ping_panics() {
 
   // Blow up the mock router server
   tokio::spawn(async move {
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
     tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
     mock_router_server
       .release_request_tx
@@ -593,11 +603,12 @@ async fn test_lambda_service_router_connects_ping_panics() {
       .send(())
       .await
       .unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
   });
 
   let mut options = Options::default();
-
   options.port = mock_app_server.address().port();
+  options.last_active_grace_period_ms = 5000;
   let initialized = true;
 
   let app_client = create_app_client();
@@ -1966,52 +1977,85 @@ async fn fixture_lambda_service_channel_status_code(
 }
 
 #[tokio::test]
-#[ignore]
-async fn test_lambda_service_router_connects_app_panics_graceful_close() {
+async fn test_lambda_service_router_connects_app_crashes_graceful_close() {
   // Start router server
   let mock_router_server = mock_router::setup_router(
     mock_router::RouterParamsBuilder::new()
       .channel_non_200_status_after_count(100)
-      .channel_return_request_without_wait_before_count(2)
+      // .channel_return_request_without_wait_before_count(2)
+      .request_method_switch_after_count(2)
+      // After the 1st response we want to change to a GoAway on the body
+      .request_method_switch_to(mock_router::RequestMethod::GetGoAwayOnBody)
       .build(),
   );
 
   // Start app server
-  let mock_app_server = MockServer::start();
-  let mock_app_healthcheck = mock_app_server.mock(|when, then| {
-    when.method(GET).path("/health");
-    then.status(200).body("OK");
-  });
-  let mock_app_bananas = mock_app_server.mock(|when, then| {
-    when.method(GET).path("/bananas");
-    then
-      .status(200)
-      .header("Content-Type", "text/plain")
-      .body("Bananas");
-  });
-  // TODO: Change the mock server to return this route
-  // after first request to /bananas
-  let mock_app_bananas_panic = mock_app_server.mock(|when, then| {
-    when.method(GET).path("/bananas/panic");
-    then
-      .status(200)
-      .header("Content-Type", "text/plain")
-      // Let's see if this panics and closes the client socket
-      .body((if false { Some("") } else { None }).unwrap());
+  let mock_app = Router::new().route(
+    "/bananas",
+    get(|| async {
+      let mut headers = HeaderMap::new();
+      // Tell the extension we're closing the socket
+      headers.insert("Connection", HeaderValue::from_static("close"));
+      (StatusCode::OK, headers, Body::from("bananas"))
+    }),
+  );
+  let mock_app_server = run_http1_app(mock_app);
+  let mock_app_server_port = mock_app_server.addr.port();
+
+  // Spawn a task to drop the mock app server after a second
+  let task = tokio::spawn(async move {
+    println!(
+      "{} Releasing 1st request",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // Drop the mock app server so it won't accept the connection for the next request
+    drop(mock_app_server);
+    println!(
+      "{} Dropped app",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    // Wait a second for the drop to process
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    println!(
+      "{} Releasing 2nd request",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    // Release one more request - This should call with an app unreachable
+    // The second channel should also exit after close releases and responds with a GoAway
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+    // Wait a second for the message to get read
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    println!(
+      "{} Returning from task",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
   });
 
   let mut options = Options::default();
-
-  // We want a port that is not open
-  // options.port = 54321;
-  options.port = mock_app_server.address().port();
+  options.port = mock_app_server_port;
+  // Make sure the ping loop doesn't cause us to exit
+  options.last_active_grace_period_ms = 10000;
   let initialized = true;
 
   let app_client = create_app_client();
   let service = LambdaService::new(
     options,
     Arc::new(AtomicBool::new(initialized)),
-    format!("{}/health", mock_app_server.base_url())
+    format!("http://127.0.0.1:{}/health", mock_app_server_port)
       .parse()
       .unwrap(),
     app_client,
@@ -2060,16 +2104,13 @@ async fn test_lambda_service_router_connects_app_panics_graceful_close() {
     }
   }
   assert!(
-    duration <= std::time::Duration::from_secs(2),
-    "Should take at most 2 seconds"
+    duration >= std::time::Duration::from_secs(2),
+    "Should take at least 2 seconds, took: {:.1}",
+    duration.as_secs_f32()
   );
-
-  // Healthcheck not called
-  mock_app_healthcheck.assert_hits(0);
-  // Bananas called less than 100 times
   assert!(
-    mock_app_bananas.hits() < 100,
-    "Bananas should not be called 100 times"
+    duration <= std::time::Duration::from_secs(3),
+    "Should take at most 3 seconds, took: {:.1}",
+    duration.as_secs_f32()
   );
-  mock_app_bananas.assert_hits(2);
 }

@@ -176,8 +176,8 @@ async fn test_ping_channel_last_active() {
   );
   assert_eq!(
     ping_count.load(std::sync::atomic::Ordering::SeqCst),
-    0,
-    "ping count should be 0"
+    1,
+    "ping count should be 1"
   );
   assert_eq!(
     close_count.load(std::sync::atomic::Ordering::SeqCst),
@@ -282,8 +282,8 @@ async fn test_ping_channel_cancel_token() {
   );
   assert_eq!(
     ping_count.load(std::sync::atomic::Ordering::SeqCst),
-    0,
-    "ping count should be 0"
+    1,
+    "ping count should be 1"
   );
   assert_eq!(
     close_count.load(std::sync::atomic::Ordering::SeqCst),

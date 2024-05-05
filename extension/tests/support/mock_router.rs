@@ -16,11 +16,12 @@ use tokio::io::AsyncWriteExt;
 use crate::support::http2_server::{run_http2_app, run_http2_tls_app, Serve};
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum RequestMethod {
   Get,
   GetDoubleSlashPath,
   GetNoHost,
+  GetPanic,
   GetQuerySimple,
   GetQueryEncoded,
   GetQueryUnencodedBrackets,
@@ -61,6 +62,8 @@ pub struct RouterParams {
   pub channel_panic_request_to_extension_before_close: bool,
   pub ping_panic_after_count: isize,
   pub request_method: RequestMethod,
+  pub request_method_switch_to: RequestMethod,
+  pub request_method_switch_after_count: isize,
   pub listener_type: ListenerType,
 }
 
@@ -74,7 +77,6 @@ pub struct RouterResult {
 }
 
 #[allow(dead_code)]
-
 pub struct RouterParamsBuilder {
     params: RouterParams,
 }
@@ -85,6 +87,8 @@ impl RouterParamsBuilder {
         RouterParamsBuilder {
             params: RouterParams {
                 request_method: RequestMethod::Get,
+                request_method_switch_to: RequestMethod::Get,
+                request_method_switch_after_count: -1,
                 channel_return_request_without_wait_before_count: -1,
                 channel_non_200_status_after_count: -1,
                 channel_non_200_status_code: StatusCode::CONFLICT,
@@ -100,6 +104,16 @@ impl RouterParamsBuilder {
 
     pub fn request_method(mut self, request_method: RequestMethod) -> Self {
         self.params.request_method = request_method;
+        self
+    }
+
+    pub fn request_method_switch_to(mut self, request_method: RequestMethod) -> Self {
+        self.params.request_method_switch_to = request_method;
+        self
+    }
+
+    pub fn request_method_switch_after_count(mut self, count: isize) -> Self {
+        self.params.request_method_switch_after_count = count;
         self
     }
 
@@ -156,7 +170,7 @@ impl RouterParamsBuilder {
 #[allow(dead_code)]
 pub fn setup_router(params: RouterParams) -> RouterResult {
   // Start router server
-  let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(1);
+  let (release_request_tx, release_request_rx) = tokio::sync::mpsc::channel::<()>(100);
   let release_request_rx = Arc::new(tokio::sync::Mutex::new(release_request_rx));
   let release_request_tx = Arc::new(tokio::sync::Mutex::new(release_request_tx));
   let release_request_tx_close = Arc::clone(&release_request_tx);
@@ -264,44 +278,78 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                                 panic!("Panic! Response from extension");
                             }
 
+                            let request_method = if params.request_method_switch_after_count >= 0
+                            && request_count > params.request_method_switch_after_count as usize {
+                                println!("{} Switching to: {:?}, request_count: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), params.request_method_switch_to, request_count);
+                                params.request_method_switch_to
+                            } else {
+                                println!("{} Using: {:?}, request_count: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), params.request_method, request_count);
+                                params.request_method
+                            };
+
+                            // Wait for the release before indicating that the body is finished
+                            // Keep in mind that this is HTTP/1.1 WITHOUT CHUNKING and WITHOUT CONTENT-LENGTH header
+                            // We are sending this over HTTP2 so closing the stream is the only way to indicate the end of the body,
+                            // similar to Transfer-Encoding: chunked
+
+                            // Wait for the release before sending the request to the extension
+                            // Note that our headers reader will read the headers if we send them
+                            // so we cannot send the headers until we want the extension to process
+                            // the request
+                            if params.channel_return_request_without_wait_before_count < 0
+                            || request_count >= params.channel_return_request_without_wait_before_count as usize {
+                                match release_request_rx.lock().await.recv().await {
+                                    None => {
+                                        // The channel was closed
+                                        println!("{} Channel closed, request_count: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), request_count);
+                                    }
+                                    Some(_) => {
+                                        println!("{} Channel released, request_count: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), request_count);
+                                    }
+                                }
+                            } else {
+                                println!("{} Channel released before count: {}, request_count: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), params.channel_return_request_without_wait_before_count, request_count);
+                            }
+
                             // Send static request to extension
-                            if params.request_method == RequestMethod::ShutdownWithoutResponse {
+                            if request_method == RequestMethod::ShutdownWithoutResponse {
                               release_request_rx.lock().await.recv().await;
 
                               // Close the body stream
                               tx.shutdown().await.unwrap();
                               return;
-                            } else if params.request_method == RequestMethod::PostSimple {
+                            } else if request_method == RequestMethod::PostSimple {
                                 let data = b"POST /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\nHELLO WORLD";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::PostEcho {
+                            } else if request_method == RequestMethod::PostEcho {
                                 let data = b"POST /bananas_echo HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
 
                                 let data = "a".repeat(10 * 1024);
                                 tx.write_all(data.as_bytes()).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetDoubleSlashPath {
+                            } else if request_method == RequestMethod::GetDoubleSlashPath {
                                 let data = b"GET // HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap(); 
-                            } else if params.request_method == RequestMethod::GetQuerySimple {
+                            } else if request_method == RequestMethod::GetQuerySimple {
                                 let data = b"GET /bananas_query_simple?cat=dog&frog=log HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetQueryRepeated {
+                            } else if request_method == RequestMethod::GetQueryRepeated {
                                 let data = b"GET /bananas_query_repeated?cat=dog&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetQueryEncoded {
+                            } else if request_method == RequestMethod::GetQueryEncoded {
                                 let data = b"GET /bananas_query_encoded?cat=dog%25&cat=%22log%22&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetQueryUnencodedBrackets {
+                            } else if request_method == RequestMethod::GetQueryUnencodedBrackets {
                                 let data = b"GET /bananas_query_unencoded_brackets?cat=[dog]&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetGoAwayOnBody {
+                            } else if request_method == RequestMethod::GetGoAwayOnBody {
+                                println!("Sending GoAway on body");
                                 let data = b"GET /_lambda_dispatch/goaway HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetInvalidHeaders {
+                            } else if request_method == RequestMethod::GetInvalidHeaders {
                                 let data = b"GET /bananas/invalid_headers HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n:\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetEnormousHeaders {
+                            } else if request_method == RequestMethod::GetEnormousHeaders {
                                 let data = b"GET /bananas/enormous_headers HTTP/1.1\r\nHost: localhost\r\n";
                                 tx.write_all(data).await.unwrap();
 
@@ -313,7 +361,7 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
 
                                 let data = b"\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetOversizedHeader {
+                            } else if request_method == RequestMethod::GetOversizedHeader {
                                 let data = b"GET /bananas/oversized_header HTTP/1.1\r\nHost: localhost\r\n";
                                 tx.write_all(data).await.unwrap();
 
@@ -325,9 +373,11 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
 
                                 let data = b"\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
-                            } else if params.request_method == RequestMethod::GetNoHost {
+                            } else if request_method == RequestMethod::GetNoHost {
                                 let data = b"GET /bananas/no_host_header HTTP/1.1\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
+                            } else if request_method == RequestMethod::GetPanic {
+                                panic!("Panic! Request to extension");
                             } else {
                                 let data = b"GET /bananas HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n";
                                 tx.write_all(data).await.unwrap();
@@ -343,14 +393,6 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
 
                             if params.channel_panic_request_to_extension_before_close {
                                 panic!("Panic! Request to extension, before close");
-                            }
-
-                            // Wait for the release before indicating that the body is finished
-                            // Keep in mind that this is HTTP/1.1 WITHOUT CHUNKING and WITHOUT CONTENT-LENGTH header
-                            // We are sending this over HTTP2 so closing the stream is the only way to indicate the end of the body,
-                            // similar to Transfer-Encoding: chunked
-                            if request_count >= params.channel_return_request_without_wait_before_count as usize {
-                                release_request_rx.lock().await.recv().await;
                             }
 
                             // Close the body stream
@@ -391,11 +433,13 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                 let close_count = Arc::clone(&close_count_clone);
                 
                 // Release any waiting requests
-                release_request_tx_close.lock().await.send(()).await.unwrap();
-                
+                for _ in 0..10 {
+                    release_request_tx_close.lock().await.send(()).await.unwrap();
+                }
+
                 // Increment
                 close_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                log::info!("Close! LambdaID: {}", lambda_id);
+                println!("{} Close! LambdaID: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), lambda_id);
                 format!("Close! LambdaID: {}", lambda_id)
             }),
         );

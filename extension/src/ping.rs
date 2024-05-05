@@ -116,7 +116,7 @@ pub async fn send_ping_requests(
   last_active_grace_period_ms: u64,
 ) -> Option<PingResult> {
   let mut ping_result = None;
-  let start_time = time::current_time_millis();
+  let start_time = 0;
   let mut last_ping_time = start_time;
 
   let scheme = router_endpoint.scheme();
