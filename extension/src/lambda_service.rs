@@ -188,6 +188,7 @@ impl LambdaService {
       channel_count,
       request.router_endpoint,
       deadline_ms,
+      self.options.last_active_grace_period_ms,
     );
 
     //

@@ -33,6 +33,7 @@ async fn test_lambda_request_router_blackhole() {
     1,
     Endpoint::new(Scheme::Http, "192.0.2.0", 54321),
     current_time_millis() + 60 * 1000,
+    250,
   );
 
   let app_client = create_app_client();
@@ -202,6 +203,7 @@ async fn test_lambda_request_router_connects_ping_panics() {
     1,
     mock_router_endpoint,
     current_time_millis() + 60 * 1000,
+    250,
   );
 
   // Blow up the mock router server

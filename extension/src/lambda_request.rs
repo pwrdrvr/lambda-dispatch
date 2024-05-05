@@ -44,6 +44,7 @@ pub struct LambdaRequest {
   requests_in_flight: Arc<AtomicUsize>,
   pub count: Arc<AtomicUsize>,
   start_time: u64,
+  last_active_grace_period_ms: u64,
 }
 
 impl LambdaRequest {
@@ -61,6 +62,7 @@ impl LambdaRequest {
     channel_count: u8,
     router_endpoint: Endpoint,
     deadline_ms: u64,
+    last_active_grace_period_ms: u64,
   ) -> Self {
     LambdaRequest {
       count: Arc::new(AtomicUsize::new(0)),
@@ -77,6 +79,7 @@ impl LambdaRequest {
       rng: rand::rngs::StdRng::from_entropy(),
       requests_in_flight: Arc::new(AtomicUsize::new(0)),
       start_time: current_time_millis(),
+      last_active_grace_period_ms,
     }
   }
 
@@ -98,6 +101,7 @@ impl LambdaRequest {
       self.deadline_ms,
       self.cancel_token.clone(),
       Arc::clone(&self.requests_in_flight),
+      self.last_active_grace_period_ms,
     )));
 
     // Startup the request channels

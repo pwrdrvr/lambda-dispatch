@@ -113,6 +113,7 @@ pub async fn send_ping_requests(
   deadline_ms: u64,
   cancel_token: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
+  last_active_grace_period_ms: u64,
 ) -> Option<PingResult> {
   let mut ping_result = None;
   let start_time = time::current_time_millis();
@@ -135,7 +136,6 @@ pub async fn send_ping_requests(
 
   while !goaway_received.load(std::sync::atomic::Ordering::Acquire) && !cancel_token.is_cancelled()
   {
-    let last_active_grace_period_ms = 250;
     let close_before_deadline_ms = 15000;
     let last_active = last_active.load(Ordering::Acquire);
     let last_active_ago_ms = if last_active == 0 {

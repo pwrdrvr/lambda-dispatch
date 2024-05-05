@@ -44,6 +44,7 @@ pub struct Options {
   pub local_env: bool,
   pub force_deadline_secs: Option<Duration>,
   pub async_init_timeout: Duration,
+  pub last_active_grace_period_ms: u64,
 }
 
 impl Options {
@@ -81,6 +82,11 @@ impl Options {
       local_env: provider.get_var("LAMBDA_DISPATCH_FORCE_DEADLINE").is_ok(),
       force_deadline_secs,
       async_init_timeout,
+      last_active_grace_period_ms: provider
+        .get_var("LAMBDA_DISPATCH_LAST_ACTIVE_GRACE_PERIOD_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(250),
     }
   }
 }
