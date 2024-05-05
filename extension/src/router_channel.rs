@@ -1,5 +1,6 @@
 use crate::app_client::AppClient;
 use crate::lambda_request_error::LambdaRequestError;
+use crate::ping::send_close_request;
 use crate::relay::{relay_request_to_app, relay_response_to_router};
 use crate::router_client::RouterClient;
 use crate::utils::compressable;
@@ -339,7 +340,16 @@ impl RouterChannel {
       Err(err) => {
         if err.is_connect() {
           // FIXME: Cancel the request relay
-          // FIXME: Close the router request/response
+          // Ask the router to close our invoke gracefully
+          send_close_request(
+            Arc::clone(&self.goaway_received),
+            router_client,
+            Arc::clone(&self.pool_id),
+            Arc::clone(&self.lambda_id),
+            self.router_endpoint.clone(),
+          )
+          .await;
+
           return Err(LambdaRequestError::AppConnectionUnreachable);
         }
         return Err(LambdaRequestError::AppConnectionError);
