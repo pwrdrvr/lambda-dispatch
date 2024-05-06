@@ -2003,7 +2003,7 @@ async fn test_lambda_service_router_connects_app_crashes_graceful_close() {
   let mock_app_server_port = mock_app_server.addr.port();
 
   // Spawn a task to drop the mock app server after a second
-  let task = tokio::spawn(async move {
+  let _ = tokio::spawn(async move {
     println!(
       "{} Releasing 1st request",
       chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
@@ -2111,6 +2111,118 @@ async fn test_lambda_service_router_connects_app_crashes_graceful_close() {
   assert!(
     duration <= std::time::Duration::from_secs(3),
     "Should take at most 3 seconds, took: {:.1}",
+    duration.as_secs_f32()
+  );
+}
+
+#[tokio::test]
+async fn test_lambda_service_router_closes_quickly_when_no_requests() {
+  env_logger::init();
+  // Start router server
+  let mock_router_server =
+    mock_router::setup_router(mock_router::RouterParamsBuilder::new().build());
+
+  // Start app server
+  let mock_app = Router::new().route(
+    "/bananas",
+    get(|| async {
+      let mut headers = HeaderMap::new();
+      // Tell the extension we're closing the socket
+      headers.insert("Connection", HeaderValue::from_static("close"));
+      (StatusCode::OK, headers, Body::from("bananas"))
+    }),
+  );
+  let mock_app_server = run_http1_app(mock_app);
+  let mock_app_server_port = mock_app_server.addr.port();
+
+  // Spawn a task to drop the mock app server after a second
+  let _ = tokio::spawn(async move {
+    // Wait longer than extension should wait
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    println!(
+      "{} Releasing 1st request",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    // Touch the tx channel so it doesn't get dropped
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+
+    println!(
+      "{} Returning from task",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+  });
+
+  let mut options = Options::default();
+  options.port = mock_app_server_port;
+  // options.last_active_grace_period_ms = 10000;
+  let initialized = true;
+
+  let app_client = create_app_client();
+  let service = LambdaService::new(
+    options,
+    Arc::new(AtomicBool::new(initialized)),
+    format!("http://127.0.0.1:{}/health", mock_app_server_port)
+      .parse()
+      .unwrap(),
+    app_client,
+  );
+  let request = WaiterRequest {
+    pool_id: Some("test_pool".to_string()),
+    id: "test_id".to_string(),
+    router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
+    // We are using 2 channels
+    // The 1st channel will give back a request to run right away
+    // The 2nd channel will wait for the unlock signal, which we will unlock
+    // only from a close() request, not from this test
+    number_of_channels: 2,
+    sent_time: "2022-01-01T00:00:00Z".to_string(),
+    init_only: false,
+  };
+  let mut context = lambda_runtime::Context::default();
+  context.deadline = current_time_millis() + 60 * 1000;
+  let event = LambdaEvent {
+    payload: request,
+    context,
+  };
+
+  // Act
+  let start = std::time::Instant::now();
+  let response = service.fetch_response(event).await;
+  let duration = std::time::Instant::now().duration_since(start);
+
+  //
+  // NOTE: We do NOT release the wait in the mock router
+  // The wait is released by the call to `close` from `ping`
+  //
+
+  // Assert
+  assert!(response.is_ok(), "fetch_response should succeed");
+  match response {
+    Ok(waiter_response) => {
+      assert!(
+        true,
+        "Expected Ok with ExitReason, got ExitReason: {:?}",
+        waiter_response.exit_reason
+      );
+    }
+    Err(err) => {
+      assert!(false, "Expected Err, got: {:?}", err);
+    }
+  }
+  // assert!(
+  //   duration >= std::time::Duration::from_secs(2),
+  //   "Should take at least 2 seconds, took: {:.1}",
+  //   duration.as_secs_f32()
+  // );
+  assert!(
+    duration <= std::time::Duration::from_secs(1),
+    "Should take at most 1 seconds, took: {:.1}",
     duration.as_secs_f32()
   );
 }
