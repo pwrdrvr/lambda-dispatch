@@ -456,9 +456,9 @@ async fn test_channel_invalid_request_headers_should_continue() {
   });
   let app_endpoint: Endpoint = mock_app_server.base_url().parse().unwrap();
 
-  // Release the request after a few seconds
-  tokio::spawn(async move {
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+  for _ in 0..2 {
+    // Release the request after a few seconds
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     mock_router_server
       .release_request_tx
       .lock()
@@ -466,7 +466,7 @@ async fn test_channel_invalid_request_headers_should_continue() {
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let app_client = create_app_client();
   let router_client = create_router_client();

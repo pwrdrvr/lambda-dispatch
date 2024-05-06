@@ -796,7 +796,7 @@ async fn test_lambda_service_loop_100_valid_get_requests() {
   });
 
   // Let the router run wild
-  tokio::spawn(async move {
+  for _ in 0..100 {
     mock_router_server
       .release_request_tx
       .lock()
@@ -804,7 +804,7 @@ async fn test_lambda_service_loop_100_valid_get_requests() {
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let mut options = Options::default();
 
@@ -882,8 +882,8 @@ async fn test_lambda_service_loop_100_valid_post_requests() {
     .mount(&mock_app_server)
     .await;
 
-  // Let the router run wild
-  tokio::spawn(async move {
+  // Push 100 messages into the channel (it's limit)
+  for _ in 0..100 {
     mock_router_server
       .release_request_tx
       .lock()
@@ -891,10 +891,9 @@ async fn test_lambda_service_loop_100_valid_post_requests() {
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let mut options = Options::default();
-
   options.port = mock_app_server.address().port();
   let initialized = true;
 
@@ -1549,8 +1548,7 @@ async fn test_lambda_service_loop_100_requests_contained_app_connection_close_he
       .body("Bananas");
   });
 
-  // Let the router run wild
-  tokio::spawn(async move {
+  for _ in 0..100 {
     mock_router_server
       .release_request_tx
       .lock()
@@ -1558,7 +1556,7 @@ async fn test_lambda_service_loop_100_requests_contained_app_connection_close_he
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let mut options = Options::default();
 
@@ -2117,7 +2115,6 @@ async fn test_lambda_service_router_connects_app_crashes_graceful_close() {
 
 #[tokio::test]
 async fn test_lambda_service_router_closes_quickly_when_no_requests() {
-  env_logger::init();
   // Start router server
   let mock_router_server =
     mock_router::setup_router(mock_router::RouterParamsBuilder::new().build());

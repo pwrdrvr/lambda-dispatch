@@ -313,8 +313,6 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
 
                             // Send static request to extension
                             if request_method == RequestMethod::ShutdownWithoutResponse {
-                              release_request_rx.lock().await.recv().await;
-
                               // Close the body stream
                               tx.shutdown().await.unwrap();
                               return;
@@ -343,7 +341,7 @@ pub fn setup_router(params: RouterParams) -> RouterResult {
                                 let data = b"GET /bananas_query_unencoded_brackets?cat=[dog]&cat=log&cat=cat HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
                             } else if request_method == RequestMethod::GetGoAwayOnBody {
-                                println!("Sending GoAway on body");
+                                println!("{} Sending GoAway on body, request_count: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), request_count);
                                 let data = b"GET /_lambda_dispatch/goaway HTTP/1.1\r\nHost: localhost\r\nTest-Header: foo\r\n\r\n";
                                 tx.write_all(data).await.unwrap();
                             } else if request_method == RequestMethod::GetInvalidHeaders {
