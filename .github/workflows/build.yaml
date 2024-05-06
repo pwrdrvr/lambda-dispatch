@@ -47,6 +47,7 @@ jobs:
   rust-tests:
     needs: check-access
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       CARGO_TERM_COLOR: always
     steps:
