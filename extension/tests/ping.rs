@@ -68,6 +68,7 @@ async fn test_ping_immediate_exit_deadline() {
     deadline_ms,
     cancel_token,
     Arc::clone(&requests_in_flight),
+    250,
   )
   .await;
 
@@ -163,6 +164,7 @@ async fn test_ping_channel_last_active() {
     deadline_ms,
     cancel_token,
     Arc::clone(&requests_in_flight),
+    250,
   )
   .await;
 
@@ -174,8 +176,8 @@ async fn test_ping_channel_last_active() {
   );
   assert_eq!(
     ping_count.load(std::sync::atomic::Ordering::SeqCst),
-    0,
-    "ping count should be 0"
+    1,
+    "ping count should be 1"
   );
   assert_eq!(
     close_count.load(std::sync::atomic::Ordering::SeqCst),
@@ -268,6 +270,7 @@ async fn test_ping_channel_cancel_token() {
     deadline_ms,
     cancel_token,
     Arc::clone(&requests_in_flight),
+    250,
   )
   .await;
 
@@ -279,8 +282,8 @@ async fn test_ping_channel_cancel_token() {
   );
   assert_eq!(
     ping_count.load(std::sync::atomic::Ordering::SeqCst),
-    0,
-    "ping count should be 0"
+    1,
+    "ping count should be 1"
   );
   assert_eq!(
     close_count.load(std::sync::atomic::Ordering::SeqCst),
@@ -396,6 +399,7 @@ async fn test_ping_status_code(status_code: StatusCode, expected_result: Option<
     deadline_ms,
     cancel_token,
     Arc::clone(&requests_in_flight),
+    250,
   )
   .await;
 
@@ -492,6 +496,7 @@ async fn test_ping_channel_connection_closed() {
     deadline_ms,
     cancel_token,
     Arc::clone(&requests_in_flight),
+    250,
   )
   .await;
 

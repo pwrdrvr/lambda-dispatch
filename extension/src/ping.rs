@@ -46,6 +46,62 @@ impl From<PingResult> for Option<messages::ExitReason> {
   }
 }
 
+pub async fn send_close_request(
+  goaway_received: Arc<AtomicBool>,
+  router_client: RouterClient,
+  pool_id: PoolId,
+  lambda_id: LambdaId,
+  router_endpoint: Endpoint,
+) {
+  let scheme = router_endpoint.scheme();
+  let host = router_endpoint.host();
+  let port = router_endpoint.port();
+  let host_header = router_endpoint.host_header();
+
+  let close_url = format!(
+    "{}://{}:{}/api/chunked/close/{}",
+    scheme.as_ref(),
+    host,
+    port,
+    lambda_id
+  );
+
+  // Send Close request to router
+  let (mut close_tx, close_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
+  let boxed_close_body = BodyExt::boxed(StreamBody::new(close_recv));
+  let close_req = Request::builder()
+    .uri(&close_url)
+    .method("GET")
+    .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
+    .header("X-Pool-Id", pool_id.as_ref())
+    .header("X-Lambda-Id", lambda_id.as_ref());
+  let close_req = match &host_header {
+    Cow::Borrowed(v) => close_req.header(hyper::header::HOST, *v),
+    Cow::Owned(v) => close_req.header(hyper::header::HOST, v),
+  };
+  let close_req = close_req.body(boxed_close_body).unwrap();
+
+  let router_result = router_client.request(close_req).await;
+  close_tx.close().await.unwrap();
+  match router_result {
+    Ok(mut router_res) => {
+      // Rip through and discard so the response stream is closed
+      while router_res.frame().await.is_some() {}
+    }
+    Err(err) => {
+      log::error!(
+        "PoolId: {}, LambdaId: {} - PingLoop - Close request failed: {:?}",
+        pool_id,
+        lambda_id,
+        err
+      );
+    }
+  }
+
+  // Now mark that we are going away, after router has responded to our close request
+  goaway_received.store(true, Ordering::Release);
+}
+
 pub async fn send_ping_requests(
   last_active: Arc<AtomicU64>,
   goaway_received: Arc<AtomicBool>,
@@ -57,10 +113,11 @@ pub async fn send_ping_requests(
   deadline_ms: u64,
   cancel_token: tokio_util::sync::CancellationToken,
   requests_in_flight: Arc<AtomicUsize>,
+  last_active_grace_period_ms: u64,
 ) -> Option<PingResult> {
   let mut ping_result = None;
   let start_time = time::current_time_millis();
-  let mut last_ping_time = start_time;
+  let mut last_ping_time = 0;
 
   let scheme = router_endpoint.scheme();
   let host = router_endpoint.host();
@@ -76,17 +133,9 @@ pub async fn send_ping_requests(
     port,
     lambda_id
   );
-  let close_url = format!(
-    "{}://{}:{}/api/chunked/close/{}",
-    scheme.as_ref(),
-    host,
-    port,
-    lambda_id
-  );
 
   while !goaway_received.load(std::sync::atomic::Ordering::Acquire) && !cancel_token.is_cancelled()
   {
-    let last_active_grace_period_ms = 250;
     let close_before_deadline_ms = 15000;
     let last_active = last_active.load(Ordering::Acquire);
     let last_active_ago_ms = if last_active == 0 {
@@ -137,39 +186,14 @@ pub async fn send_ping_requests(
       }
 
       // Send Close request to router
-      let (mut close_tx, close_recv) = mpsc::channel::<Result<Frame<Bytes>>>(1);
-      let boxed_close_body = BodyExt::boxed(StreamBody::new(close_recv));
-      let close_req = Request::builder()
-        .uri(&close_url)
-        .method("GET")
-        .header(hyper::header::DATE, fmt_http_date(SystemTime::now()))
-        .header("X-Pool-Id", pool_id.as_ref())
-        .header("X-Lambda-Id", lambda_id.as_ref());
-      let close_req = match &host_header {
-        Cow::Borrowed(v) => close_req.header(hyper::header::HOST, *v),
-        Cow::Owned(v) => close_req.header(hyper::header::HOST, v),
-      };
-      let close_req = close_req.body(boxed_close_body).unwrap();
-
-      let router_result = router_client.request(close_req).await;
-      close_tx.close().await.unwrap();
-      match router_result {
-        Ok(mut router_res) => {
-          // Rip through and discard so the response stream is closed
-          while router_res.frame().await.is_some() {}
-        }
-        Err(err) => {
-          log::error!(
-            "PoolId: {}, LambdaId: {} - PingLoop - Close request failed: {:?}",
-            pool_id,
-            lambda_id,
-            err
-          );
-        }
-      }
-
-      // Now mark that we are going away, after router has responded to our close request
-      goaway_received.store(true, Ordering::Release);
+      send_close_request(
+        Arc::clone(&goaway_received),
+        router_client.clone(),
+        Arc::clone(&pool_id),
+        Arc::clone(&lambda_id),
+        router_endpoint.clone(),
+      )
+      .await;
       break;
     }
 
@@ -207,6 +231,8 @@ pub async fn send_ping_requests(
               lambda_id
             );
             ping_result.get_or_insert(PingResult::GoAway);
+
+            // This is from a goaway, so we do not need to ask the router to close our invoke
             goaway_received.store(true, Ordering::Release);
             break;
           }
@@ -225,6 +251,9 @@ pub async fn send_ping_requests(
               lambda_id,
               parts.status
             );
+
+            // TODO: This is not from a goaway, so we need to ask
+            // the router to close our invoke
             goaway_received.store(true, Ordering::Release);
             break;
           }
@@ -237,6 +266,9 @@ pub async fn send_ping_requests(
             lambda_id,
             err
           );
+
+          // TODO: This is not from a goaway, so we need to ask
+          // the router to close our invoke
           goaway_received.store(true, Ordering::Release);
           break;
         }

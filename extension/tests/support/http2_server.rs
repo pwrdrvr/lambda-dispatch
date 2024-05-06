@@ -154,7 +154,22 @@ pub fn run_http2_tls_app(app: Router) -> Serve {
   }
 }
 
+#[derive(Clone, Copy)]
+pub enum HttpVersion {
+  Http1,
+  Http2,
+}
+
+#[allow(dead_code)]
+pub fn run_http1_app(app: Router) -> Serve {
+  run_http_app(app, HttpVersion::Http1)
+}
+
 pub fn run_http2_app(app: Router) -> Serve {
+  run_http_app(app, HttpVersion::Http2)
+}
+
+pub fn run_http_app(app: Router, version: HttpVersion) -> Serve {
   let (addr_tx, addr_rx) = mpsc::channel();
   let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
@@ -206,14 +221,23 @@ pub fn run_http2_app(app: Router) -> Serve {
                       tower_service.clone().call(request)
                     });
 
-                  // `TokioExecutor` tells hyper to use `tokio::spawn` to spawn tasks.
-                  if let Err(err) = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
-                    // `serve_connection_with_upgrades` is required for websockets. If you don't need
-                    // that you can use `serve_connection` instead.
-                    .serve_connection(socket, hyper_service)
-                    .await
-                  {
-                    log::error!("failed to serve connection: {:#}", err);
+                    match version {
+                      HttpVersion::Http1 => {
+                        if let Err(err) = hyper::server::conn::http1::Builder::new()
+                            .serve_connection(socket, hyper_service)
+                            .await
+                        {
+                          log::error!("failed to serve connection: {:#}", err);
+                        }
+                      }
+                      HttpVersion::Http2 => {
+                        if let Err(err) = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                            .serve_connection(socket, hyper_service)
+                            .await
+                        {
+                          log::error!("failed to serve connection: {:#}", err);
+                        }
+                      }
                   }
                 });
               }

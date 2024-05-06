@@ -1,6 +1,7 @@
+use axum::{body::Body, http::HeaderValue, routing::get, Router};
 use futures::task::noop_waker;
 use httpmock::{Method::GET, MockServer};
-use hyper::{StatusCode, Uri};
+use hyper::{HeaderMap, StatusCode, Uri};
 use lambda_runtime::LambdaEvent;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::net::TcpListener;
@@ -18,6 +19,8 @@ use extension::{
   options::Options,
   time::current_time_millis,
 };
+
+use crate::support::http2_server::run_http1_app;
 
 async fn start_mock_server() -> u16 {
   let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -268,6 +271,8 @@ async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok()
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -279,7 +284,6 @@ async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok()
   let response = service.fetch_response(event).await;
 
   // Assert
-  // TODO: This should succeed but return an error indicating the router should backoff
   // The reason is the response from the channel request is invalid: a 200 OK with no response body
   assert!(
     response.is_ok(),
@@ -288,6 +292,7 @@ async fn test_lambda_service_fetch_response_not_initialized_healthcheck_200_ok()
   );
   // Get the WaiterResponse out of the response
   let resp = response.unwrap();
+  assert_eq!(resp.exit_reason, ExitReason::RouterGoAway);
   assert_eq!(resp.id, "test_id", "Lambda ID");
   assert_eq!(resp.pool_id, "test_pool", "Pool ID");
   assert_eq!(
@@ -559,7 +564,8 @@ async fn test_lambda_service_router_connects_ping_panics() {
   // Start router server
   let mock_router_server = mock_router::setup_router(
     mock_router::RouterParamsBuilder::new()
-      .channel_non_200_status_after_count(1)
+      .channel_non_200_status_after_count(100)
+      .channel_return_request_without_wait_before_count(1)
       .ping_panic_after_count(0)
       .build(),
   );
@@ -581,19 +587,28 @@ async fn test_lambda_service_router_connects_ping_panics() {
   });
 
   // Blow up the mock router server
-  // Release the request after a few seconds
   tokio::spawn(async move {
-    tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
   });
 
   let mut options = Options::default();
-
   options.port = mock_app_server.address().port();
+  options.last_active_grace_period_ms = 5000;
   let initialized = true;
 
   let app_client = create_app_client();
@@ -651,7 +666,7 @@ async fn test_lambda_service_router_connects_ping_panics() {
   // Healthcheck not called
   mock_app_healthcheck.assert_hits(0);
   // Bananas called once
-  mock_app_bananas.assert_hits(1);
+  mock_app_bananas.assert_hits(2);
 }
 
 #[tokio::test]
@@ -659,6 +674,8 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
   // Start router server
   let mock_router_server = mock_router::setup_router(
     mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(2)
+      .channel_return_request_without_wait_before_count(2)
       .ping_panic_after_count(0)
       .build(),
   );
@@ -683,6 +700,8 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
     tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -750,7 +769,7 @@ async fn test_lambda_service_router_connects_ping_panics_channel_stays_open() {
   // Healthcheck not called
   mock_app_healthcheck.assert_hits(0);
   // Bananas called once
-  mock_app_bananas.assert_hits(1);
+  mock_app_bananas.assert_hits(2);
 }
 
 #[tokio::test]
@@ -777,13 +796,15 @@ async fn test_lambda_service_loop_100_valid_get_requests() {
   });
 
   // Let the router run wild
-  tokio::spawn(async move {
+  for _ in 0..100 {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let mut options = Options::default();
 
@@ -861,17 +882,18 @@ async fn test_lambda_service_loop_100_valid_post_requests() {
     .mount(&mock_app_server)
     .await;
 
-  // Let the router run wild
-  tokio::spawn(async move {
+  // Push 100 messages into the channel (it's limit)
+  for _ in 0..100 {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let mut options = Options::default();
-
   options.port = mock_app_server.address().port();
   let initialized = true;
 
@@ -944,6 +966,8 @@ async fn test_lambda_service_valid_10kb_echo_post_requests() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1032,6 +1056,8 @@ async fn test_lambda_service_valid_124kb_of_headers() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1114,6 +1140,8 @@ async fn test_lambda_service_valid_oversized_headers() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1193,6 +1221,8 @@ async fn test_lambda_service_get_query_string_simple() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1272,6 +1302,8 @@ async fn test_lambda_service_get_query_string_repeated() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1355,6 +1387,8 @@ async fn test_lambda_service_get_query_string_encoded() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1436,6 +1470,8 @@ async fn test_lambda_service_get_query_string_unencoded_brackets() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1512,14 +1548,15 @@ async fn test_lambda_service_loop_100_requests_contained_app_connection_close_he
       .body("Bananas");
   });
 
-  // Let the router run wild
-  tokio::spawn(async move {
+  for _ in 0..100 {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
-  });
+  }
 
   let mut options = Options::default();
 
@@ -1610,6 +1647,8 @@ async fn test_lambda_service_router_connects_channel_request_panics() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1707,6 +1746,8 @@ async fn test_lambda_service_router_connects_channel_response_panics() {
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1879,6 +1920,8 @@ async fn fixture_lambda_service_channel_status_code(
   tokio::spawn(async move {
     mock_router_server
       .release_request_tx
+      .lock()
+      .await
       .send(())
       .await
       .unwrap();
@@ -1929,4 +1972,254 @@ async fn fixture_lambda_service_channel_status_code(
 
   // Assert app server's healthcheck endpoint did not get called
   mock_app_healthcheck.assert_hits(0);
+}
+
+#[tokio::test]
+async fn test_lambda_service_router_connects_app_crashes_graceful_close() {
+  // Start router server
+  let mock_router_server = mock_router::setup_router(
+    mock_router::RouterParamsBuilder::new()
+      .channel_non_200_status_after_count(100)
+      // .channel_return_request_without_wait_before_count(2)
+      .request_method_switch_after_count(2)
+      // After the 1st response we want to change to a GoAway on the body
+      .request_method_switch_to(mock_router::RequestMethod::GetGoAwayOnBody)
+      .build(),
+  );
+
+  // Start app server
+  let mock_app = Router::new().route(
+    "/bananas",
+    get(|| async {
+      let mut headers = HeaderMap::new();
+      // Tell the extension we're closing the socket
+      headers.insert("Connection", HeaderValue::from_static("close"));
+      (StatusCode::OK, headers, Body::from("bananas"))
+    }),
+  );
+  let mock_app_server = run_http1_app(mock_app);
+  let mock_app_server_port = mock_app_server.addr.port();
+
+  // Spawn a task to drop the mock app server after a second
+  let _ = tokio::spawn(async move {
+    println!(
+      "{} Releasing 1st request",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // Drop the mock app server so it won't accept the connection for the next request
+    drop(mock_app_server);
+    println!(
+      "{} Dropped app",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    // Wait a second for the drop to process
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    println!(
+      "{} Releasing 2nd request",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    // Release one more request - This should call with an app unreachable
+    // The second channel should also exit after close releases and responds with a GoAway
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+    // Wait a second for the message to get read
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    println!(
+      "{} Returning from task",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+  });
+
+  let mut options = Options::default();
+  options.port = mock_app_server_port;
+  // Make sure the ping loop doesn't cause us to exit
+  options.last_active_grace_period_ms = 10000;
+  let initialized = true;
+
+  let app_client = create_app_client();
+  let service = LambdaService::new(
+    options,
+    Arc::new(AtomicBool::new(initialized)),
+    format!("http://127.0.0.1:{}/health", mock_app_server_port)
+      .parse()
+      .unwrap(),
+    app_client,
+  );
+  let request = WaiterRequest {
+    pool_id: Some("test_pool".to_string()),
+    id: "test_id".to_string(),
+    router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
+    // We are using 2 channels
+    // The 1st channel will give back a request to run right away
+    // The 2nd channel will wait for the unlock signal, which we will unlock
+    // only from a close() request, not from this test
+    number_of_channels: 2,
+    sent_time: "2022-01-01T00:00:00Z".to_string(),
+    init_only: false,
+  };
+  let mut context = lambda_runtime::Context::default();
+  context.deadline = current_time_millis() + 60 * 1000;
+  let event = LambdaEvent {
+    payload: request,
+    context,
+  };
+
+  // Act
+  let start = std::time::Instant::now();
+  let response = service.fetch_response(event).await;
+  let duration = std::time::Instant::now().duration_since(start);
+
+  //
+  // NOTE: We do NOT release the wait in the mock router
+  // The wait is released by the call to `close` from `ping`
+  //
+
+  // Assert
+  assert!(response.is_err(), "fetch_response should fail");
+  match response {
+    Ok(waiter_response) => {
+      assert!(
+        false,
+        "Expected Ok with ExitReason, got ExitReason: {:?}",
+        waiter_response.exit_reason
+      );
+    }
+    Err(err) => {
+      assert_eq!(err, LambdaRequestError::AppConnectionUnreachable,);
+    }
+  }
+  assert!(
+    duration >= std::time::Duration::from_secs(2),
+    "Should take at least 2 seconds, took: {:.1}",
+    duration.as_secs_f32()
+  );
+  assert!(
+    duration <= std::time::Duration::from_secs(3),
+    "Should take at most 3 seconds, took: {:.1}",
+    duration.as_secs_f32()
+  );
+}
+
+#[tokio::test]
+async fn test_lambda_service_router_closes_quickly_when_no_requests() {
+  // Start router server
+  let mock_router_server =
+    mock_router::setup_router(mock_router::RouterParamsBuilder::new().build());
+
+  // Start app server
+  let mock_app = Router::new().route(
+    "/bananas",
+    get(|| async {
+      let mut headers = HeaderMap::new();
+      // Tell the extension we're closing the socket
+      headers.insert("Connection", HeaderValue::from_static("close"));
+      (StatusCode::OK, headers, Body::from("bananas"))
+    }),
+  );
+  let mock_app_server = run_http1_app(mock_app);
+  let mock_app_server_port = mock_app_server.addr.port();
+
+  // Spawn a task to drop the mock app server after a second
+  let _ = tokio::spawn(async move {
+    // Wait longer than extension should wait
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    println!(
+      "{} Releasing 1st request",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    // Touch the tx channel so it doesn't get dropped
+    mock_router_server
+      .release_request_tx
+      .lock()
+      .await
+      .send(())
+      .await
+      .unwrap();
+
+    println!(
+      "{} Returning from task",
+      chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+  });
+
+  let mut options = Options::default();
+  options.port = mock_app_server_port;
+  // options.last_active_grace_period_ms = 10000;
+  let initialized = true;
+
+  let app_client = create_app_client();
+  let service = LambdaService::new(
+    options,
+    Arc::new(AtomicBool::new(initialized)),
+    format!("http://127.0.0.1:{}/health", mock_app_server_port)
+      .parse()
+      .unwrap(),
+    app_client,
+  );
+  let request = WaiterRequest {
+    pool_id: Some("test_pool".to_string()),
+    id: "test_id".to_string(),
+    router_url: format!("http://127.0.0.1:{}", mock_router_server.server.addr.port()),
+    // We are using 2 channels
+    // The 1st channel will give back a request to run right away
+    // The 2nd channel will wait for the unlock signal, which we will unlock
+    // only from a close() request, not from this test
+    number_of_channels: 2,
+    sent_time: "2022-01-01T00:00:00Z".to_string(),
+    init_only: false,
+  };
+  let mut context = lambda_runtime::Context::default();
+  context.deadline = current_time_millis() + 60 * 1000;
+  let event = LambdaEvent {
+    payload: request,
+    context,
+  };
+
+  // Act
+  let start = std::time::Instant::now();
+  let response = service.fetch_response(event).await;
+  let duration = std::time::Instant::now().duration_since(start);
+
+  //
+  // NOTE: We do NOT release the wait in the mock router
+  // The wait is released by the call to `close` from `ping`
+  //
+
+  // Assert
+  assert!(response.is_ok(), "fetch_response should succeed");
+  match response {
+    Ok(waiter_response) => {
+      assert!(
+        true,
+        "Expected Ok with ExitReason, got ExitReason: {:?}",
+        waiter_response.exit_reason
+      );
+    }
+    Err(err) => {
+      assert!(false, "Expected Err, got: {:?}", err);
+    }
+  }
+  // assert!(
+  //   duration >= std::time::Duration::from_secs(2),
+  //   "Should take at least 2 seconds, took: {:.1}",
+  //   duration.as_secs_f32()
+  // );
+  assert!(
+    duration <= std::time::Duration::from_secs(1),
+    "Should take at most 1 seconds, took: {:.1}",
+    duration.as_secs_f32()
+  );
 }

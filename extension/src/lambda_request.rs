@@ -1,6 +1,7 @@
 use rand::Rng;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::task::JoinHandle;
 
 use rand::SeedableRng;
 use tokio::{
@@ -12,8 +13,8 @@ use tokio_rustls::client::TlsStream;
 use crate::app_client::AppClient;
 use crate::endpoint::Endpoint;
 use crate::lambda_request_error::LambdaRequestError;
-use crate::messages;
-use crate::ping;
+use crate::messages::{self, ExitReason};
+use crate::ping::{self, send_close_request, PingResult};
 use crate::prelude::*;
 use crate::router_channel::RouterChannel;
 use crate::router_client::RouterClient;
@@ -43,6 +44,7 @@ pub struct LambdaRequest {
   requests_in_flight: Arc<AtomicUsize>,
   pub count: Arc<AtomicUsize>,
   start_time: u64,
+  last_active_grace_period_ms: u64,
 }
 
 impl LambdaRequest {
@@ -60,6 +62,7 @@ impl LambdaRequest {
     channel_count: u8,
     router_endpoint: Endpoint,
     deadline_ms: u64,
+    last_active_grace_period_ms: u64,
   ) -> Self {
     LambdaRequest {
       count: Arc::new(AtomicUsize::new(0)),
@@ -76,6 +79,7 @@ impl LambdaRequest {
       rng: rand::rngs::StdRng::from_entropy(),
       requests_in_flight: Arc::new(AtomicUsize::new(0)),
       start_time: current_time_millis(),
+      last_active_grace_period_ms,
     }
   }
 
@@ -86,7 +90,7 @@ impl LambdaRequest {
     router_client: RouterClient,
   ) -> Result<messages::ExitReason, LambdaRequestError> {
     // Send the ping requests in background
-    let ping_task = tokio::task::spawn(ping::send_ping_requests(
+    let mut ping_task = Some(tokio::task::spawn(ping::send_ping_requests(
       Arc::clone(&self.last_active),
       Arc::clone(&self.goaway_received),
       router_client.clone(),
@@ -97,7 +101,8 @@ impl LambdaRequest {
       self.deadline_ms,
       self.cancel_token.clone(),
       Arc::clone(&self.requests_in_flight),
-    ));
+      self.last_active_grace_period_ms,
+    )));
 
     // Startup the request channels
     let channel_futures = (0..self.channel_count)
@@ -169,7 +174,11 @@ impl LambdaRequest {
               if err.is_fatal() {
                 // Try to clean up the ping task
                 self.cancel_token.cancel();
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(1), ping_task).await;
+                let _ = tokio::time::timeout(
+                  std::time::Duration::from_secs(1),
+                  ping_task.take().unwrap(),
+                )
+                .await;
 
                 return Err(err);
               }
@@ -189,12 +198,31 @@ impl LambdaRequest {
           err
         );
 
+        // If we got here we had a panic so we need to ask the router to
+        // shut down this Lambda invoke
+        let _ = send_close_request(
+          Arc::clone(&self.goaway_received),
+          router_client,
+          Arc::clone(&self.pool_id),
+          Arc::clone(&self.lambda_id),
+          self.router_endpoint.clone(),
+        )
+        .await;
+
         // Set the goaway signal so other tasks stop
         self.goaway_received.store(true, Ordering::Release);
 
         // Try to clean up the ping task
         self.cancel_token.cancel();
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), ping_task).await;
+        let _ =
+          tokio::time::timeout(std::time::Duration::from_secs(1), ping_task.take().unwrap()).await;
+
+        // Shutdown the ping loop
+        // Note: we don't really care what happens here because
+        // we're already in a fatal error state
+        let _ = self
+          .wait_for_ping_loop(ping_task.take().unwrap(), exit_reason)
+          .await;
 
         // This is a bit of a lie: we don't know if the app connection is unreachable
         // but we do know we're in an non-deteministic state and that this
@@ -203,8 +231,25 @@ impl LambdaRequest {
       }
     }
 
-    // Wait for the ping loop to exit
+    // Shutdown the ping loop
+    exit_reason = self
+      .wait_for_ping_loop(ping_task.take().unwrap(), exit_reason)
+      .await
+      .unwrap_or(exit_reason)
+      .worse(exit_reason);
+
+    Ok(exit_reason)
+  }
+
+  pub async fn wait_for_ping_loop(
+    &mut self,
+    ping_task: JoinHandle<Option<PingResult>>,
+    exit_reason: ExitReason,
+  ) -> Result<ExitReason, LambdaRequestError> {
+    // Tell the ping loop to stop
     self.cancel_token.cancel();
+
+    // Wait for the ping loop to exit
     match ping_task.await {
       Ok(result) => {
         // Ping task completed successfully
@@ -212,9 +257,10 @@ impl LambdaRequest {
         // If the ping task knows why we exited, use that reason
         if let Some(ping_result) = result {
           if let Some(ping_result) = ping_result.into() {
-            exit_reason = exit_reason.worse(ping_result);
+            return Ok(exit_reason.worse(ping_result));
           }
         }
+        Ok(exit_reason)
       }
       Err(e) => {
         log::error!(
@@ -223,11 +269,9 @@ impl LambdaRequest {
           e
         );
         // We'll lump this in as a generic router connection error
-        return Err(LambdaRequestError::RouterUnreachable.into());
+        Err(LambdaRequestError::RouterUnreachable)
       }
     }
-
-    Ok(exit_reason)
   }
 
   pub fn elapsed(&self) -> u64 {

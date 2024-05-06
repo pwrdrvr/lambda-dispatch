@@ -110,11 +110,11 @@ pub async fn async_main(options: Options) -> Result<()> {
 
   // Wait for the contained app to be ready
   let initialized = if options.async_init {
-    let goaway_received = Arc::new(AtomicBool::new(false));
+    let fake_goaway_received = Arc::new(AtomicBool::new(false));
     let result = timeout(
       std::time::Duration::from_millis(9500),
       app_start::health_check_contained_app(
-        Arc::clone(&goaway_received),
+        Arc::clone(&fake_goaway_received),
         &healthcheck_url,
         &app_client,
       ),
@@ -125,7 +125,7 @@ pub async fn async_main(options: Options) -> Result<()> {
       Ok(success) => {
         if !success {
           log::info!("Health check - returned false before timeout, deferring init to handler");
-          goaway_received.store(true, Ordering::SeqCst);
+          fake_goaway_received.store(true, Ordering::SeqCst);
         }
         success
       }

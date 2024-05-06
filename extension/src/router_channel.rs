@@ -1,5 +1,6 @@
 use crate::app_client::AppClient;
 use crate::lambda_request_error::LambdaRequestError;
+use crate::ping::send_close_request;
 use crate::relay::{relay_request_to_app, relay_response_to_router};
 use crate::router_client::RouterClient;
 use crate::utils::compressable;
@@ -53,6 +54,7 @@ pub struct RouterChannel {
   pub requests_in_flight: Arc<AtomicUsize>,
   channel_url: Uri,
   app_endpoint: Endpoint,
+  router_endpoint: Endpoint,
   channel_number: u8,
   pool_id: PoolId,
   lambda_id: LambdaId,
@@ -92,6 +94,7 @@ impl RouterChannel {
       requests_in_flight,
       channel_url,
       app_endpoint,
+      router_endpoint,
       channel_number,
       pool_id,
       lambda_id,
@@ -200,6 +203,8 @@ impl RouterChannel {
       {
         log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - 409 received, exiting loop",
                   self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+
+        // This is from a goaway so we do not need to ask to close
         self
           .goaway_received
           .store(true, std::sync::atomic::Ordering::Release);
@@ -222,6 +227,9 @@ impl RouterChannel {
           self.lambda_id,
           self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
           router_response_parts.status);
+
+      // TODO: This is not from a goaway, so we need to ask
+      // the router to close our invoke
       self.goaway_received.store(true, Ordering::Release);
       return Ok(channel_result);
     }
@@ -272,6 +280,8 @@ impl RouterChannel {
         channel_result = Some(ChannelResult::GoAwayReceived);
         log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                     self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
+
+        // This is from a goaway so we do not need to ask to close
         self
           .goaway_received
           .store(true, std::sync::atomic::Ordering::Release);
@@ -330,7 +340,16 @@ impl RouterChannel {
       Err(err) => {
         if err.is_connect() {
           // FIXME: Cancel the request relay
-          // FIXME: Close the router request/response
+          // Ask the router to close our invoke gracefully
+          send_close_request(
+            Arc::clone(&self.goaway_received),
+            router_client,
+            Arc::clone(&self.pool_id),
+            Arc::clone(&self.lambda_id),
+            self.router_endpoint.clone(),
+          )
+          .await;
+
           return Err(LambdaRequestError::AppConnectionUnreachable);
         }
         return Err(LambdaRequestError::AppConnectionError);

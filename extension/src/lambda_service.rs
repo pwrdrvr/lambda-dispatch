@@ -188,6 +188,7 @@ impl LambdaService {
       channel_count,
       request.router_endpoint,
       deadline_ms,
+      self.options.last_active_grace_period_ms,
     );
 
     //
@@ -205,7 +206,7 @@ impl LambdaService {
           exit_reason
         );
 
-        resp.exit_reason = exit_reason;
+        resp.exit_reason = resp.exit_reason.worse(exit_reason);
       }
       Err(err) => {
         log::error!(
