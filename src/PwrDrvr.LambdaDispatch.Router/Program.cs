@@ -81,23 +81,33 @@ public class Program
         CreateHostBuilder(args).Build().Run();
     }
 
-    public static string GetCertPath(string filename)
+    public static string? GetCertPath(string filename)
     {
         // Check if the 'certs/' folder is in the current directory
-        if (Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "certs")))
+        var currentDirectory = Directory.GetCurrentDirectory();
+        if (Directory.Exists(Path.Combine(currentDirectory, "certs")))
         {
-            return Path.Combine(Directory.GetCurrentDirectory(), "certs", filename);
+            return Path.Combine(currentDirectory, "certs", filename);
         }
 
         // Check if the 'certs/' folder is two directories up
-        var twoDirectoriesUp = Directory.GetParent(Directory.GetParent(Directory.GetCurrentDirectory()).FullName).FullName;
+        var parent1 = Directory.GetParent(currentDirectory);
+        if (parent1 == null)
+        {
+            return null;
+        }
+        var parent2 = Directory.GetParent(parent1.FullName);
+        if (parent2 == null)
+        {
+            return null;
+        }
+        var twoDirectoriesUp = parent2.FullName;
         if (Directory.Exists(Path.Combine(twoDirectoriesUp, "certs")))
         {
             return Path.Combine(twoDirectoriesUp, "certs", filename);
         }
 
-        // If the 'certs/' folder is not found, throw
-        throw new Exception("Could not find the 'certs/' folder");
+        return null;
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
@@ -176,16 +186,26 @@ public class Program
                     // Remove the `Server: Kestrel` response header
                     serverOptions.AddServerHeader = false;
 
+                    // See if we have a cert
+                    var certPath = GetCertPath("lambdadispatch.local.pfx");
+
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
                     //
                     // Incoming Requests
                     //
                     serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
-                    serverOptions.ListenAnyIP(config.IncomingRequestHTTPSPort, listenOptions =>
+                    if (certPath == null)
                     {
-                        listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"));
-                    });
+                        Console.WriteLine("No cert found, not starting HTTPS incoming request channel");
+                    }
+                    else
+                    {
+                        serverOptions.ListenAnyIP(config.IncomingRequestHTTPSPort, listenOptions =>
+                        {
+                            listenOptions.UseHttps(certPath);
+                        });
+                    }
                     //
                     // Control Channels
                     //
@@ -193,10 +213,17 @@ public class Program
                     {
                         serverOptions.ListenAnyIP(config.ControlChannelInsecureHTTP2Port, o => o.Protocols = HttpProtocols.Http2);
                     }
-                    serverOptions.ListenAnyIP(config.ControlChannelHTTP2Port, listenOptions =>
+                    if (certPath == null)
                     {
-                        listenOptions.UseHttps(GetCertPath("lambdadispatch.local.pfx"));
-                    });
+                        Console.WriteLine("No cert found, not starting HTTPS control channel");
+                    }
+                    else
+                    {
+                        serverOptions.ListenAnyIP(config.ControlChannelHTTP2Port, listenOptions =>
+                        {
+                            listenOptions.UseHttps(certPath);
+                        });
+                    }
                 });
                 webBuilder.UseStartup<Startup>();
             });
