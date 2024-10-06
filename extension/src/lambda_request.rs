@@ -107,6 +107,8 @@ impl LambdaRequest {
     // Startup the request channels
     let channel_futures = (0..self.channel_count)
       .map(|channel_number| {
+        let router_endpoint_url = self.router_endpoint.url().clone();
+        let lambda_id = Arc::clone(&self.lambda_id);
         let last_active = Arc::clone(&self.last_active);
         // Create a JoinHandle and implicitly return it to be collected in the vector
         let mut router_channel = RouterChannel::new(
@@ -132,6 +134,15 @@ impl LambdaRequest {
           let result = router_channel
             .start(app_client.clone(), router_client.clone())
             .await;
+
+          // If we failed to connect to the router we should log our IP, router IP, port and protocol
+          if let Err(LambdaRequestError::RouterUnreachable) = result {
+            log::error!(
+              "LambdaId: {} - start - Failed to connect to router: {}",
+              lambda_id,
+              router_endpoint_url
+            );
+          }
 
           // Tell the other channels to stop
           goaway_received.store(true, Ordering::Release);
