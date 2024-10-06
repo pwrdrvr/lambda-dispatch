@@ -1,0 +1,29 @@
+{
+  "name": "lambda-dispatch",
+  "version": "1.0.0",
+  "description": "This performs reverse routing with Lambda functions, where the Lambda functions continue running and call back to the router to pickup requests. This allows explicit control and determination of the number of available execution environments for the Lambda functions, allowing for a more predictable and consistent performance profile by mostly avoiding requests waiting for cold starts.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "src/cdk-stack",
+      "src/cdk-construct",
+      "src/demo-app"
+    ]
+  },
+  "devDependencies": {
+    "aws-cdk-lib": "2.159.1",
+    "constructs": "10.3.0",
+    "wsrun": "^5.2.4"
+  },
+  "scripts": {
+    "build": "tsc --build tsconfig.json",
+    "test": "yarn workspace @pwrdrvr/lambda-dispatch-construct test && yarn workspace @pwrdrvr/lambda-dispatch-stack test"
+  },
+  "author": "",
+  "license": "MIT"
+}
