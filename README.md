@@ -1,6 +1,6 @@
 # Lambda Dispatch
 
-**Stop paying for idle Lambda containers. Keep the warm ones busy.**
+**Stop paying for under-utilized Lambda containers and cold starts. Keep the warm ones busy.**
 
 Lambda Dispatch is a game-changing solution that maximizes your AWS Lambda performance while minimizing costs. It intelligently routes requests to already-warm Lambda containers, dramatically reducing cold starts and ensuring optimal resource utilization.
 
