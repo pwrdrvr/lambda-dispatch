@@ -14,6 +14,127 @@ The YouTube video below demonstrates the problem in detail (since many think the
 
 [![AWS Lambda Cold Starts for Web Requests](https://github.com/pwrdrvr/lambda-dispatch/assets/5617868/80089108-7cc0-4cb5-ab87-08c8282094bf)](https://www.youtube.com/watch?v=2dW1mSFCbdM)
 
+## CDK Implementation
+
+The project includes a CDK construct library that makes it easy to deploy Lambda Dispatch in your AWS account. The constructs handle all the necessary infrastructure including VPC configuration, security groups, IAM roles, and ECS services.
+
+### Installation
+
+```bash
+npm install @pwrdrvr/lambda-dispatch-construct
+```
+
+### Usage
+
+```typescript
+import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import { LambdaConstruct, EcsConstruct } from '@pwrdrvr/lambda-dispatch-construct';
+
+export class MyStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    // Create or import your VPC
+    const vpc = new ec2.Vpc(this, 'MyVpc', {
+      maxAzs: 2
+    });
+
+    // Create the Lambda function
+    const lambdaConstruct = new LambdaConstruct(this, 'MyLambda', {
+      vpc,
+      memorySize: 512,  // Optional, defaults to 192
+      timeout: cdk.Duration.seconds(30)  // Optional, defaults to 60
+    });
+
+    // Create ALB and HTTPS listener (example)
+    const alb = new elbv2.ApplicationLoadBalancer(this, 'MyAlb', {
+      vpc,
+      internetFacing: true
+    });
+    const httpsListener = alb.addListener('HttpsListener', {
+      port: 443,
+      certificates: [certificate],
+      // ... other listener configuration
+    });
+
+    // Create the ECS service that runs the router
+    const ecsConstruct = new EcsConstruct(this, 'MyEcs', {
+      vpc,
+      lambdaFunction: lambdaConstruct.function,
+      loadBalancer: alb,
+      httpsListener,
+      // Optional configurations
+      memoryLimitMiB: 2048,  // Default: 2048
+      cpu: 1024,  // Default: 1024
+      maxCapacity: 10,  // Default: 10
+      minCapacity: 1,  // Default: 1
+      // Cost optimization options
+      useFargateSpot: true,  // Default: false
+      cpuArchitecture: ecs.CpuArchitecture.AMD64  // Required for Fargate Spot
+    });
+  }
+}
+```
+
+### Construct Properties
+
+#### LambdaConstructProps
+- `vpc`: VPC where the Lambda function will be deployed
+- `ecsSecurityGroup?`: Optional security group for ECS tasks that will invoke this Lambda
+- `memorySize?`: Memory size for the Lambda function in MB (default: 192)
+- `timeout?`: Timeout for the Lambda function (default: 60 seconds)
+
+#### EcsConstructProps
+- `vpc`: VPC where the ECS service will be deployed
+- `lambdaFunction`: Lambda function that will be invoked by the ECS service
+- `loadBalancer`: Application Load Balancer for the ECS service
+- `httpsListener`: HTTPS listener for the Application Load Balancer
+- `memoryLimitMiB?`: Memory limit for the ECS task in MiB (default: 2048)
+- `cpu?`: CPU units for the ECS task (default: 1024)
+- `maxCapacity?`: Maximum number of ECS tasks (default: 10)
+- `minCapacity?`: Minimum number of ECS tasks (default: 1)
+- `useFargateSpot?`: Whether to use Fargate Spot for cost savings (default: false)
+- `cpuArchitecture?`: CPU architecture for ECS tasks (default: ARM64)
+
+### Cost Optimization
+
+The construct supports two main strategies for cost optimization:
+
+1. **Fargate Spot**
+   - Enable with `useFargateSpot: true`
+   - Can reduce costs by up to 70% compared to regular Fargate
+   - Only supports AMD64 architecture
+   - Best for non-production or fault-tolerant workloads
+
+2. **ARM64 Architecture**
+   - Default when not using Fargate Spot
+   - About 20% cheaper than AMD64
+   - Not compatible with Fargate Spot
+
+Choose your configuration based on your needs:
+- For maximum cost savings: Use Fargate Spot with AMD64
+- For reliable ARM benefits: Use regular Fargate with ARM64
+- For development: Either option works well
+
+Note: When `useFargateSpot` is true, the construct automatically sets `cpuArchitecture` to AMD64 as required by Fargate Spot.
+
+### Best Practices
+
+1. **VPC Configuration**: Deploy both Lambda and ECS in a VPC with private subnets for enhanced security. Use NAT gateways or instances for outbound internet access.
+
+2. **Security Groups**: The constructs automatically create and configure security groups with least-privilege access between components.
+
+3. **Auto Scaling**: The ECS service includes CPU-based auto-scaling by default, scaling between min and max capacity based on a 50% CPU target.
+
+4. **Cost Optimization**: 
+   - Use Fargate Spot for non-critical or development environments
+   - Use ARM64 for production environments where consistent pricing is important
+   - Consider your application's fault tolerance when choosing between Spot and regular Fargate
+
+5. **Health Checks**: The ECS service includes proper health checks configured on the target group.
+
 ## Advantages
 
 - Avoids cold start wait durations in most cases where at least 1 exec env is running
