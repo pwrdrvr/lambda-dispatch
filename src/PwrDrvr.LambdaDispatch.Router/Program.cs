@@ -85,7 +85,8 @@ public class Program
     {
         // Check if the 'certs/' folder is in the current directory
         var currentDirectory = Directory.GetCurrentDirectory();
-        if (Directory.Exists(Path.Combine(currentDirectory, "certs")))
+        if (Directory.Exists(Path.Combine(currentDirectory, "certs"))
+            && File.Exists(Path.Combine(currentDirectory, "certs", filename)))
         {
             return Path.Combine(currentDirectory, "certs", filename);
         }
@@ -102,7 +103,8 @@ public class Program
             return null;
         }
         var twoDirectoriesUp = parent2.FullName;
-        if (Directory.Exists(Path.Combine(twoDirectoriesUp, "certs")))
+        if (Directory.Exists(Path.Combine(twoDirectoriesUp, "certs"))
+            && File.Exists(Path.Combine(twoDirectoriesUp, "certs", filename)))
         {
             return Path.Combine(twoDirectoriesUp, "certs", filename);
         }
