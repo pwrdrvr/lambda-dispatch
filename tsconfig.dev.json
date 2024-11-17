@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "alwaysStrict": true,
+    "declaration": true,
+
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "lib": ["dom", "es2018"],
+    "module": "CommonJS",
+    "noEmitOnError": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": true,
+    "stripInternal": true,
+    "target": "ES2018",
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/**/.projenrc.js",
+    "src/**/.projenrc.ts",
+    "src/**/*.ts",
+  ],
+  "exclude": ["node_modules"]
+}
