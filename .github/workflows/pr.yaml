@@ -21,6 +21,9 @@ jobs:
     needs: [install-deps]
     runs-on: ubuntu-latest
     environment: ghpublic
+    concurrency:
+      group: deploy-${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
