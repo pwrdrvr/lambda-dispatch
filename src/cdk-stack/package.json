@@ -41,6 +41,7 @@
     "typescript": "^5.6.2"
   },
   "dependencies": {
+    "@pwrdrvr/lambda-dispatch-construct": "^0.0.0",
     "aws-cdk-lib": "^2.130.0",
     "cdk-fck-nat": "1.5.11",
     "constructs": "^10.0.5"

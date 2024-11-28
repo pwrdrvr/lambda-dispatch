@@ -11,7 +11,7 @@ import { Construct } from 'constructs';
 /**
  * Properties for the ECS construct
  */
-export interface EcsConstructProps {
+export interface LambdaDispatchECSProps {
   /**
    * VPC where the ECS service will be deployed
    */
@@ -21,13 +21,10 @@ export interface EcsConstructProps {
    */
   readonly lambdaFunction: lambda.IFunction;
   /**
-   * Application Load Balancer for the ECS service
+   * ECS Cluster
    */
-  readonly loadBalancer: elbv2.IApplicationLoadBalancer;
-  /**
-   * HTTPS listener for the Application Load Balancer
-   */
-  readonly httpsListener: elbv2.IApplicationListener;
+  readonly cluster: ecs.ICluster;
+
   /**
    * Memory limit for the ECS task in MiB
    * @default 2048
@@ -65,7 +62,7 @@ export interface EcsConstructProps {
 /**
  * Creates an ECS service with the necessary configuration for Lambda Dispatch
  */
-export class EcsConstruct extends Construct {
+export class LambdaDispatchECS extends Construct {
   /**
    * The ECS Fargate service
    */
@@ -79,33 +76,21 @@ export class EcsConstruct extends Construct {
    */
   public readonly targetGroup: elbv2.ApplicationTargetGroup;
 
-  constructor(scope: Construct, id: string, props: EcsConstructProps) {
+  constructor(scope: Construct, id: string, props: LambdaDispatchECSProps) {
     super(scope, id);
 
     // Validate required props
     if (!props.vpc) {
-      throw new Error('vpc is required in EcsConstructProps');
+      throw new Error('vpc is required in LambdaDispatchECSProps');
     }
     if (!props.lambdaFunction) {
-      throw new Error('lambdaFunction is required in EcsConstructProps');
-    }
-    if (!props.loadBalancer) {
-      throw new Error('loadBalancer is required in EcsConstructProps');
-    }
-    if (!props.httpsListener) {
-      throw new Error('httpsListener is required in EcsConstructProps');
+      throw new Error('lambdaFunction is required in LambdaDispatchECSProps');
     }
 
     // Validate Fargate Spot and CPU architecture combination
     if (props.useFargateSpot && props.cpuArchitecture === ecs.CpuArchitecture.ARM64) {
       throw new Error('Fargate Spot only supports AMD64 architecture');
     }
-
-    // Create cluster with appropriate capacity providers
-    const cluster = new ecs.Cluster(this, 'EcsCluster', {
-      vpc: props.vpc,
-      enableFargateCapacityProviders: true,
-    });
 
     const taskRole = new iam.Role(this, 'EcsTaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
@@ -130,6 +115,7 @@ export class EcsConstruct extends Construct {
 
     const logGroup = new logs.LogGroup(this, 'ServiceLogGroup', {
       retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     const container = taskDefinition.addContainer('LambdaDispatchRouter', {
@@ -194,8 +180,8 @@ export class EcsConstruct extends Construct {
       : [{ capacityProvider: 'FARGATE', weight: 1 }];
 
     this.service = new ecs.FargateService(this, 'EcsService', {
-      cluster: cluster,
-      taskDefinition: taskDefinition,
+      cluster: props.cluster,
+      taskDefinition,
       desiredCount: props.minCapacity ?? 1,
       assignPublicIp: false,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
@@ -216,12 +202,5 @@ export class EcsConstruct extends Construct {
 
     // Attach the service to the target group
     this.service.attachToApplicationTargetGroup(this.targetGroup);
-
-    // Add the target group to the HTTPS listener
-    props.httpsListener.addTargetGroups('EcsTargetGroup', {
-      targetGroups: [this.targetGroup],
-      priority: 10,
-      conditions: [elbv2.ListenerCondition.hostHeaders(['lambdadispatch.ghpublic.pwrdrvr.com'])],
-    });
   }
 }

@@ -30,8 +30,6 @@ jobs:
         run: |
           # Delete all stacks for this PR
           PR_NUMBER=${{ github.event.pull_request.number }}
-          aws cloudformation delete-stack --stack-name "lambda-dispatch-pr-${PR_NUMBER}"
-          aws cloudformation delete-stack --stack-name "lambda-dispatch-vpc-pr-${PR_NUMBER}"
+          aws cloudformation delete-stack --stack-name "lambda-dispatch-app-stack-pr-${PR_NUMBER}"
           # Wait for deletion to complete
-          aws cloudformation wait stack-delete-complete --stack-name "lambda-dispatch-pr-${PR_NUMBER}"
-          aws cloudformation wait stack-delete-complete --stack-name "lambda-dispatch-vpc-pr-${PR_NUMBER}"
+          aws cloudformation wait stack-delete-complete --stack-name "lambda-dispatch-app-stack-pr-${PR_NUMBER}"

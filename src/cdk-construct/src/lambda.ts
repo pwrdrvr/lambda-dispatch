@@ -8,7 +8,7 @@ import { Construct } from 'constructs';
 /**
  * Properties for the Lambda construct
  */
-export interface LambdaConstructProps {
+export interface LambdaDispatchFunctionProps {
   /**
    * VPC where the Lambda function will be deployed
    */
@@ -32,18 +32,18 @@ export interface LambdaConstructProps {
 /**
  * Creates a Lambda function with the necessary configuration for Lambda Dispatch
  */
-export class LambdaConstruct extends Construct {
+export class LambdaDispatchFunction extends Construct {
   /**
    * The Lambda function instance
    */
   public readonly function: lambda.Function;
 
-  constructor(scope: Construct, id: string, props: LambdaConstructProps) {
+  constructor(scope: Construct, id: string, props: LambdaDispatchFunctionProps) {
     super(scope, id);
 
     // Validate required props
     if (!props.vpc) {
-      throw new Error('vpc is required in LambdaConstructProps');
+      throw new Error('vpc is required in LambdaDispatchFunctionProps');
     }
 
     const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {

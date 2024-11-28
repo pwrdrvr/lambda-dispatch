@@ -42,4 +42,5 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           cd src/cdk-stack
-          npx cdk deploy lambda-dispatch --require-approval never
+          STACK_SUFFIX=${{ github.event_name == 'pull_request' && '-pr' || '' }}
+          npx cdk deploy lambda-dispatch${STACK_SUFFIX} --require-approval never

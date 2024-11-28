@@ -2,11 +2,607 @@
 
 exports[`Snapshot 1`] = `
 {
+  "Outputs": {
+    "VpcId": {
+      "Description": "VPC ID",
+      "Value": {
+        "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+      },
+    },
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
       "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "EcsConstructEcsSecurityGroup99862E0E": {
+      "Properties": {
+        "GroupDescription": "Security Group for ECS Fargate tasks",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::ImportValue": "vpc-stack:ExportsOutputFnGetAttvpcA2121C38CidrBlock8A3D0BD6",
+            },
+            "Description": "Allow inbound traffic on port 5003 from within the VPC (HTTP from Lambda)",
+            "FromPort": 5003,
+            "IpProtocol": "tcp",
+            "ToPort": 5003,
+          },
+          {
+            "CidrIp": {
+              "Fn::ImportValue": "vpc-stack:ExportsOutputFnGetAttvpcA2121C38CidrBlock8A3D0BD6",
+            },
+            "Description": "Allow inbound traffic on port 5004 from within the VPC (HTTPS from Lambda)",
+            "FromPort": 5004,
+            "IpProtocol": "tcp",
+            "ToPort": 5004,
+          },
+        ],
+        "VpcId": {
+          "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "EcsConstructEcsSecurityGroupfromtestImportedHttpsListenerSG12D292F15001AC1C5CD5": {
+      "Properties": {
+        "Description": "Load balancer to target",
+        "FromPort": 5001,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "EcsConstructEcsSecurityGroup99862E0E",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": "sg-0123456789abcdef0",
+        "ToPort": 5001,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "EcsConstructEcsService1BC035DC": {
+      "DependsOn": [
+        "EcsConstructEcsTaskRoleDefaultPolicy3D727EAB",
+        "EcsConstructEcsTaskRole6957983A",
+        "ImportedHttpsListenerEcsTargetGroup04657527",
+      ],
+      "Properties": {
+        "CapacityProviderStrategy": [
+          {
+            "CapacityProvider": "FARGATE",
+            "Weight": 1,
+          },
+        ],
+        "Cluster": "my-cluster",
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [],
+            "Enable": false,
+            "Rollback": false,
+          },
+          "MaximumPercent": 200,
+          "MinimumHealthyPercent": 50,
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "HealthCheckGracePeriodSeconds": 60,
+        "LoadBalancers": [
+          {
+            "ContainerName": "LambdaDispatchRouter",
+            "ContainerPort": 5001,
+            "TargetGroupArn": {
+              "Ref": "EcsConstructFargateTargetGroup18C7E4F1",
+            },
+          },
+        ],
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "DISABLED",
+            "SecurityGroups": [
+              {
+                "Fn::GetAtt": [
+                  "EcsConstructEcsSecurityGroup99862E0E",
+                  "GroupId",
+                ],
+              },
+            ],
+            "Subnets": [
+              {
+                "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcPrivateSubnet1Subnet934893E8236E2271",
+              },
+              {
+                "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcPrivateSubnet2Subnet7031C2BA60DCB1EE",
+              },
+            ],
+          },
+        },
+        "TaskDefinition": {
+          "Ref": "EcsConstructTaskDefinition7D5C9834",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "EcsConstructEcsServiceTaskCountTarget7FFBF733": {
+      "DependsOn": [
+        "EcsConstructEcsTaskRoleDefaultPolicy3D727EAB",
+        "EcsConstructEcsTaskRole6957983A",
+      ],
+      "Properties": {
+        "MaxCapacity": 10,
+        "MinCapacity": 1,
+        "ResourceId": {
+          "Fn::Join": [
+            "",
+            [
+              "service/my-cluster/",
+              {
+                "Fn::GetAtt": [
+                  "EcsConstructEcsService1BC035DC",
+                  "Name",
+                ],
+              },
+            ],
+          ],
+        },
+        "RoleARN": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":iam::123456789012:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService",
+            ],
+          ],
+        },
+        "ScalableDimension": "ecs:service:DesiredCount",
+        "ServiceNamespace": "ecs",
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    },
+    "EcsConstructEcsServiceTaskCountTargetCpuScaling5D96B292": {
+      "DependsOn": [
+        "EcsConstructEcsTaskRoleDefaultPolicy3D727EAB",
+        "EcsConstructEcsTaskRole6957983A",
+      ],
+      "Properties": {
+        "PolicyName": "testEcsConstructEcsServiceTaskCountTargetCpuScaling1C444041",
+        "PolicyType": "TargetTrackingScaling",
+        "ScalingTargetId": {
+          "Ref": "EcsConstructEcsServiceTaskCountTarget7FFBF733",
+        },
+        "TargetTrackingScalingPolicyConfiguration": {
+          "PredefinedMetricSpecification": {
+            "PredefinedMetricType": "ECSServiceAverageCPUUtilization",
+          },
+          "ScaleInCooldown": 60,
+          "ScaleOutCooldown": 60,
+          "TargetValue": 50,
+        },
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+    },
+    "EcsConstructEcsTaskRole6957983A": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "EcsConstructEcsTaskRoleDefaultPolicy3D727EAB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "LambdaConstructLambdaFunction8A3CAE86",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "LambdaConstructLambdaFunction8A3CAE86",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "LambdaConstructLambdaFunction8A3CAE86",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "EcsConstructEcsTaskRoleDefaultPolicy3D727EAB",
+        "Roles": [
+          {
+            "Ref": "EcsConstructEcsTaskRole6957983A",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "EcsConstructFargateTargetGroup18C7E4F1": {
+      "Properties": {
+        "HealthCheckIntervalSeconds": 5,
+        "HealthCheckPath": "/health",
+        "HealthCheckTimeoutSeconds": 2,
+        "HealthyThresholdCount": 2,
+        "Port": 5001,
+        "Protocol": "HTTP",
+        "TargetGroupAttributes": [
+          {
+            "Key": "stickiness.enabled",
+            "Value": "false",
+          },
+        ],
+        "TargetType": "ip",
+        "VpcId": {
+          "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+        },
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    },
+    "EcsConstructServiceLogGroup173B1435": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 7,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EcsConstructTaskDefinition7D5C9834": {
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Environment": [
+              {
+                "Name": "DOTNET_ThreadPool_UnfairSemaphoreSpinLimit",
+                "Value": "0",
+              },
+              {
+                "Name": "LAMBDA_DISPATCH_MaxWorkerThreads",
+                "Value": "2",
+              },
+              {
+                "Name": "LAMBDA_DISPATCH_FunctionName",
+                "Value": {
+                  "Fn::GetAtt": [
+                    "LambdaConstructLambdaFunction8A3CAE86",
+                    "Arn",
+                  ],
+                },
+              },
+              {
+                "Name": "LAMBDA_DISPATCH_MaxConcurrentCount",
+                "Value": "10",
+              },
+              {
+                "Name": "LAMBDA_DISPATCH_AllowInsecureControlChannel",
+                "Value": "true",
+              },
+              {
+                "Name": "LAMBDA_DISPATCH_PreferredControlChannelScheme",
+                "Value": "http",
+              },
+            ],
+            "Essential": true,
+            "Image": {
+              "Fn::Join": [
+                "",
+                [
+                  "123456789012.dkr.ecr.us-east-1.",
+                  {
+                    "Ref": "AWS::URLSuffix",
+                  },
+                  "/lambda-dispatch-router:latest",
+                ],
+              ],
+            },
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "EcsConstructServiceLogGroup173B1435",
+                },
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "ecs",
+              },
+            },
+            "Name": "LambdaDispatchRouter",
+            "PortMappings": [
+              {
+                "ContainerPort": 5001,
+                "Protocol": "tcp",
+              },
+              {
+                "ContainerPort": 5003,
+                "Protocol": "tcp",
+              },
+              {
+                "ContainerPort": 5004,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+        ],
+        "Cpu": "1024",
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "EcsConstructTaskDefinitionExecutionRoleCFBB43FE",
+            "Arn",
+          ],
+        },
+        "Family": "testEcsConstructTaskDefinition87BFD1F6",
+        "Memory": "2048",
+        "NetworkMode": "awsvpc",
+        "RequiresCompatibilities": [
+          "FARGATE",
+        ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX",
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "EcsConstructEcsTaskRole6957983A",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "EcsConstructTaskDefinitionExecutionRoleCFBB43FE": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "EcsConstructTaskDefinitionExecutionRoleDefaultPolicy68CD8F59": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ecr:us-east-1:123456789012:repository/lambda-dispatch-router",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "ecr:GetAuthorizationToken",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "EcsConstructServiceLogGroup173B1435",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "EcsConstructTaskDefinitionExecutionRoleDefaultPolicy68CD8F59",
+        "Roles": [
+          {
+            "Ref": "EcsConstructTaskDefinitionExecutionRoleCFBB43FE",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ImportedHttpsListenerEcsTargetGroup04657527": {
+      "Properties": {
+        "Actions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "EcsConstructFargateTargetGroup18C7E4F1",
+            },
+            "Type": "forward",
+          },
+        ],
+        "Conditions": [
+          {
+            "Field": "host-header",
+            "HostHeaderConfig": {
+              "Values": [
+                "lambdadispatch.ghpublic.pwrdrvr.com",
+              ],
+            },
+          },
+        ],
+        "ListenerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-load-balancer/50dc6c495c0c9188/0467ef3c5c1e9977",
+        "Priority": 49999,
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    },
+    "LambdaConstructLambdaExecutionRole6995D3C9": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "LambdaConstructLambdaFunction8A3CAE86": {
+      "DependsOn": [
+        "LambdaConstructLambdaExecutionRole6995D3C9",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                "123456789012.dkr.ecr.us-east-1.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/lambda-dispatch-demo-app:latest",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "LAMBDA_DISPATCH_RUNTIME": "current_thread",
+          },
+        },
+        "MemorySize": 192,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaConstructLambdaExecutionRole6995D3C9",
+            "Arn",
+          ],
+        },
+        "Timeout": 60,
+        "VpcConfig": {
+          "SecurityGroupIds": [
+            {
+              "Fn::GetAtt": [
+                "LambdaConstructLambdaSGC3047416",
+                "GroupId",
+              ],
+            },
+          ],
+          "SubnetIds": [
+            {
+              "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcPrivateSubnet1Subnet934893E8236E2271",
+            },
+            {
+              "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcPrivateSubnet2Subnet7031C2BA60DCB1EE",
+            },
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "LambdaConstructLambdaSGC3047416": {
+      "Properties": {
+        "GroupDescription": "Security Group for Lambda function",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "VpcId": {
+          "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "LambdaDispatchRecord78A0EA12": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": "dualstack.my-load-balancer-1234567890.us-east-1.elb.amazonaws.com",
+          "HostedZoneId": "Z3DZXE0Q79N41H",
+        },
+        "HostedZoneId": "Z005084420J9MD9JNBCUK",
+        "Name": "lambdadispatch.ghpublic.pwrdrvr.com.",
+        "Type": "A",
+      },
+      "Type": "AWS::Route53::RecordSet",
     },
   },
   "Rules": {
