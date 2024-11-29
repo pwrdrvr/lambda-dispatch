@@ -4,6 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
@@ -101,6 +102,14 @@ export class LambdaDispatchStack extends cdk.Stack {
     // Create Lambda construct
     const lambdaConstruct = new LambdaDispatchFunction(this, 'LambdaConstruct', {
       vpc,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 1769,
+      dockerImage: lambda.DockerImageCode.fromEcr(
+        ecr.Repository.fromRepositoryName(this, 'LambdaRepo', 'lambda-dispatch-demo-app'),
+        {
+          tagOrDigest: process.env.PR_NUMBER ? `pr-${process.env.PR_NUMBER}` : 'latest',
+        },
+      ),
     });
 
     // Create ECS construct
@@ -108,6 +117,9 @@ export class LambdaDispatchStack extends cdk.Stack {
       vpc,
       lambdaFunction: lambdaConstruct.function,
       cluster,
+      containerImage: process.env.PR_NUMBER
+        ? ecs.ContainerImage.fromRegistry(`lambda-dispatch-router:pr-${process.env.PR_NUMBER}`)
+        : undefined,
     });
 
     // Allow ECS tasks to invoke Lambda

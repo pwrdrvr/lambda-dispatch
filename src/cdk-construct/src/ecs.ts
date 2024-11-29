@@ -1,6 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -57,6 +56,12 @@ export interface LambdaDispatchECSProps {
    * @default ARM64
    */
   readonly cpuArchitecture?: ecs.CpuArchitecture;
+
+  /**
+   * Container image for the ECS task
+   * @default - latest image from public ECR repository
+   */
+  readonly containerImage?: ecs.ContainerImage;
 }
 
 /**
@@ -119,10 +124,9 @@ export class LambdaDispatchECS extends Construct {
     });
 
     const container = taskDefinition.addContainer('LambdaDispatchRouter', {
-      image: ecs.ContainerImage.fromEcrRepository(
-        ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
-        'latest',
-      ),
+      image:
+        props.containerImage ??
+        ecs.ContainerImage.fromRegistry('public.ecr.aws/pwrdrvr/lambda-dispatch-router:latest'),
       logging: ecs.LogDriver.awsLogs({
         logGroup: logGroup,
         streamPrefix: 'ecs',

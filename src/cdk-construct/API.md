@@ -305,6 +305,7 @@ const lambdaDispatchECSProps: LambdaDispatchECSProps = { ... }
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.cluster">cluster</a></code> | <code>aws-cdk-lib.aws_ecs.ICluster</code> | ECS Cluster. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.lambdaFunction">lambdaFunction</a></code> | <code>aws-cdk-lib.aws_lambda.IFunction</code> | Lambda function that will be invoked by the ECS service. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.vpc">vpc</a></code> | <code>aws-cdk-lib.aws_ec2.IVpc</code> | VPC where the ECS service will be deployed. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.containerImage">containerImage</a></code> | <code>aws-cdk-lib.aws_ecs.ContainerImage</code> | Container image for the ECS task. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.cpu">cpu</a></code> | <code>number</code> | CPU units for the ECS task. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.cpuArchitecture">cpuArchitecture</a></code> | <code>aws-cdk-lib.aws_ecs.CpuArchitecture</code> | CPU architecture to use for the ECS tasks Note: Fargate Spot only supports AMD64 architecture. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.maxCapacity">maxCapacity</a></code> | <code>number</code> | Maximum number of ECS tasks. |
@@ -347,6 +348,19 @@ public readonly vpc: IVpc;
 - *Type:* aws-cdk-lib.aws_ec2.IVpc
 
 VPC where the ECS service will be deployed.
+
+---
+
+##### `containerImage`<sup>Optional</sup> <a name="containerImage" id="@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.containerImage"></a>
+
+```typescript
+public readonly containerImage: ContainerImage;
+```
+
+- *Type:* aws-cdk-lib.aws_ecs.ContainerImage
+- *Default:* latest image from public ECR repository
+
+Container image for the ECS task.
 
 ---
 
@@ -445,6 +459,8 @@ const lambdaDispatchFunctionProps: LambdaDispatchFunctionProps = { ... }
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.vpc">vpc</a></code> | <code>aws-cdk-lib.aws_ec2.IVpc</code> | VPC where the Lambda function will be deployed. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.architecture">architecture</a></code> | <code>aws-cdk-lib.aws_lambda.Architecture</code> | CPU architecture for the Lambda function. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.dockerImage">dockerImage</a></code> | <code>aws-cdk-lib.aws_lambda.DockerImageCode</code> | Docker image for the Lambda function. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.ecsSecurityGroup">ecsSecurityGroup</a></code> | <code>aws-cdk-lib.aws_ec2.ISecurityGroup</code> | Optional security group for ECS tasks that will invoke this Lambda. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.memorySize">memorySize</a></code> | <code>number</code> | Memory size for the Lambda function in MB. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.timeout">timeout</a></code> | <code>aws-cdk-lib.Duration</code> | Timeout for the Lambda function. |
@@ -460,6 +476,32 @@ public readonly vpc: IVpc;
 - *Type:* aws-cdk-lib.aws_ec2.IVpc
 
 VPC where the Lambda function will be deployed.
+
+---
+
+##### `architecture`<sup>Optional</sup> <a name="architecture" id="@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.architecture"></a>
+
+```typescript
+public readonly architecture: Architecture;
+```
+
+- *Type:* aws-cdk-lib.aws_lambda.Architecture
+- *Default:* ARM_64
+
+CPU architecture for the Lambda function.
+
+---
+
+##### `dockerImage`<sup>Optional</sup> <a name="dockerImage" id="@pwrdrvr/lambda-dispatch-construct.LambdaDispatchFunctionProps.property.dockerImage"></a>
+
+```typescript
+public readonly dockerImage: DockerImageCode;
+```
+
+- *Type:* aws-cdk-lib.aws_lambda.DockerImageCode
+- *Default:* latest image from public ECR repository
+
+Docker image for the Lambda function.
 
 ---
 

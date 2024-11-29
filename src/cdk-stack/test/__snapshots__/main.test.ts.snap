@@ -327,18 +327,7 @@ exports[`Snapshot 1`] = `
               },
             ],
             "Essential": true,
-            "Image": {
-              "Fn::Join": [
-                "",
-                [
-                  "123456789012.dkr.ecr.us-east-1.",
-                  {
-                    "Ref": "AWS::URLSuffix",
-                  },
-                  "/lambda-dispatch-router:latest",
-                ],
-              ],
-            },
+            "Image": "public.ecr.aws/pwrdrvr/lambda-dispatch-router:latest",
             "LogConfiguration": {
               "LogDriver": "awslogs",
               "Options": {
@@ -413,31 +402,6 @@ exports[`Snapshot 1`] = `
       "Properties": {
         "PolicyDocument": {
           "Statement": [
-            {
-              "Action": [
-                "ecr:BatchCheckLayerAvailability",
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:BatchGetImage",
-              ],
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":ecr:us-east-1:123456789012:repository/lambda-dispatch-router",
-                  ],
-                ],
-              },
-            },
-            {
-              "Action": "ecr:GetAuthorizationToken",
-              "Effect": "Allow",
-              "Resource": "*",
-            },
             {
               "Action": [
                 "logs:CreateLogStream",
@@ -546,7 +510,7 @@ exports[`Snapshot 1`] = `
             "LAMBDA_DISPATCH_RUNTIME": "current_thread",
           },
         },
-        "MemorySize": 192,
+        "MemorySize": 1769,
         "PackageType": "Image",
         "Role": {
           "Fn::GetAtt": [

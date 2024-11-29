@@ -27,6 +27,18 @@ export interface LambdaDispatchFunctionProps {
    * @default 60 seconds
    */
   readonly timeout?: cdk.Duration;
+
+  /**
+   * CPU architecture for the Lambda function
+   * @default ARM_64
+   */
+  readonly architecture?: lambda.Architecture;
+
+  /**
+   * Docker image for the Lambda function
+   * @default - latest image from public ECR repository
+   */
+  readonly dockerImage?: lambda.DockerImageCode;
 }
 
 /**
@@ -68,18 +80,20 @@ export class LambdaDispatchFunction extends Construct {
     }
 
     this.function = new lambda.DockerImageFunction(this, 'LambdaFunction', {
-      code: lambda.DockerImageCode.fromEcr(
-        ecr.Repository.fromRepositoryName(this, 'LambdaRepo', 'lambda-dispatch-demo-app'),
-        {
-          tagOrDigest: 'latest',
-        },
-      ),
+      code:
+        props.dockerImage ??
+        lambda.DockerImageCode.fromEcr(
+          ecr.Repository.fromRepositoryName(this, 'LambdaRepo', 'lambda-dispatch-demo-app'),
+          {
+            tagOrDigest: 'latest',
+          },
+        ),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [lambdaSG],
       memorySize: props.memorySize ?? 192,
       timeout: props.timeout ?? cdk.Duration.seconds(60),
-      architecture: lambda.Architecture.ARM_64,
+      architecture: props.architecture ?? lambda.Architecture.ARM_64,
       role: lambdaRole,
       environment: {
         LAMBDA_DISPATCH_RUNTIME: 'current_thread',
