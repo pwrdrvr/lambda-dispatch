@@ -68,94 +68,23 @@ jobs:
           lcov-file: lcov.info
           title: Rust Code Coverage Report
 
-  build-router-arm64:
-    needs: check-access
-    env:
-      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
-      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
-    runs-on: [self-hosted, arm64]
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run the certs script
-        run: |
-          ./certs.sh
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.PUBLIC_REGISTRY_IMAGE }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Configure AWS Credentials
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-session-name: lambda-dispatch-ghpublic-build
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
-          aws-region: us-east-1
-
-      - name: Login to ECR Public
-        if: needs.check-access.outputs.has-token-access == 'true'
-        id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
-      - name: Configure AWS Credentials
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-session-name: lambda-dispatch-ghpublic-build
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
-          aws-region: us-east-2
-
-      - name: Login to ECR Private
-        if: needs.check-access.outputs.has-token-access == 'true'
-        id: login-ecr-private
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: private
-
-      - name: Build Router
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileRouter
-          build-args: BUILD_ARCH=linux-arm64
-          platforms: linux/arm64
-          outputs: type=image,name=${{ env.PUBLIC_REGISTRY_IMAGE }},name=${{ env.PRIVATE_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests-router
-          rm /tmp/digests-router/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-router/${digest#sha256:}"
-
-      - name: Upload digest
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: actions/upload-artifact@v3
-        with:
-          name: digests-router
-          path: /tmp/digests-router/*
-          if-no-files-found: error
-          retention-days: 1
-
   build-router:
     needs: check-access
     env:
       PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
       PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+            build_arch: linux-x64
+          - arch: arm64
+            runner: [self-hosted, arm64]
+            platform: linux/arm64
+            build_arch: linux-arm64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
@@ -171,7 +100,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.PUBLIC_REGISTRY_IMAGE }}
+          images: |
+            ${{ env.PUBLIC_REGISTRY_IMAGE }}
+            ${{ env.PRIVATE_REGISTRY_IMAGE }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -206,22 +137,41 @@ jobs:
         with:
           registry-type: private
 
-      - name: Build Router
-        id: build
+      - name: Build Router Private
+        id: build-private
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./DockerfileRouter
-          build-args: BUILD_ARCH=linux-x64
-          platforms: linux/amd64
-          outputs: type=image,name=${{ env.PUBLIC_REGISTRY_IMAGE }},name=${{ env.PRIVATE_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
+          build-args: BUILD_ARCH=${{ matrix.build_arch }}
+          platforms: ${{ matrix.platform }}
+          outputs: |
+            type=image,name=${{ env.PRIVATE_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
+
+      - name: Build Router Public
+        id: build-public
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./DockerfileRouter
+          build-args: BUILD_ARCH=${{ matrix.build_arch }}
+          platforms: ${{ matrix.platform }}
+          outputs: |
+            type=image,name=${{ env.PUBLIC_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
+
+      - name: Debug metadata
+        run: |
+          echo "steps.build-private.outputs.metadata: ${{ steps.build-private.outputs.metadata }}"
+          echo "steps.build-public.outputs.metadata: ${{ steps.build-public.outputs.metadata }}"
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests-router
-          rm /tmp/digests-router/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-router/${digest#sha256:}"
+          mkdir -p /tmp/digests-router/public /tmp/digests-router/private
+          rm -rf /tmp/digests-router/public/* /tmp/digests-router/public/* || true
+          digest="${{ steps.build-private.outputs.digest }}"
+          touch "/tmp/digests-router/private/${digest#sha256:}"
+          digest="${{ steps.build-public.outputs.digest }}"
+          touch "/tmp/digests-router/public/${digest#sha256:}"
 
       - name: Upload digest
         if: needs.check-access.outputs.has-token-access == 'true'
@@ -241,7 +191,6 @@ jobs:
     needs:
       - check-access
       - build-router
-      - build-router-arm64
     permissions:
       contents: read
       id-token: write
@@ -259,13 +208,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Docker meta
-        id: meta
+      - name: Docker meta public
+        id: meta-public
         uses: docker/metadata-action@v5
         with:
           images: |
             ${{ env.PUBLIC_REGISTRY_IMAGE }}
-            ${{ env.PRIVATE_REGISTRY_IMAGE }}
           tags: |
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
@@ -275,8 +223,20 @@ jobs:
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable
-        run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
+      - name: Docker meta private
+        id: meta-private
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.PRIVATE_REGISTRY_IMAGE }}
+          tags: |
+            enable=${{ github.event_name == 'release' }},type=raw,value=latest
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -304,21 +264,28 @@ jobs:
         with:
           registry-type: private
 
+      - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable public
+        run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta-public.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
+
       - name: Create manifest list and push to Public ECR
-        working-directory: /tmp/digests-router
+        working-directory: /tmp/digests-router/public
         run: |
           docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.PUBLIC_REGISTRY_IMAGE }}@sha256:%s ' *)
 
+      - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable private
+        run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta-private.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
+
       - name: Create manifest list and push to Private ECR
-        working-directory: /tmp/digests-router
+        working-directory: /tmp/digests-router/private
         run: |
-          docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .)') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.PRIVATE_REGISTRY_IMAGE }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.meta-public.outputs.version }}
+          docker buildx imagetools inspect ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.meta-private.outputs.version }}
 
   build-extension-arm64:
     needs: check-access
@@ -539,6 +506,7 @@ jobs:
         run: |
           docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
