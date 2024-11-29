@@ -1,12 +1,10 @@
 name: PR Build and Deploy
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
-permissions:
-  id-token: write
-  contents: read
+# pull_request:
+#   types: [opened, synchronize, reopened]
 
 jobs:
   install-deps:
@@ -18,6 +16,9 @@ jobs:
           lookup-only: 'true' # We only want to lookup from the cache - if a hit, this job does nothing
 
   deploy:
+    permissions:
+      id-token: write
+      contents: read
     needs: [install-deps]
     runs-on: ubuntu-latest
     environment: ghpublic

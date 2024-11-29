@@ -283,7 +283,7 @@ jobs:
 
       - uses: moonrepo/setup-rust@v1
         with:
-          targets: "${{ env.ARCH }}-unknown-linux-musl"
+          targets: '${{ env.ARCH }}-unknown-linux-musl'
           cache-target: release
 
       - name: Build extension
@@ -362,7 +362,7 @@ jobs:
 
       - uses: moonrepo/setup-rust@v1
         with:
-          targets: "${{ env.ARCH }}-unknown-linux-musl"
+          targets: '${{ env.ARCH }}-unknown-linux-musl'
           cache-target: release
 
       - name: Build extension
@@ -558,3 +558,48 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ needs.check-access.outputs.has-token-access == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
+
+  install-deps:
+    needs:
+      - build-demoapp
+      - merge-router
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/configure-nodejs
+        with:
+          lookup-only: 'true' # We only want to lookup from the cache - if a hit, this job does nothing
+
+  deploy:
+    needs: [install-deps]
+    runs-on: ubuntu-latest
+    environment: ghpublic
+    permissions:
+      id-token: write
+      contents: read
+    concurrency:
+      group: deploy-${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-2
+
+      - uses: ./.github/actions/configure-nodejs
+
+      - name: Build CDK Stack
+        run: |
+          yarn build
+
+      - name: Deploy Stack
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cd src/cdk-stack
+          STACK_SUFFIX=${{ github.event_name == 'pull_request' && '-pr' || '' }}
+          npx cdk deploy lambda-dispatch${STACK_SUFFIX} --require-approval never
