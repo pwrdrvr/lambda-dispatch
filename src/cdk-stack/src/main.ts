@@ -21,7 +21,7 @@ const vpcStack = new VpcStack(app, 'vpc-stack', {
   env: devEnv,
   stackName: 'vpc-with-nat-instances',
 });
-new LambdaDispatchStack(app, 'lambda-dispatch', {
+const lambdaDispatchStack = new LambdaDispatchStack(app, 'lambda-dispatch', {
   env: devEnv,
   stackName: 'lambda-dispatch-app-stack',
   vpc: vpcStack.vpc,
@@ -35,8 +35,9 @@ new LambdaDispatchStack(app, 'lambda-dispatch', {
   ecsClusterArn: cdk.Fn.importValue('vpc-with-nat-instances-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('vpc-with-nat-instances-ClusterName'),
 });
+cdk.Tags.of(lambdaDispatchStack).add('Name', 'lambda-dispatch');
 
-new LambdaDispatchStack(app, 'lambda-dispatch-pr', {
+const lambdaDispatchStackPr = new LambdaDispatchStack(app, 'lambda-dispatch-pr', {
   env: devEnv,
   stackName: `lambda-dispatch-app-stack-pr-${process.env.PR_NUMBER}`,
   vpc: vpcStack.vpc,
@@ -50,5 +51,6 @@ new LambdaDispatchStack(app, 'lambda-dispatch-pr', {
   ecsClusterArn: cdk.Fn.importValue('vpc-with-nat-instances-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('vpc-with-nat-instances-ClusterName'),
 });
+cdk.Tags.of(lambdaDispatchStackPr).add('Name', `lambda-dispatch-pr-${process.env.PR_NUMBER}`);
 
 app.synth();
