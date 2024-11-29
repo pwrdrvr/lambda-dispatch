@@ -90,15 +90,6 @@ export class LambdaDispatchStack extends cdk.Stack {
       clusterName: props.ecsClusterName,
     });
 
-    // Reference ECR repositories from the other stack
-    ecr.Repository.fromRepositoryName(
-      this,
-      'ImportedLambdaRepo',
-      cdk.Fn.importValue('LambdaRepoName'),
-    );
-
-    ecr.Repository.fromRepositoryName(this, 'ImportedEcsRepo', cdk.Fn.importValue('EcsRepoName'));
-
     // Create Lambda construct
     const lambdaConstruct = new LambdaDispatchFunction(this, 'LambdaConstruct', {
       vpc,
@@ -107,7 +98,7 @@ export class LambdaDispatchStack extends cdk.Stack {
       dockerImage: lambda.DockerImageCode.fromEcr(
         ecr.Repository.fromRepositoryName(this, 'LambdaRepo', 'lambda-dispatch-demo-app'),
         {
-          tagOrDigest: process.env.PR_NUMBER ? `pr-${process.env.PR_NUMBER}` : 'latest',
+          tagOrDigest: process.env.PR_NUMBER ? `pr-${process.env.PR_NUMBER}-arm64` : 'latest',
         },
       ),
     });
@@ -118,7 +109,10 @@ export class LambdaDispatchStack extends cdk.Stack {
       lambdaFunction: lambdaConstruct.function,
       cluster,
       containerImage: process.env.PR_NUMBER
-        ? ecs.ContainerImage.fromRegistry(`lambda-dispatch-router:pr-${process.env.PR_NUMBER}`)
+        ? ecs.ContainerImage.fromEcrRepository(
+          ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
+          `pr-${process.env.PR_NUMBER}`,
+        )
         : undefined,
     });
 

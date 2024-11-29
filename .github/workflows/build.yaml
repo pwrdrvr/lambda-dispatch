@@ -479,13 +479,18 @@ jobs:
         id: version
         run: |
           if [ -n "${{ github.event.pull_request.number }}" ]; then
+            IMAGE_TAG="pr-${{ github.event.pull_request.number }}"
             echo "imageTag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=-pr-"${{ github.event.pull_request.number }} >> $GITHUB_ENV
           else
             TAG_OR_BRANCH=$(echo $GITHUB_REF | sed -e 's|refs/tags/v||' -e 's|refs/heads/||')
+            IMAGE_TAG="${TAG_OR_BRANCH}"
             echo "imageTag=${TAG_OR_BRANCH}" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=" >> $GITHUB_ENV
           fi
+          echo "imageTagArm64=${IMAGE_TAG}-arm64" >> $GITHUB_OUTPUT
+          echo "imageTagAmd64=${IMAGE_TAG}-amd64" >> $GITHUB_OUTPUT
+
       - name: Swap in tagged image name in the Dockerfile
         run: |
           sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.version.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
@@ -520,14 +525,25 @@ jobs:
         with:
           registry-type: private
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileLambdaDemoApp
-          platforms: linux/amd64,linux/arm64
-          push: ${{ needs.check-access.outputs.has-token-access == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
+      - name: Build and push Docker image for arm64
+        run: |
+          docker buildx build --platform linux/arm64 --file ./DockerfileLambdaDemoApp -t ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagArm64 }} --load .
+          docker push ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagArm64 }}
+          docker buildx imagetools inspect ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagArm64 }}
+
+          docker buildx build --platform linux/arm64 --file ./DockerfileLambdaDemoApp -t ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagArm64 }} --load .
+          docker push ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagArm64 }}
+          docker buildx imagetools inspect ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagArm64 }}
+
+      - name: Build and push Docker image for amd64
+        run: |
+          docker buildx build --platform linux/amd64 --file ./DockerfileLambdaDemoApp -t ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }} --load .
+          docker push ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }}
+          docker buildx imagetools inspect  ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }}
+
+          docker buildx build --platform linux/amd64 --file ./DockerfileLambdaDemoApp -t ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }} --load .
+          docker push ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }}
+          docker buildx imagetools inspect  ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }}
 
   install-deps:
     needs:
