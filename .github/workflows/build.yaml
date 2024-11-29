@@ -71,7 +71,8 @@ jobs:
   build-router-arm64:
     needs: check-access
     env:
-      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
     runs-on: [self-hosted, arm64]
     permissions:
       contents: read
@@ -88,7 +89,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: ${{ env.PUBLIC_REGISTRY_IMAGE }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -108,6 +109,21 @@ jobs:
         with:
           registry-type: public
 
+      - name: Configure AWS Credentials
+        if: needs.check-access.outputs.has-token-access == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-2
+
+      - name: Login to ECR Private
+        if: needs.check-access.outputs.has-token-access == 'true'
+        id: login-ecr-private
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: private
+
       - name: Build Router
         id: build
         uses: docker/build-push-action@v5
@@ -116,7 +132,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-arm64
           platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
+          outputs: type=image,name=${{ env.PUBLIC_REGISTRY_IMAGE }},name=${{ env.PRIVATE_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
         run: |
@@ -137,7 +153,8 @@ jobs:
   build-router:
     needs: check-access
     env:
-      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -154,7 +171,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: ${{ env.PUBLIC_REGISTRY_IMAGE }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -174,6 +191,21 @@ jobs:
         with:
           registry-type: public
 
+      - name: Configure AWS Credentials
+        if: needs.check-access.outputs.has-token-access == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-2
+
+      - name: Login to ECR Private
+        if: needs.check-access.outputs.has-token-access == 'true'
+        id: login-ecr-private
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: private
+
       - name: Build Router
         id: build
         uses: docker/build-push-action@v5
@@ -182,7 +214,7 @@ jobs:
           file: ./DockerfileRouter
           build-args: BUILD_ARCH=linux-x64
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
+          outputs: type=image,name=${{ env.PUBLIC_REGISTRY_IMAGE }},name=${{ env.PRIVATE_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
         run: |
@@ -203,7 +235,8 @@ jobs:
   merge-router:
     if: needs.check-access.outputs.has-token-access == 'true'
     env:
-      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
     runs-on: ubuntu-latest
     needs:
       - check-access
@@ -216,11 +249,13 @@ jobs:
       - name: Clear digests
         run: |
           rm -rf /tmp/digests-router/* || true
+
       - name: Download digests
         uses: actions/download-artifact@v3
         with:
           name: digests-router
           path: /tmp/digests-router
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -228,8 +263,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
-          # type=sha
+          images: |
+            ${{ env.PUBLIC_REGISTRY_IMAGE }}
+            ${{ env.PRIVATE_REGISTRY_IMAGE }}
           tags: |
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
@@ -248,20 +284,41 @@ jobs:
           role-session-name: lambda-dispatch-ghpublic-build
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
           aws-region: us-east-1
+
       - name: Login to ECR Public
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
 
-      - name: Create manifest list and push
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-2
+
+      - name: Login to ECR Private
+        id: login-ecr-private
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: private
+
+      - name: Create manifest list and push to Public ECR
         working-directory: /tmp/digests-router
         run: |
           docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+            $(printf '${{ env.PUBLIC_REGISTRY_IMAGE }}@sha256:%s ' *)
+
+      - name: Create manifest list and push to Private ECR
+        working-directory: /tmp/digests-router
+        run: |
+          docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .)') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.PRIVATE_REGISTRY_IMAGE }}@sha256:%s ' *)
+
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
 
   build-extension-arm64:
     needs: check-access
@@ -488,7 +545,8 @@ jobs:
 
   build-demoapp:
     env:
-      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -508,7 +566,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: |
+            ${{ env.PUBLIC_REGISTRY_IMAGE }}
+            ${{ env.PRIVATE_REGISTRY_IMAGE }}
           tags: |
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
@@ -518,24 +578,20 @@ jobs:
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Compute PR Suffix
-        id: prSuffix
+      - name: Compute Versions
+        id: version
         run: |
           if [ -n "${{ github.event.pull_request.number }}" ]; then
             echo "imageTag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            echo "prSuffix=-pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            echo "prSuffixPackageVersion=-pr.${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=-pr-"${{ github.event.pull_request.number }} >> $GITHUB_ENV
           else
             TAG_OR_BRANCH=$(echo $GITHUB_REF | sed -e 's|refs/tags/v||' -e 's|refs/heads/||')
             echo "imageTag=${TAG_OR_BRANCH}" >> $GITHUB_OUTPUT
-            echo "prSuffix=" >> $GITHUB_OUTPUT
-            echo "prSuffixPackageVersion=" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=" >> $GITHUB_ENV
           fi
       - name: Swap in tagged image name in the Dockerfile
         run: |
-          sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.prSuffix.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
+          sed -i "s|FROM lambda-dispatch-extension|FROM public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}:${{ steps.version.outputs.imageTag }}|g" ./DockerfileLambdaDemoApp
 
       - name: Configure AWS Credentials
         if: needs.check-access.outputs.has-token-access == 'true'
@@ -544,12 +600,29 @@ jobs:
           role-session-name: lambda-dispatch-ghpublic-build
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
           aws-region: us-east-1
+
       - name: Login to ECR Public
         if: needs.check-access.outputs.has-token-access == 'true'
         id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Configure AWS Credentials
+        if: needs.check-access.outputs.has-token-access == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-2
+
+      - name: Login to ECR Private
+        if: needs.check-access.outputs.has-token-access == 'true'
+        id: login-ecr-private
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: private
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -580,6 +653,10 @@ jobs:
     concurrency:
       group: deploy-${{ github.workflow }}-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+    env:
+      DEMO_APP_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      ROUTER_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      IMAGE_TAG: ${{ github.event_name == 'pull_request' && 'pr-${{ github.event.pull_request.number }}' || 'latest' }}
     steps:
       - uses: actions/checkout@v4
 
