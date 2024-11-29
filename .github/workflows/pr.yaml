@@ -11,8 +11,18 @@ permissions:
   contents: read
 
 jobs:
+  install-deps:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/configure-nodejs
+        with:
+          lookup-only: 'true' # We only want to lookup from the cache - if a hit, this job does nothing
+
   deploy:
     if: github.event.action != 'closed'
+    needs: [install-deps]
     runs-on: ubuntu-latest
     environment: ghpublic
     steps:
@@ -25,12 +35,7 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
           aws-region: us-east-2
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-
-      - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+      - uses: ./.github/actions/configure-nodejs
 
       - name: Build CDK Stack
         run: |
