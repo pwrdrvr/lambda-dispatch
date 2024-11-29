@@ -266,7 +266,6 @@ jobs:
 
       - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable public
         run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta-public.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
-
       - name: Create manifest list and push to Public ECR
         working-directory: /tmp/digests-router/public
         run: |
@@ -275,7 +274,6 @@ jobs:
 
       - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable private
         run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta-private.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
-
       - name: Create manifest list and push to Private ECR
         working-directory: /tmp/digests-router/private
         run: |
@@ -287,15 +285,27 @@ jobs:
           docker buildx imagetools inspect ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.meta-public.outputs.version }}
           docker buildx imagetools inspect ${{ env.PRIVATE_REGISTRY_IMAGE }}:${{ steps.meta-private.outputs.version }}
 
-  build-extension-arm64:
+  build-extension:
     needs: check-access
     env:
-      ARCH: aarch64
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            platform: linux/amd64
+            build_arch: linux-x64
+            rust_target: x86_64-unknown-linux-musl
+          - arch: aarch64
+            runner: ubuntu-latest
+            platform: linux/arm64
+            build_arch: linux-arm64
+            rust_target: aarch64-unknown-linux-musl
     permissions:
       contents: read
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -303,18 +313,18 @@ jobs:
       - name: Install gcc musl cross-compiler
         uses: ./.github/actions/setup-gcc-musl-cross
         with:
-          arch: ${{ env.ARCH }}
+          arch: ${{ matrix.arch }}
 
       - uses: moonrepo/setup-rust@v1
         with:
-          targets: '${{ env.ARCH }}-unknown-linux-musl'
+          targets: ${{ matrix.rust_target }}
           cache-target: release
 
       - name: Build extension
         env:
-          CC: ${{ env.ARCH }}-linux-musl-gcc
+          CC: ${{ matrix.arch }}-linux-musl-gcc
         run: |
-          cargo build --release --target ${{ env.ARCH }}-unknown-linux-musl
+          cargo build --release --target ${{ matrix.rust_target }}
 
       - name: Docker meta
         id: meta
@@ -346,89 +356,10 @@ jobs:
         with:
           context: .
           file: ./DockerfileExtensionCross
-          build-args: BUILD_ARCH=linux-arm64
-          platforms: linux/arm64
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          rm /tmp/digests/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: actions/upload-artifact@v3
-        with:
-          name: digests-extension
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  build-extension:
-    needs: check-access
-    env:
-      REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
-      ARCH: x86_64
-    permissions:
-      contents: read
-      id-token: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install gcc musl cross-compiler
-        uses: ./.github/actions/setup-gcc-musl-cross
-        with:
-          arch: ${{ env.ARCH }}
-
-      - uses: moonrepo/setup-rust@v1
-        with:
-          targets: '${{ env.ARCH }}-unknown-linux-musl'
-          cache-target: release
-
-      - name: Build extension
-        env:
-          CC: ${{ env.ARCH }}-linux-musl-gcc
-        run: |
-          cargo build --release --target ${{ env.ARCH }}-unknown-linux-musl
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Configure AWS Credentials
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-session-name: lambda-dispatch-ghpublic-build
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
-          aws-region: us-east-1
-
-      - name: Login to ECR Public
-        if: needs.check-access.outputs.has-token-access == 'true'
-        id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
-      - name: Build
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerfileExtensionCross
           build-args: |
-            ARCH=x86_64
-            TARGET_PLATFORM=linux/amd64
-          platforms: linux/amd64
+            ARCH=${{ matrix.arch }}
+            TARGET_PLATFORM=${{ matrix.platform }}
+          platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
       - name: Export digest
@@ -455,7 +386,6 @@ jobs:
     needs:
       - check-access
       - build-extension
-      - build-extension-arm64
     permissions:
       contents: read
       id-token: write
@@ -476,7 +406,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
-          # type=sha
           tags: |
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
