@@ -606,6 +606,9 @@ jobs:
             STACK_SUFFIX=""
           fi
 
+          BASE_URL="https://lambdadispatch${STACK_SUFFIX}.ghpublic.pwrdrvr.com"
+          echo "Smoke testing ${BASE_URL}"
+
           for i in {1..5}; do
-            curl https://lambdadispatch${STACK_SUFFIX}.ghpublic.pwrdrvr.com/ping
+            curl ${BASE_URL}/ping
           done
