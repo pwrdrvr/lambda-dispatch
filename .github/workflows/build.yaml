@@ -593,3 +593,19 @@ jobs:
           cd src/cdk-stack
           STACK_SUFFIX=${{ github.event_name == 'pull_request' && '-pr' || '' }}
           npx cdk deploy lambda-dispatch${STACK_SUFFIX} --require-approval never
+
+  smoke-test:
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smoke Test
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            STACK_SUFFIX="-pr-${{ github.event.pull_request.number }}"
+          else
+            STACK_SUFFIX=""
+          fi
+
+          for i in {1..5}; do
+            curl https://lambdadispatch${STACK_SUFFIX}.ghpublic.pwrdrvr.com/ping
+          done
