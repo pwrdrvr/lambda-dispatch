@@ -15,6 +15,7 @@ const app = new cdk.App();
 new EcrStack(app, 'ecr-stack', {
   env: devEnv,
   stackName: 'lambda-dispatch-ecr',
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
 const vpcStack = new VpcStack(app, 'vpc-stack', {
   env: devEnv,
