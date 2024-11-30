@@ -53,9 +53,14 @@ export interface LambdaDispatchStackProps extends cdk.StackProps {
   /**
    * Whether to use Fargate Spot capacity provider
    * Note: Fargate Spot only supports AMD64 architecture
-   * @default false
+   * @default true
    */
   readonly useFargateSpot?: boolean;
+
+  /**
+   * Removal policy for the resources in the stack
+   */
+  readonly removalPolicy?: cdk.RemovalPolicy;
 }
 
 export class LambdaDispatchStack extends cdk.Stack {
@@ -122,6 +127,7 @@ export class LambdaDispatchStack extends cdk.Stack {
         )
         : undefined,
       useFargateSpot: props.useFargateSpot ?? true,
+      removalPolicy: props.removalPolicy,
     });
 
     // Allow ECS tasks to invoke Lambda
