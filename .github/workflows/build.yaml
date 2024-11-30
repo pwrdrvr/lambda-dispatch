@@ -167,7 +167,7 @@ jobs:
       - name: Export digest
         run: |
           mkdir -p /tmp/digests-router/public /tmp/digests-router/private
-          rm -rf /tmp/digests-router/public/* /tmp/digests-router/public/* || true
+          rm -rf /tmp/digests-router/public/* /tmp/digests-router/private/* || true
           digest="${{ steps.build-private.outputs.digest }}"
           touch "/tmp/digests-router/private/${digest#sha256:}"
           digest="${{ steps.build-public.outputs.digest }}"
