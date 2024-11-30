@@ -49,6 +49,13 @@ export interface LambdaDispatchStackProps extends cdk.StackProps {
    * ECS Cluster Name
    */
   readonly ecsClusterName: string;
+
+  /**
+   * Whether to use Fargate Spot capacity provider
+   * Note: Fargate Spot only supports AMD64 architecture
+   * @default false
+   */
+  readonly useFargateSpot?: boolean;
 }
 
 export class LambdaDispatchStack extends cdk.Stack {
@@ -114,6 +121,7 @@ export class LambdaDispatchStack extends cdk.Stack {
           `pr-${process.env.PR_NUMBER}`,
         )
         : undefined,
+      useFargateSpot: props.useFargateSpot ?? true,
     });
 
     // Allow ECS tasks to invoke Lambda
