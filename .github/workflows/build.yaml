@@ -164,24 +164,6 @@ jobs:
           echo "steps.build-private.outputs.metadata: ${{ steps.build-private.outputs.metadata }}"
           echo "steps.build-public.outputs.metadata: ${{ steps.build-public.outputs.metadata }}"
 
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests-router/public /tmp/digests-router/private
-          rm -rf /tmp/digests-router/public/* /tmp/digests-router/public/* || true
-          digest="${{ steps.build-private.outputs.digest }}"
-          touch "/tmp/digests-router/private/${digest#sha256:}"
-          digest="${{ steps.build-public.outputs.digest }}"
-          touch "/tmp/digests-router/public/${digest#sha256:}"
-
-      - name: Upload digest
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: actions/upload-artifact@v3
-        with:
-          name: digests-router
-          path: /tmp/digests-router/*
-          if-no-files-found: error
-          retention-days: 1
-
   merge-router:
     if: needs.check-access.outputs.has-token-access == 'true'
     env:
@@ -195,16 +177,6 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Clear digests
-        run: |
-          rm -rf /tmp/digests-router/* || true
-
-      - name: Download digests
-        uses: actions/download-artifact@v3
-        with:
-          name: digests-router
-          path: /tmp/digests-router
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -267,7 +239,6 @@ jobs:
       - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable public
         run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta-public.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
       - name: Create manifest list and push to Public ECR
-        working-directory: /tmp/digests-router/public
         run: |
           docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.PUBLIC_REGISTRY_IMAGE }}@sha256:%s ' *)
@@ -275,7 +246,6 @@ jobs:
       - name: Set DOCKER_METADATA_OUTPUT_JSON environment variable private
         run: echo "DOCKER_METADATA_OUTPUT_JSON=$(echo '${{ toJson(steps.meta-private.outputs) }}' | tr '\n' ' ')" >> $GITHUB_ENV
       - name: Create manifest list and push to Private ECR
-        working-directory: /tmp/digests-router/private
         run: |
           docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.PRIVATE_REGISTRY_IMAGE }}@sha256:%s ' *)
@@ -362,22 +332,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
 
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          rm /tmp/digests/* || true
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        if: needs.check-access.outputs.has-token-access == 'true'
-        uses: actions/upload-artifact@v3
-        with:
-          name: digests-extension
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
   merge-extension:
     if: needs.check-access.outputs.has-token-access == 'true'
     env:
@@ -390,14 +344,6 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Clear digests
-        run: |
-          rm -rf /tmp/digests/* || true
-      - name: Download digests
-        uses: actions/download-artifact@v3
-        with:
-          name: digests-extension
-          path: /tmp/digests
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -431,7 +377,6 @@ jobs:
           registry-type: public
 
       - name: Create manifest list and push
-        working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $((jq -r '.json' | jq -cr '.tags | map("-t " + .) | join(" ")') <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
