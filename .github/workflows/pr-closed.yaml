@@ -1,0 +1,35 @@
+name: Cleanup Merged PR
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  id-token: write
+  contents: read
+
+# Limit concurrency to 1, with queueing, per workflow
+# Limit concurrency to 1, with queueing, per workflow per PR
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    environment: ghpublic
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-session-name: lambda-dispatch-ghpublic-build
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/builder-writeRole
+          aws-region: us-east-2
+
+      - name: Delete Stacks
+        run: |
+          # Delete all stacks for this PR
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          aws cloudformation delete-stack --stack-name "lambda-dispatch-app-stack-pr-${PR_NUMBER}"
+          # Wait for deletion to complete
+          aws cloudformation wait stack-delete-complete --stack-name "lambda-dispatch-app-stack-pr-${PR_NUMBER}"

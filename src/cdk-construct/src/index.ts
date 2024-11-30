@@ -1,2 +1,2 @@
-export { LambdaConstruct, LambdaConstructProps } from "./lambda";
-export { EcsConstruct, EcsConstructProps } from "./ecs";
+export { LambdaDispatchFunction, LambdaDispatchFunctionProps } from './lambda';
+export { LambdaDispatchECS, LambdaDispatchECSProps } from './ecs';

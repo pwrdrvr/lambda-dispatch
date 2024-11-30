@@ -67,6 +67,11 @@
       "type": "build"
     },
     {
+      "name": "@pwrdrvr/lambda-dispatch-construct",
+      "version": "*",
+      "type": "runtime"
+    },
+    {
       "name": "aws-cdk-lib",
       "version": "^2.130.0",
       "type": "runtime"

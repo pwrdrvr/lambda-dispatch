@@ -5,7 +5,10 @@ const project = new awscdk.AwsCdkTypeScriptApp({
   name: '@pwrdrvr/lambda-dispatch-stack',
   projenrcTs: true,
 
-  deps: ['cdk-fck-nat@1.5.11'] /* Runtime dependencies of this module. */,
+  deps: [
+    'cdk-fck-nat@1.5.11',
+    '@pwrdrvr/lambda-dispatch-construct@*',
+  ] /* Runtime dependencies of this module. */,
   // description: undefined,  /* The description is just a string that helps people understand the purpose of the package. */
   // devDeps: [],             /* Build dependencies for this module. */
   devDeps: [],
