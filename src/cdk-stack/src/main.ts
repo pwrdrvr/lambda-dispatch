@@ -50,6 +50,7 @@ const lambdaDispatchStackPr = new LambdaDispatchStack(app, 'lambda-dispatch-pr',
   loadBalancerHostedZoneId: cdk.Fn.importValue('vpc-with-nat-instances-ALBCanonicalHostedZoneId'),
   ecsClusterArn: cdk.Fn.importValue('vpc-with-nat-instances-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('vpc-with-nat-instances-ClusterName'),
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
 cdk.Tags.of(lambdaDispatchStackPr).add('Name', `lambda-dispatch-pr-${process.env.PR_NUMBER}`);
 

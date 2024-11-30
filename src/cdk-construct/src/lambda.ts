@@ -98,6 +98,7 @@ export class LambdaDispatchFunction extends Construct {
       environment: {
         LAMBDA_DISPATCH_RUNTIME: 'current_thread',
       },
+      logRetention: 7,
     });
   }
 }

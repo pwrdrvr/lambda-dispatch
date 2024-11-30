@@ -311,6 +311,7 @@ const lambdaDispatchECSProps: LambdaDispatchECSProps = { ... }
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.maxCapacity">maxCapacity</a></code> | <code>number</code> | Maximum number of ECS tasks. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.memoryLimitMiB">memoryLimitMiB</a></code> | <code>number</code> | Memory limit for the ECS task in MiB. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.minCapacity">minCapacity</a></code> | <code>number</code> | Minimum number of ECS tasks. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.removalPolicy">removalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | The removal policy to apply to the log group. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.useFargateSpot">useFargateSpot</a></code> | <code>boolean</code> | Whether to use Fargate Spot capacity provider Note: Fargate Spot only supports AMD64 architecture. |
 
 ---
@@ -426,6 +427,19 @@ public readonly minCapacity: number;
 - *Default:* 1
 
 Minimum number of ECS tasks.
+
+---
+
+##### `removalPolicy`<sup>Optional</sup> <a name="removalPolicy" id="@pwrdrvr/lambda-dispatch-construct.LambdaDispatchECSProps.property.removalPolicy"></a>
+
+```typescript
+public readonly removalPolicy: RemovalPolicy;
+```
+
+- *Type:* aws-cdk-lib.RemovalPolicy
+- *Default:* undefined
+
+The removal policy to apply to the log group.
 
 ---
 

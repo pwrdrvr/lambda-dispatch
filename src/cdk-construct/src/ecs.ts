@@ -62,6 +62,13 @@ export interface LambdaDispatchECSProps {
    * @default - latest image from public ECR repository
    */
   readonly containerImage?: ecs.ContainerImage;
+
+  /**
+   * The removal policy to apply to the log group
+   *
+   * @default - undefined
+   */
+  readonly removalPolicy?: cdk.RemovalPolicy;
 }
 
 /**
@@ -120,7 +127,7 @@ export class LambdaDispatchECS extends Construct {
 
     const logGroup = new logs.LogGroup(this, 'ServiceLogGroup', {
       retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy: props.removalPolicy,
     });
 
     const container = taskDefinition.addContainer('LambdaDispatchRouter', {
