@@ -29,12 +29,12 @@ export class EcrStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'LambdaRepoName', {
       value: this.lambdaRepo.repositoryName,
-      exportName: 'LambdaRepoName',
+      exportName: `${this.stackName}-LambdaRepoName`,
     });
 
     new cdk.CfnOutput(this, 'EcsRepoName', {
       value: this.ecsRepo.repositoryName,
-      exportName: 'EcsRepoName',
+      exportName: `${this.stackName}-EcsRepoName`,
     });
   }
 }

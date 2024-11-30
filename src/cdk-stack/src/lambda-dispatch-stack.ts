@@ -61,6 +61,24 @@ export interface LambdaDispatchStackProps extends cdk.StackProps {
    * Removal policy for the resources in the stack
    */
   readonly removalPolicy?: cdk.RemovalPolicy;
+
+  /**
+   * CPU architecture for the Lambda function
+   * @default ARM_64
+   */
+  readonly lambdaArchitecture?: lambda.Architecture;
+
+  /**
+   * Lambda ECR repository name
+   * @default - lambda-dispatch-demo-app
+   */
+  readonly lambdaECRRepoName?: string;
+
+  /**
+   * Lambda Image tag
+   * @default - PR_NUMBER or latest with architecture suffix
+   */
+  readonly lambdaImageTag?: string;
 }
 
 export class LambdaDispatchStack extends cdk.Stack {
@@ -102,17 +120,29 @@ export class LambdaDispatchStack extends cdk.Stack {
       clusterName: props.ecsClusterName,
     });
 
+    // Compute Lambda image tag
+    const lambdaArchTag =
+      props.lambdaArchitecture === lambda.Architecture.ARM_64 ? 'arm64' : 'amd64';
+    const lambdaTag = props.lambdaImageTag
+      ? props.lambdaImageTag
+      : process.env.PR_NUMBER
+        ? `pr-${process.env.PR_NUMBER}-${lambdaArchTag}`
+        : `latest-${lambdaArchTag}`;
+    const lambdaECRRepoName = props.lambdaECRRepoName ?? 'lambda-dispatch-demo-app';
+
     // Create Lambda construct
     const lambdaConstruct = new LambdaDispatchFunction(this, 'LambdaConstruct', {
       vpc,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 1769,
-      dockerImage: lambda.DockerImageCode.fromEcr(
-        ecr.Repository.fromRepositoryName(this, 'LambdaRepo', 'lambda-dispatch-demo-app'),
-        {
-          tagOrDigest: process.env.PR_NUMBER ? `pr-${process.env.PR_NUMBER}-arm64` : 'latest',
-        },
-      ),
+      dockerImage: props.lambdaECRRepoName || props.lambdaImageTag
+        ? lambda.DockerImageCode.fromEcr(
+          ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
+          {
+            tagOrDigest: lambdaTag,
+          },
+        )
+        : undefined,
     });
 
     // Create ECS construct

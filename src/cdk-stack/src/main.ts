@@ -27,6 +27,9 @@ new EcsClusterStack(app, 'ecs-stack', {
   vpc: vpcStack.vpc,
 });
 
+// Compute Lambda image tag
+const lambdaImageTag = process.env.PR_NUMBER ? `pr-${process.env.PR_NUMBER}-arm64` : 'main-arm64';
+
 const lambdaDispatchStack = new LambdaDispatchStack(app, 'lambda-dispatch', {
   env: devEnv,
   stackName: 'lambda-dispatch-app-stack',
@@ -40,6 +43,7 @@ const lambdaDispatchStack = new LambdaDispatchStack(app, 'lambda-dispatch', {
   loadBalancerHostedZoneId: cdk.Fn.importValue('lambda-dispatch-ecs-ALBCanonicalHostedZoneId'),
   ecsClusterArn: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterName'),
+  lambdaImageTag,
 });
 cdk.Tags.of(lambdaDispatchStack).add('Name', 'lambda-dispatch');
 
@@ -56,6 +60,7 @@ const lambdaDispatchStackPr = new LambdaDispatchStack(app, 'lambda-dispatch-pr',
   loadBalancerHostedZoneId: cdk.Fn.importValue('lambda-dispatch-ecs-ALBCanonicalHostedZoneId'),
   ecsClusterArn: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterName'),
+  lambdaImageTag,
   removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
 cdk.Tags.of(lambdaDispatchStackPr).add('Name', `lambda-dispatch-pr-${process.env.PR_NUMBER}`);
