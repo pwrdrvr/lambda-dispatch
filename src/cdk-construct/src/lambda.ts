@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
@@ -79,10 +81,18 @@ export class LambdaDispatchFunction extends Construct {
       );
     }
 
+    // Need to find the DockerfileLambda, which may be:
+    // - Built construct: in the same directory as the construct files
+    // - CDK deploy or running tests from source: at ../DockerfileLambda
+    let dockerfilePath = __dirname;
+    if (fs.existsSync(path.join(__dirname, '..', 'DockerfileLambda'))) {
+      dockerfilePath = path.join(__dirname, '..');
+    }
+
     this.function = new lambda.DockerImageFunction(this, 'LambdaFunction', {
       code:
         props.dockerImage ??
-        lambda.DockerImageCode.fromImageAsset(__dirname, {
+        lambda.DockerImageCode.fromImageAsset(dockerfilePath, {
           file: 'DockerfileLambda',
           platform:
             props.architecture ?? lambda.Architecture.ARM_64 === lambda.Architecture.ARM_64
