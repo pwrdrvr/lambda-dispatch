@@ -1,6 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
@@ -82,12 +82,13 @@ export class LambdaDispatchFunction extends Construct {
     this.function = new lambda.DockerImageFunction(this, 'LambdaFunction', {
       code:
         props.dockerImage ??
-        lambda.DockerImageCode.fromEcr(
-          ecr.Repository.fromRepositoryName(this, 'LambdaRepo', 'lambda-dispatch-demo-app'),
-          {
-            tagOrDigest: 'latest',
-          },
-        ),
+        lambda.DockerImageCode.fromImageAsset(__dirname, {
+          file: 'DockerfileLambda',
+          platform:
+            props.architecture ?? lambda.Architecture.ARM_64 === lambda.Architecture.ARM_64
+              ? ecr_assets.Platform.LINUX_ARM64
+              : ecr_assets.Platform.LINUX_AMD64,
+        }),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [lambdaSG],

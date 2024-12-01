@@ -44,6 +44,7 @@ const lambdaDispatchStack = new LambdaDispatchStack(app, 'lambda-dispatch', {
   ecsClusterArn: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterName'),
   lambdaImageTag,
+  usePublicImages: process.env.USE_PUBLIC_IMAGES === 'true',
 });
 cdk.Tags.of(lambdaDispatchStack).add('Name', 'lambda-dispatch');
 
@@ -61,6 +62,7 @@ const lambdaDispatchStackPr = new LambdaDispatchStack(app, 'lambda-dispatch-pr',
   ecsClusterArn: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterArn'),
   ecsClusterName: cdk.Fn.importValue('lambda-dispatch-ecs-ClusterName'),
   lambdaImageTag,
+  usePublicImages: process.env.USE_PUBLIC_IMAGES === 'true',
   removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
 cdk.Tags.of(lambdaDispatchStackPr).add('Name', `lambda-dispatch-pr-${process.env.PR_NUMBER}`);

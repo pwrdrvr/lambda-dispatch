@@ -79,13 +79,19 @@ export interface LambdaDispatchStackProps extends cdk.StackProps {
    * @default - PR_NUMBER or latest with architecture suffix
    */
   readonly lambdaImageTag?: string;
+
+  /**
+   * Whether to use public images for the Lambda and ECS tasks
+   * @default false
+   */
+  readonly usePublicImages?: boolean;
 }
 
 export class LambdaDispatchStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: LambdaDispatchStackProps) {
     super(scope, id, props);
 
-    const { vpc } = props;
+    const { vpc, usePublicImages = false } = props;
 
     const loadBalancer = elbv2.ApplicationLoadBalancer.fromApplicationLoadBalancerAttributes(
       this,
@@ -135,7 +141,7 @@ export class LambdaDispatchStack extends cdk.Stack {
       vpc,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 1769,
-      dockerImage: props.lambdaECRRepoName || props.lambdaImageTag
+      dockerImage: !usePublicImages && (props.lambdaECRRepoName || props.lambdaImageTag)
         ? lambda.DockerImageCode.fromEcr(
           ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
           {
@@ -150,12 +156,13 @@ export class LambdaDispatchStack extends cdk.Stack {
       vpc,
       lambdaFunction: lambdaConstruct.function,
       cluster,
-      containerImage: process.env.PR_NUMBER
-        ? ecs.ContainerImage.fromEcrRepository(
-          ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
-          `pr-${process.env.PR_NUMBER}`,
-        )
-        : undefined,
+      containerImage:
+        !usePublicImages && process.env.PR_NUMBER
+          ? ecs.ContainerImage.fromEcrRepository(
+            ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
+            `pr-${process.env.PR_NUMBER}`,
+          )
+          : undefined,
       useFargateSpot: props.useFargateSpot ?? true,
       removalPolicy: props.removalPolicy,
     });

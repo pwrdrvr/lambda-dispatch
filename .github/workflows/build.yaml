@@ -21,6 +21,7 @@ jobs:
   dotnet-tests:
     needs: check-access
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -48,6 +49,7 @@ jobs:
     needs: check-access
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES')
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -70,6 +72,7 @@ jobs:
 
   build-router:
     needs: check-access
+    if: github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES')
     env:
       PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
       PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
@@ -183,7 +186,7 @@ jobs:
           retention-days: 1
 
   merge-router:
-    if: needs.check-access.outputs.has-token-access == 'true'
+    if: needs.check-access.outputs.has-token-access == 'true' && (github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES'))
     env:
       PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
       PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-router
@@ -287,6 +290,7 @@ jobs:
 
   build-extension:
     needs: check-access
+    if: github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES')
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     strategy:
@@ -379,7 +383,7 @@ jobs:
           retention-days: 1
 
   merge-extension:
-    if: needs.check-access.outputs.has-token-access == 'true'
+    if: needs.check-access.outputs.has-token-access == 'true' && (github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES'))
     env:
       REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-extension${{ github.event_name == 'pull_request' && '-dev' || '' }}
     runs-on: ubuntu-latest
@@ -441,16 +445,17 @@ jobs:
           docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
 
   build-demoapp:
-    env:
-      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
-      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     needs:
       - check-access
       - merge-extension
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !contains( github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES')
+    env:
+      PUBLIC_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
+      PRIVATE_REGISTRY_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com/lambda-dispatch-demo-app
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -550,6 +555,7 @@ jobs:
       - build-demoapp
       - merge-router
     runs-on: ubuntu-latest
+    if: ${{ !failure() && (needs.build-demoapp.result == 'skipped' || needs.build-demoapp.result == 'success') && (needs.merge-router.result == 'skipped' || needs.merge-router.result == 'success') }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/configure-nodejs
@@ -566,10 +572,12 @@ jobs:
     concurrency:
       group: deploy-${{ github.workflow }}-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+    if: ${{ always() && needs.install-deps.result != 'failed' }}
     env:
       DEMO_APP_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
       ROUTER_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
       IMAGE_TAG: ${{ github.event_name == 'pull_request' && 'pr-${{ github.event.pull_request.number }}' || 'latest' }}
+      USE_PUBLIC_IMAGES: ${{ contains(github.event.pull_request.labels.*.name, 'USE-PUBLIC-IMAGES') && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
 
