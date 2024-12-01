@@ -1,0 +1,6 @@
+# This just allows us to pull the public image and push it to a private ECR repo
+# AWS Lambda cannot pull public images, so we need to this to allow
+# simply deploys of the demo app
+# This image is a multi-platform image and building this derived
+# image for a specific platform will flatten it to be a single-platform image
+FROM public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app:latest
