@@ -605,6 +605,7 @@ jobs:
   smoke-test:
     needs: [deploy]
     runs-on: ubuntu-latest
+    if: ${{ always() && needs.deploy.result != 'failed' }}
     steps:
       - name: Smoke Test
         run: |
