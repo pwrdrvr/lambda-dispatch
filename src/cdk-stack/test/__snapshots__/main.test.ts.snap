@@ -493,7 +493,7 @@ exports[`Snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:a37553fb883dc5c6cf22835be360727f5ef442a44b7656cc8f3ac04eeb2454fd",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:ba398638a75f7699a6059f61c50d06343e5f2d790060a63ca9e2ec03407e58f4",
           },
         },
         "Environment": {
