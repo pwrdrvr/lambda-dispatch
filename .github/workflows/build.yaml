@@ -550,6 +550,19 @@ jobs:
           docker push ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }}
           docker buildx imagetools inspect  ${{ env.PUBLIC_REGISTRY_IMAGE }}:${{ steps.version.outputs.imageTagAmd64 }}
 
+      # Also push multi-platform image
+      # We do this because we can use it as a source with src/cdk-construct/DockerfileLambda
+      # to push a lambda-compatible single-platform image using CDK without
+      # having to get the platform-specific tag correct (we can use pr-123, main, or latest)
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./DockerfileLambdaDemoApp
+          platforms: linux/amd64,linux/arm64
+          push: ${{ needs.check-access.outputs.has-token-access == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+
   install-deps:
     needs:
       - build-demoapp
