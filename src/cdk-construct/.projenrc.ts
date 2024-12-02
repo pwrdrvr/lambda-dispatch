@@ -5,9 +5,9 @@ const project = new awscdk.AwsCdkConstructLibrary({
   cdkVersion: '2.130.0',
   defaultReleaseBranch: 'main',
   jsiiVersion: '~5.5.0',
-  name: '@pwrdrvr/lambda-dispatch-construct',
+  name: '@pwrdrvr/lambda-dispatch-cdk',
   projenrcTs: true,
-  repositoryUrl: 'https://github.com/harold/cdk-construct.git',
+  repositoryUrl: 'https://github.com/pwrdrvr/lambda-dispatch.git',
 
   // deps: [],                /* Runtime dependencies of this module. */
   // description: undefined,  /* The description is just a string that helps people understand the purpose of the package. */
