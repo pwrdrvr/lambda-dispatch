@@ -24,7 +24,7 @@
     "build": "tsc --build tsconfig.json",
     "build:demo-app": "yarn workspace @pwrdrvr/lambda-dispatch-demo-app build",
     "start:demo-app": "yarn workspace @pwrdrvr/lambda-dispatch-demo-app start:app",
-    "test": "yarn workspace @pwrdrvr/lambda-dispatch-construct test && yarn workspace @pwrdrvr/lambda-dispatch-stack test"
+    "test": "yarn workspace @pwrdrvr/lambda-dispatch-cdk test && yarn workspace @pwrdrvr/lambda-dispatch-cdk-stack test"
   },
   "author": "",
   "license": "MIT"

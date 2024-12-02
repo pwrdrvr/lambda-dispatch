@@ -67,7 +67,7 @@
       "type": "build"
     },
     {
-      "name": "@pwrdrvr/lambda-dispatch-construct",
+      "name": "@pwrdrvr/lambda-dispatch-cdk",
       "version": "*",
       "type": "runtime"
     },

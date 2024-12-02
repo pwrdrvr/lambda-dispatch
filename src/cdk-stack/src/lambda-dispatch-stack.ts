@@ -1,4 +1,4 @@
-import { LambdaDispatchFunction, LambdaDispatchECS } from '@pwrdrvr/lambda-dispatch-construct';
+import { LambdaDispatchFunction, LambdaDispatchECS } from '@pwrdrvr/lambda-dispatch-cdk';
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
@@ -141,14 +141,15 @@ export class LambdaDispatchStack extends cdk.Stack {
       vpc,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 1769,
-      dockerImage: !usePublicImages && (props.lambdaECRRepoName || props.lambdaImageTag)
-        ? lambda.DockerImageCode.fromEcr(
-          ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
-          {
-            tagOrDigest: lambdaTag,
-          },
-        )
-        : undefined,
+      dockerImage:
+        !usePublicImages && (props.lambdaECRRepoName || props.lambdaImageTag)
+          ? lambda.DockerImageCode.fromEcr(
+            ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
+            {
+              tagOrDigest: lambdaTag,
+            },
+          )
+          : undefined,
     });
 
     // Create ECS construct

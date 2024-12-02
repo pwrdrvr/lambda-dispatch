@@ -1,8 +1,8 @@
 {
-  "name": "@pwrdrvr/lambda-dispatch-construct",
+  "name": "@pwrdrvr/lambda-dispatch-cdk",
   "repository": {
     "type": "git",
-    "url": "https://github.com/harold/cdk-construct.git"
+    "url": "https://github.com/pwrdrvr/lambda-dispatch.git"
   },
   "scripts": {
     "build": "npx projen build",
