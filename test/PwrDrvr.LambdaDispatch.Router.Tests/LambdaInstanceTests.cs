@@ -1,6 +1,7 @@
 using Moq;
 using Amazon.Lambda;
 using Microsoft.AspNetCore.Http;
+using System.Collections.Concurrent;
 using PwrDrvr.LambdaDispatch.Router.Tests.Mocks;
 
 namespace PwrDrvr.LambdaDispatch.Router.Tests;
@@ -411,5 +412,107 @@ public class LambdaInstanceTests
       Assert.That(instance.AvailableConnectionCount, Is.EqualTo(4));
       Assert.That(instance.OutstandingRequestCount, Is.EqualTo(0));
     });
+  }
+
+  [Test]
+  public void TestConcurrentStartAndAddConnection()
+  {
+    var maxConcurrentCount = 10;
+    var lambdaClient = new Mock<IAmazonLambda>();
+    var dispatcher = new Mock<IBackgroundDispatcher>();
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var requestContext = new Mock<Microsoft.AspNetCore.Http.HttpContext>();
+    var request = new Mock<Microsoft.AspNetCore.Http.HttpRequest>();
+    request.Setup(i => i.HttpContext).Returns(requestContext.Object);
+    var response = new Mock<Microsoft.AspNetCore.Http.HttpResponse>();
+
+    var instances = new ConcurrentBag<LambdaInstance>();
+    var exceptions = new ConcurrentBag<Exception>();
+
+    var startThreads = new List<Thread>();
+    var addConnectionThreads = new List<Thread>();
+
+    var startThreadsDone = false;
+
+    for (int i = 0; i < 10; i++)
+    {
+      var startThread = new Thread(() =>
+      {
+        try
+        {
+          for (int i = 0; i < 1000; i++)
+          {
+            var instance = new LambdaInstance(maxConcurrentCount: maxConcurrentCount,
+                functionName: "someFunc",
+                poolId: "default",
+                lambdaClient: lambdaClient.Object,
+                dispatcher: dispatcher.Object,
+                getCallbackIP: getCallbackIP.Object,
+                metricsRegistry: metricsRegistry.Object,
+                lambdaClientConfig: lambdaClientConfig.Object
+            );
+            instance.Start();
+            instances.Add(instance);
+          }
+        }
+        catch (Exception ex)
+        {
+          exceptions.Add(ex);
+        }
+      });
+
+      startThreads.Add(startThread);
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+      var addConnectionThread = new Thread(() =>
+      {
+        try
+        {
+          while (true)
+          {
+            if (instances.TryTake(out var instance))
+            {
+              var result = instance.AddConnection(request.Object, response.Object, "channel-1", AddConnectionDispatchMode.Enqueue).Result;
+              if (result.WasRejected || result.Connection == null)
+              {
+                throw new Exception("Connection was rejected");
+              }
+            }
+            else if (startThreadsDone)
+            {
+              // If there are no more instances and the startThread has finished, break the loop
+              break;
+            }
+          }
+        }
+        catch (Exception ex)
+        {
+          exceptions.Add(ex);
+        }
+      });
+      addConnectionThread.Start();
+      addConnectionThreads.Add(addConnectionThread);
+    }
+
+    // Start the producers
+    foreach (var thread in startThreads)
+    {
+      thread.Start();
+    }
+
+    foreach (var thread in startThreads)
+    {
+      thread.Join();
+    }
+    startThreadsDone = true;
+    foreach (var thread in addConnectionThreads)
+    {
+      thread.Join();
+    }
+
+    Assert.That(exceptions, Is.Empty, $"Exceptions were thrown: {string.Join(", ", exceptions.Select(e => e.Message))}");
   }
 }

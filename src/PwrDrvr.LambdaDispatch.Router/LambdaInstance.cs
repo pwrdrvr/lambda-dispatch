@@ -290,7 +290,7 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   private volatile int internalActualAvailableConnectionCount = 0;
 
-  private object requestCountLock = new();
+  private readonly object requestCountLock = new();
 
   /// <summary>
   /// The actual number of requests in flight
@@ -370,6 +370,8 @@ public class LambdaInstance : ILambdaInstance
   /// </summary>
   public Task<bool> InvokeCompletionTask => _tcs.Task;
 
+  private static DateTime lastWarningTime = DateTime.MinValue;
+
   /// <summary>
   /// Called when we get a connection for the Lambda Instance ID
   /// </summary>
@@ -384,14 +386,28 @@ public class LambdaInstance : ILambdaInstance
         || State == LambdaInstanceState.Closing
         || State == LambdaInstanceState.Initial)
     {
-      _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
-
-      return new AddConnectionResult
+      lock (stateLock)
       {
-        WasRejected = true,
-        CanUseNow = false,
-        Connection = null
-      };
+        if (State == LambdaInstanceState.Closed
+            || State == LambdaInstanceState.Closing
+            || State == LambdaInstanceState.Initial)
+        {
+#if DEBUG
+          _logger.LogDebug("Connection added to Lambda Instance that is not starting or open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+#else
+          if ((DateTime.Now - LambdaInstance.lastWarningTime).TotalSeconds >= 1) {
+            _logger.LogWarning("Connection added to Lambda Instance that is not open - closing with 409 LambdaId: {LambdaId}, ChannelId: {channelId}", Id, channelId);
+            LambdaInstance.lastWarningTime = DateTime.Now;
+          }
+#endif
+          return new AddConnectionResult
+          {
+            WasRejected = true,
+            CanUseNow = false,
+            Connection = null
+          };
+        }
+      }
     }
 
     // Signal that we are ready if this the first connection
@@ -802,7 +818,7 @@ public class LambdaInstance : ILambdaInstance
   /// This is a "buddy" to the `Start` call that uses the same parameters
   /// </summary>
   /// <returns></returns>
-  public void StartInitOnly()
+  private void StartInitOnly()
   {
     var initOnlyLambdaId = $"{Id}-initonly";
 
@@ -931,16 +947,10 @@ public class LambdaInstance : ILambdaInstance
        }
      });
 
-    _ = Task.Run(async () =>
-    {
-      // Wait a short time before starting the buddy invoke
-      // This does not guarantee that the buddy request will arrive after
-      // the real request, but it's likely
-      await Task.Delay(TimeSpan.FromMilliseconds(100));
-
-      // Start an init-only buddy
-      StartInitOnly();
-    });
+    // Wait a short time before starting the buddy invoke
+    // This does not guarantee that the buddy request will arrive after
+    // the real request, but it's likely
+    _ = Task.Delay(TimeSpan.FromMilliseconds(100)).ContinueWith(t => StartInitOnly());
   }
 
   public void ReenqueueUnusedConnection(ILambdaConnection connection)
