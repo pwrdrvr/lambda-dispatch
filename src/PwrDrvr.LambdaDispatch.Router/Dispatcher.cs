@@ -214,6 +214,9 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     catch (Exception ex)
     {
       // Mark the request as aborted
+      // This is the only place we call Abort on a pending request
+      // If the request is picked up for dispatch just after this Abort call
+      // it will get discarded by the dispatcher.
       if (pendingRequest.Abort())
       {
         // We stopped waiting
@@ -440,13 +443,12 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     // Try to dispatch a pending request
     while (_pendingRequests.TryTake(out var pendingRequest))
     {
-      // Check if the pending request is already canceled
+      // This is just a short circuit - we don't care if we get a stale false on the cancel
+      // If we get a stale value then the lock in Dispatch will catch it
       if (pendingRequest.GatewayTimeoutCTS.IsCancellationRequested)
       {
         // The pending request at front of queue was canceled, we're removing it
-        Interlocked.Decrement(ref _pendingRequestCount);
-        _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.QueuedRequests);
-        // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+        _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
 
         // Try to find another request
         continue;
@@ -454,10 +456,14 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
       _logger.LogDebug("BackgroundPendingRequestDispatcher - Got a pending request, dispatching to LambdaId {}, ChannelId {}", connection.Instance.Id, connection.ChannelId);
 
-      // We've got a good request and a good connection
-      dispatchedRequest = true;
-      TryBackgroundDispatchOne(pendingRequest, connection);
-      break;
+      if (TryBackgroundDispatchOne(pendingRequest, connection))
+      {
+        dispatchedRequest = true;
+
+        // We dispatched a request
+        // We're done here
+        break;
+      }
     }
 
     // Add the connection to the LOQ since we didn't use it
@@ -484,7 +490,10 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     {
       if (!pendingRequest.Dispatch(out var incomingRequest, out var incomingResponse))
       {
-        throw new InvalidOperationException("PendingRequest.Dispatch returned false");
+        // The state was not Pending - In this case the pending request count for this
+        // has already been decremented (e.g. it was aborted)
+        _logger.LogWarning("TryBackgroundDispatchOne - Discarding pending request - already dispatched or aborted - LambdaId {lambdaId}, ChannelId {channelId}, Waiting ms {duration}", lambdaConnection.Instance.Id, lambdaConnection.ChannelId, pendingRequest.DispatchDelay.TotalMilliseconds);
+        return false;
       }
       startedRequest = true;
       _logger.LogDebug("Dispatching pending request");
