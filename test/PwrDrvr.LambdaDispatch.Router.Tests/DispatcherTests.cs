@@ -586,9 +586,93 @@ public class DispatcherTests
     mockLambdaInstanceManager.Verify(m => m.UpdateDesiredCapacity(0, 0, It.IsAny<double>(), It.IsAny<double>()), Times.AtMost(5));
     mockLambdaInstanceManager.Verify(m => m.ValidateLambdaId("lambdaId", out mockInstanceOut), Times.Never);
     _metricsRegistry.Verify(m => m.Metrics.Measure.Counter.Increment(It.IsAny<CounterOptions>()), Times.AtMost(5));
+    _metricsRegistry.Verify(m => m.Metrics.Measure.Counter.Decrement(It.IsAny<CounterOptions>()), Times.Once);
     _metricsRegistry.Verify(m => m.Metrics.Measure.Meter.Mark(It.IsAny<MeterOptions>(), 1), Times.Once);
     // _metricsRegistry.Verify(m => m.Metrics.Measure.Gauge.SetValue(It.IsAny<GaugeOptions>(), It.IsAny<double>()), Times.Exactly(2));
     mockLambdaInstanceManager.Verify(l => l.TryGetConnection(out nullConnectionOut, false), Times.Once);
+
+    _ctsShutdownSignal.Cancel();
+  }
+
+  [Test]
+  public async Task AddIncomingRequest_ValidRequest_BackgroundDispatch_TimeoutDuringDispatch_DecrementPending()
+  {
+    // Arrange
+    var mockChannelContext = new Mock<HttpContext>();
+    var mockChannelRequest = new Mock<HttpRequest>();
+    mockChannelRequest.Setup(i => i.HttpContext).Returns(mockChannelContext.Object);
+    var mockChannelResponse = new Mock<HttpResponse>();
+    var maxConcurrentCount = 1;
+    var mockQueue = new Mock<ILambdaInstanceQueue>();
+    var mockConfig = new Mock<IConfig>();
+    mockConfig.SetupGet(c => c.MaxConcurrentCount).Returns(maxConcurrentCount);
+    mockConfig.SetupGet(c => c.IncomingRequestTimeoutTimeSpan).Returns(TimeSpan.FromSeconds(2));
+    var mockMetricsLogger = new Mock<IMetricsLogger>();
+    var mockPoolOptions = new Mock<IPoolOptions>();
+    var getCallbackIP = new Mock<IGetCallbackIP>();
+    getCallbackIP.Setup(i => i.CallbackUrl).Returns("https://127.0.0.1:1000");
+    var mockLambdaInstanceManager = new Mock<ILambdaInstanceManager>();
+    var dispatcher = new Dispatcher(
+          _mockLogger.Object,
+          _mockMetricsLogger.Object,
+          mockLambdaInstanceManager.Object,
+          _mockShutdownSignal.Object,
+          metricsRegistry: _metricsRegistry.Object,
+          config: mockConfig.Object
+          );
+    var mockInstance = new Mock<ILambdaInstance>();
+    mockInstance.Setup(i => i.Id).Returns("lambdaId");
+
+    var sw = Stopwatch.StartNew();
+
+    // Return the mock lambda for the mock lambdaid
+    var mockInstanceOut = mockInstance.Object;
+    mockLambdaInstanceManager.Setup(m => m.ValidateLambdaId("lambdaId", out mockInstanceOut)).Returns(true);
+    var mockIncomingContext = new Mock<HttpContext>();
+    var mockIncomingRequest = new Mock<HttpRequest>();
+    mockChannelRequest.Setup(i => i.HttpContext).Returns(mockIncomingContext.Object);
+    var mockIncomingResponse = new Mock<HttpResponse>();
+
+    // Create a mock connection that will be returned after timeout
+    var mockConnection = new Mock<ILambdaConnection>();
+    mockConnection.SetupGet(c => c.Request).Returns(mockChannelRequest.Object);
+    mockConnection.SetupGet(c => c.Response).Returns(mockChannelResponse.Object);
+    mockConnection.SetupGet(c => c.Instance).Returns(mockInstance.Object);
+    mockConnection.SetupGet(c => c.ChannelId).Returns("channel-1");
+    mockConnection.SetupGet(c => c.State).Returns(LambdaConnectionState.Open);
+
+    ILambdaConnection? mockConnectionOut = mockConnection.Object;
+    mockLambdaInstanceManager.Setup(l => l.TryGetConnection(out mockConnectionOut, false)).Returns(() =>
+    {
+      // Start returning the connection after the pending request timeout
+      if (sw.ElapsedMilliseconds > 2200)
+      {
+        return true;
+      }
+      return false;
+    });
+    mockLambdaInstanceManager.Setup(l => l.TryGetConnection(out mockConnectionOut, true)).Returns(() =>
+    {
+      // Start returning the connection after the pending request timeout
+      if (sw.ElapsedMilliseconds > 2200)
+      {
+        return true;
+      }
+      return false;
+    });
+
+    // Act
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+
+    // Wait for timeout
+    await Task.Delay(2500);
+
+    // Assert
+    Assert.Multiple(() =>
+    {
+      Assert.That(dispatcher.PendingRequestCount, Is.EqualTo(0));
+      Assert.That(dispatcher.RunningRequestCount, Is.EqualTo(0));
+    });
 
     _ctsShutdownSignal.Cancel();
   }
