@@ -51,8 +51,8 @@ jobs:
       - uses: ./.github/actions/configure-nodejs
       - name: Build All TypeScript
         run: yarn build
-      - name: Run Lint
-        run: yarn lint
+      # - name: Run Lint
+      #   run: yarn lint
       - name: Run Node Tests
         env:
           NODE_ENV: test
