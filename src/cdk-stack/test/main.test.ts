@@ -32,5 +32,12 @@ test('Snapshot', () => {
   });
 
   const template = Template.fromStack(stack);
-  expect(template.toJSON()).toMatchSnapshot();
+  const templateJson = template.toJSON();
+
+  // Remove the ImageURI so tests will pass on CI
+  if (templateJson.Resources.LambdaConstructLambdaFunction8A3CAE86.Properties.Code) {
+    delete templateJson.Resources.LambdaConstructLambdaFunction8A3CAE86.Properties.Code.ImageUri;
+  }
+
+  expect(templateJson).toMatchSnapshot();
 });

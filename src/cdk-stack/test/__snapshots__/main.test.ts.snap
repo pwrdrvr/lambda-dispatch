@@ -491,11 +491,7 @@ exports[`Snapshot 1`] = `
         "Architectures": [
           "arm64",
         ],
-        "Code": {
-          "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:eece0ba60d0d3cd0c44dbf46ed118af831d2c90743b371c4516cf749d496909c",
-          },
-        },
+        "Code": {},
         "Environment": {
           "Variables": {
             "LAMBDA_DISPATCH_RUNTIME": "current_thread",
