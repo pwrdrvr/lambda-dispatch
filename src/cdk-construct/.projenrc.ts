@@ -1,13 +1,16 @@
-import { awscdk } from 'projen';
+import { awscdk, javascript } from 'projen';
 const project = new awscdk.AwsCdkConstructLibrary({
-  author: 'Harold Hunt',
+  author: 'PwrDrvr LLC',
   authorAddress: 'harold@pwrdrvr.com',
   cdkVersion: '2.130.0',
   defaultReleaseBranch: 'main',
+  description: 'CDK construct for setting up lambda-dispatch ECS service',
+  license: 'MIT',
   jsiiVersion: '~5.5.0',
   name: '@pwrdrvr/lambda-dispatch-cdk',
   projenrcTs: true,
   repositoryUrl: 'https://github.com/pwrdrvr/lambda-dispatch.git',
+  npmAccess: javascript.NpmAccess.PUBLIC,
 
   // deps: [],                /* Runtime dependencies of this module. */
   // description: undefined,  /* The description is just a string that helps people understand the purpose of the package. */
