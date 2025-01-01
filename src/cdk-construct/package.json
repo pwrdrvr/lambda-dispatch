@@ -1,5 +1,6 @@
 {
   "name": "@pwrdrvr/lambda-dispatch-cdk",
+  "description": "CDK construct for setting up lambda-dispatch ECS service",
   "repository": {
     "type": "git",
     "url": "https://github.com/pwrdrvr/lambda-dispatch.git"
@@ -29,7 +30,7 @@
     "projen": "npx projen"
   },
   "author": {
-    "name": "Harold Hunt",
+    "name": "PwrDrvr LLC",
     "email": "harold@pwrdrvr.com",
     "organization": false
   },
@@ -64,7 +65,10 @@
     "cdk"
   ],
   "main": "lib/index.js",
-  "license": "Apache-2.0",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.0.0",
   "jest": {
     "coverageProvider": "v8",
