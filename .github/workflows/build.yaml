@@ -26,6 +26,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.100'
+
       - name: Run DotNet Tests
         run: |
           dotnet test --collect:"XPlat Code Coverage"
