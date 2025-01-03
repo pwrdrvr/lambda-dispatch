@@ -578,13 +578,18 @@ jobs:
   deploy:
     needs: [install-deps]
     runs-on: ubuntu-latest
-    environment: ghpublic
+    environment:
+      name: ghpublic
+      url: https://lambdadispatch${{ steps.getDeployUrl.outputs.stack-url-suffix }}.ghpublic.pwrdrvr.com/ping
     permissions:
       id-token: write
       contents: read
     concurrency:
       group: deploy-${{ github.workflow }}-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+    outputs:
+      stack-url-suffix: ${{ steps.getDeployUrl.outputs.stack-url-suffix }}
+      url: https://lambdadispatch${{ steps.getDeployUrl.outputs.stack-url-suffix }}.ghpublic.pwrdrvr.com
     if: ${{ always() && needs.install-deps.result != 'failed' }}
     env:
       DEMO_APP_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
@@ -607,6 +612,15 @@ jobs:
         run: |
           yarn build
 
+      - name: Get Deploy URL
+        id: getDeployUrl
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo stack-url-suffix="-pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            echo stack-url-suffix="" >> $GITHUB_OUTPUT
+          fi
+
       - name: Deploy Stack
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -628,7 +642,7 @@ jobs:
             STACK_SUFFIX=""
           fi
 
-          BASE_URL="https://lambdadispatch${STACK_SUFFIX}.ghpublic.pwrdrvr.com"
+          BASE_URL="${{ needs.deploy.outputs.url }}"
           echo "Smoke testing ${BASE_URL}"
 
           for i in {1..5}; do
