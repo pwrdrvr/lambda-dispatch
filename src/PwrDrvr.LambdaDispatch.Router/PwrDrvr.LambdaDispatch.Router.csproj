@@ -8,6 +8,10 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>$(DefineConstants);SKIP_METRICS</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(DebugLogging)' == 'true'">
     <DefineConstants>$(DefineConstants);DEBUG</DefineConstants>
   </PropertyGroup>
