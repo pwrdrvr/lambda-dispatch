@@ -130,7 +130,7 @@ impl LambdaService {
     }
 
     if request.init_only {
-      log::info!(
+      log::debug!(
         "PoolId: {}, LambdaId: {} - Returning from init-only request",
         request.pool_id,
         request.lambda_id
@@ -147,8 +147,8 @@ impl LambdaService {
     if self.options.local_env
       && request.sent_time.timestamp_millis() < (current_time_millis() - 5000).try_into().unwrap()
     {
-      log::info!(
-        "PoolId: {}, LambdaId: {} - Returning from stale request",
+      log::error!(
+        "PoolId: {}, LambdaId: {} - Returning from stale Invoke",
         request.pool_id,
         request.lambda_id
       );
@@ -232,7 +232,7 @@ impl LambdaService {
 
     // Print final stats
     log::info!(
-      "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {:.1} - Returning from run",
+      "LambdaId: {}, Requests: {}, Elapsed: {} ms, RPS: {:.1} - Returning from Invoke",
       request.lambda_id,
       lambda_request.count.load(Ordering::Acquire),
       lambda_request.elapsed(),

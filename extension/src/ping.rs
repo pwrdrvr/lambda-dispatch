@@ -274,7 +274,7 @@ pub async fn send_ping_requests(
         }
       }
 
-      log::info!(
+      log::debug!(
         "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Looping",
         pool_id,
         lambda_id,
@@ -289,7 +289,7 @@ pub async fn send_ping_requests(
     tokio::select! {
         _ = cancel_token.cancelled() => {
           // The token was cancelled
-          log::info!("PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Cancelled",
+          log::debug!("PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {} - Ping Loop - Cancelled",
             pool_id,
             lambda_id,
             count,
@@ -308,7 +308,7 @@ pub async fn send_ping_requests(
 
   let count = count.load(Ordering::Acquire);
   let elapsed = time::current_time_millis() - start_time;
-  log::info!(
+  log::debug!(
     "PoolId: {}, LambdaId: {}, Requests: {}, GoAway: {}, Reqs in Flight: {}, Elapsed: {} ms, RPS: {:.1} - Ping Loop - Exiting",
     pool_id,
     lambda_id,
