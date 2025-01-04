@@ -17,17 +17,25 @@ public class ChunkedController : ControllerBase
   private readonly ILogger<ChunkedController> logger;
   private readonly IMetricsLogger metricsLogger;
   private readonly IPoolManager poolManager;
+
+#if !SKIP_METRICS
   private readonly IMetricsRegistry metricsRegistry;
+#endif
 
   public ChunkedController(IPoolManager poolManager,
     IMetricsLogger metricsLogger,
-    ILogger<ChunkedController> logger,
-    IMetricsRegistry metricsRegistry)
+    ILogger<ChunkedController> logger
+#if !SKIP_METRICS
+    , IMetricsRegistry metricsRegistry
+#endif
+    )
   {
     this.poolManager = poolManager;
     this.logger = logger;
     this.metricsLogger = metricsLogger;
+#if !SKIP_METRICS
     this.metricsRegistry = metricsRegistry;
+#endif
   }
 
   private string GetPoolId()
@@ -112,122 +120,128 @@ public class ChunkedController : ControllerBase
   {
     logger.LogDebug("Router.ChunkedController.Post - Start for LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
+#if !SKIP_METRICS
     using (metricsRegistry.Metrics.Measure.Timer.Time(metricsRegistry.LambdaRequestTimer))
     {
-      try
+#endif
+    try
+    {
+      if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues lambdaIdMulti) || lambdaIdMulti.Count != 1)
       {
-        if (!Request.Headers.TryGetValue("X-Lambda-Id", out Microsoft.Extensions.Primitives.StringValues lambdaIdMulti) || lambdaIdMulti.Count != 1)
-        {
-          logger.LogDebug("Router.ChunkedController.Post - No X-Lambda-Id header");
-          Response.StatusCode = 400;
-          Response.ContentType = "text/plain";
-          await Response.StartAsync();
-          await Response.WriteAsync("No X-Lambda-Id header");
-          await Response.CompleteAsync();
-          try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
-          return;
-        }
+        logger.LogDebug("Router.ChunkedController.Post - No X-Lambda-Id header");
+        Response.StatusCode = 400;
+        Response.ContentType = "text/plain";
+        await Response.StartAsync();
+        await Response.WriteAsync("No X-Lambda-Id header");
+        await Response.CompleteAsync();
+        try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
+        return;
+      }
 
-        // Log an error if the request was delayed in reaching us, using the Date header added by HttpClient
-        if (this.Request.Headers.TryGetValue("Date", out var dateValues)
-            && dateValues.Count == 1
-            && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+      // Log an error if the request was delayed in reaching us, using the Date header added by HttpClient
+      if (this.Request.Headers.TryGetValue("Date", out var dateValues)
+          && dateValues.Count == 1
+          && DateTime.TryParse(dateValues.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestDate))
+      {
+        var delay = DateTimeOffset.UtcNow - requestDate;
+        if (delay > TimeSpan.FromSeconds(5))
         {
-          var delay = DateTimeOffset.UtcNow - requestDate;
-          if (delay > TimeSpan.FromSeconds(5))
-          {
-            logger.LogWarning("Router.ChunkedController.Post - Request received at {time} was delayed in receipt by {delay} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", requestDate.ToLocalTime().ToString("o"), delay.TotalMilliseconds, lambdaId, channelId);
-          }
+          logger.LogWarning("Router.ChunkedController.Post - Request received at {time} was delayed in receipt by {delay} ms, LambdaId: {lambdaId}, ChannelId: {channelId}", requestDate.ToLocalTime().ToString("o"), delay.TotalMilliseconds, lambdaId, channelId);
         }
+      }
 
-        logger.LogDebug("Router.ChunkedController.Post - Connection from LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+      logger.LogDebug("Router.ChunkedController.Post - Connection from LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
 
 #if DEBUG
-        // Print when we start the response
-        Response.OnStarting(() =>
-        {
-          logger.LogDebug("Starting response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-          return Task.CompletedTask;
-        });
+      // Print when we start the response
+      Response.OnStarting(() =>
+      {
+        logger.LogDebug("Starting response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+        return Task.CompletedTask;
+      });
 
-        // Print when we finish the response
-        Response.OnCompleted(() =>
-        {
-          logger.LogDebug("Finished response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-          return Task.CompletedTask;
-        });
+      // Print when we finish the response
+      Response.OnCompleted(() =>
+      {
+        logger.LogDebug("Finished response, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+        return Task.CompletedTask;
+      });
 #endif
 
-        // If you set this it hangs... it's implied that the transfer-encoding is chunked
-        // and is already handled by the server
-        // Response.Headers["Transfer-Encoding"] = "chunked";
-        // This is our content type for the body that will contain a request
-        // and (optional) request body
-        Response.ContentType = "application/octet-stream";
-        // This is our status code for the response
-        Response.StatusCode = 200;
+      // If you set this it hangs... it's implied that the transfer-encoding is chunked
+      // and is already handled by the server
+      // Response.Headers["Transfer-Encoding"] = "chunked";
+      // This is our content type for the body that will contain a request
+      // and (optional) request body
+      Response.ContentType = "application/octet-stream";
+      // This is our status code for the response
+      Response.StatusCode = 200;
 
-        // Register this Lambda with the Dispatcher
-        if (poolManager.GetPoolByPoolId(poolId, out var pool))
+      // Register this Lambda with the Dispatcher
+      if (poolManager.GetPoolByPoolId(poolId, out var pool))
+      {
+        var result = await pool.Dispatcher.AddConnectionForLambda(Request, Response, lambdaId, channelId);
+
+        if (result == null || result.LambdaIDNotFound || result.Connection == null)
         {
-          var result = await pool.Dispatcher.AddConnectionForLambda(Request, Response, lambdaId, channelId);
-
-          if (result == null || result.LambdaIDNotFound || result.Connection == null)
+          try
           {
-            try
-            {
-              metricsRegistry.Metrics.Measure.Counter.Increment(metricsRegistry.LambdaConnectionRejectedCount);
-              logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-Pool-Id: {}, X-Lambda-Id: {}, X-Channel-Id: {}, closing", poolId, lambdaId, channelId);
-              // Only in this case can we close the response because it hasn't been started
-              // Have to write the response body first since the Lambda
-              // is blocking on reading the Response before they will stop sending the Request
-              Response.StatusCode = 409;
-              Response.ContentType = "text/plain";
-              await Response.StartAsync();
-              await Response.WriteAsync($"No LambdaInstance found for X-PoolId: {poolId}, X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing");
-              await Response.CompleteAsync();
-              try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
-              logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-PoolId: {}, X-Lambda-Id: {}, X-Channel-Id: {}, closed", poolId, lambdaId, channelId);
-            }
-            catch (Exception ex)
-            {
-              logger.LogError(ex, "Router.ChunkedController.Post - Exception");
-            }
-            return;
+#if !SKIP_METRICS
+            metricsRegistry.Metrics.Measure.Counter.Increment(metricsRegistry.LambdaConnectionRejectedCount);
+#endif
+            logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-Pool-Id: {}, X-Lambda-Id: {}, X-Channel-Id: {}, closing", poolId, lambdaId, channelId);
+            // Only in this case can we close the response because it hasn't been started
+            // Have to write the response body first since the Lambda
+            // is blocking on reading the Response before they will stop sending the Request
+            Response.StatusCode = 409;
+            Response.ContentType = "text/plain";
+            await Response.StartAsync();
+            await Response.WriteAsync($"No LambdaInstance found for X-PoolId: {poolId}, X-Lambda-Id: {lambdaId}, X-Channel-Id: {channelId}, closing");
+            await Response.CompleteAsync();
+            try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
+            logger.LogDebug("Router.ChunkedController.Post - No LambdaInstance found for X-PoolId: {}, X-Lambda-Id: {}, X-Channel-Id: {}, closed", poolId, lambdaId, channelId);
           }
-
-          // Wait until we have processed a request and sent a response
-          await result.Connection.TCS.Task;
-
-          logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-        }
-        else
-        {
-          logger.LogWarning("Router.ChunkedController.Post - Pool not found for X-Pool-Id: {poolId}, closing", poolId);
-          Response.StatusCode = 409;
-          Response.ContentType = "text/plain";
-          await Response.StartAsync();
-          await Response.WriteAsync($"No Pool found for X-Pool-Id: {poolId}, closing");
-          await Response.CompleteAsync();
-          try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
-          logger.LogDebug("Router.ChunkedController.Post - Pool not found for X-PoolId: {}, closed", poolId);
+          catch (Exception ex)
+          {
+            logger.LogError(ex, "Router.ChunkedController.Post - Exception");
+          }
           return;
         }
+
+        // Wait until we have processed a request and sent a response
+        await result.Connection.TCS.Task;
+
+        logger.LogDebug("Router.ChunkedController.Post - Finished - Response will be closed, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
       }
-      catch (Exception ex)
+      else
       {
-        if (Request.HttpContext.RequestAborted.IsCancellationRequested)
-        {
-          // If we already aborted the request there is no need to rethrow
-          logger.LogDebug("Router.ChunkedController.Post - Request aborted, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-        }
-        else
-        {
-          // If we didn't abort the request then this is a case we're not handling
-          logger.LogError(ex, "Router.ChunkedController.Post - Exception, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
-          throw;
-        }
+        logger.LogWarning("Router.ChunkedController.Post - Pool not found for X-Pool-Id: {poolId}, closing", poolId);
+        Response.StatusCode = 409;
+        Response.ContentType = "text/plain";
+        await Response.StartAsync();
+        await Response.WriteAsync($"No Pool found for X-Pool-Id: {poolId}, closing");
+        await Response.CompleteAsync();
+        try { await Request.Body.CopyToAsync(Stream.Null); } catch { }
+        logger.LogDebug("Router.ChunkedController.Post - Pool not found for X-PoolId: {}, closed", poolId);
+        return;
       }
     }
+    catch (Exception ex)
+    {
+      if (Request.HttpContext.RequestAborted.IsCancellationRequested)
+      {
+        // If we already aborted the request there is no need to rethrow
+        logger.LogDebug("Router.ChunkedController.Post - Request aborted, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+      }
+      else
+      {
+        // If we didn't abort the request then this is a case we're not handling
+        logger.LogError(ex, "Router.ChunkedController.Post - Exception, LambdaId: {lambdaId}, ChannelId: {channelId}", lambdaId, channelId);
+        throw;
+      }
+    }
+#if !SKIP_METRICS
+    }
+#endif
   }
 }

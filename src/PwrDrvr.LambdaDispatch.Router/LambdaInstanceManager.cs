@@ -107,7 +107,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
 
   private readonly IGetCallbackIP _getCallbackIP;
 
+#if !SKIP_METRICS
   private readonly IMetricsRegistry _metricsRegistry;
+#endif
 
   private readonly ILambdaClientConfig _lambdaClientConfig;
 
@@ -119,7 +121,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     IMetricsLogger metricsLogger,
     IPoolOptions options,
     IGetCallbackIP getCallbackIP,
+#if !SKIP_METRICS
     IMetricsRegistry metricsRegistry,
+#endif
     ILambdaClientConfig lambdaClientConfig)
   {
     _instanceCountMultiplier = config.InstanceCountMultiplier;
@@ -132,7 +136,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     _capacityManager = new(_maxConcurrentCount, _instanceCountMultiplier);
     _options = options;
     _getCallbackIP = getCallbackIP;
+#if !SKIP_METRICS
     _metricsRegistry = metricsRegistry;
+#endif
     _lambdaClientConfig = lambdaClientConfig;
 
     // Start the capacity manager
@@ -400,7 +406,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             _desiredInstanceCount = newDesiredInstanceCount;
 
             // Record the new desired count
+#if !SKIP_METRICS
             _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
+#endif
             _metricsLogger.PutMetric("LambdaDesiredCount", newDesiredInstanceCount, Unit.Count);
 
             // Apply the scale out on the delta from reality to desired not on desired to desired
@@ -481,7 +489,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
               _desiredInstanceCount, deferredScaleInNewDesiredInstanceCount.Value, _runningInstanceCount, _startingInstanceCount, _stoppingInstanceCount);
             _desiredInstanceCount = deferredScaleInNewDesiredInstanceCount.GetValueOrDefault();
             _metricsLogger.PutMetric("LambdaDesiredCount", _desiredInstanceCount, Unit.Count);
+#if !SKIP_METRICS
             _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceDesiredCount, _desiredInstanceCount);
+#endif
 
             // Clear the deferred value
             deferredScaleInNewDesiredInstanceCount = null;
@@ -603,7 +613,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     {
       // We always increment the starting count
       _startingInstanceCount++;
+#if !SKIP_METRICS
       _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+#endif
       _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
     }
 
@@ -619,7 +631,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       channelCount: _channelCount,
       dispatcher: _dispatcher,
       getCallbackIP: _getCallbackIP,
+#if !SKIP_METRICS
       metricsRegistry: _metricsRegistry,
+#endif
       lambdaClientConfig: _lambdaClientConfig);
 
     // Add the instance to the collection
@@ -635,7 +649,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       lock (_instanceCountLock)
       {
         _startingInstanceCount--;
+#if !SKIP_METRICS
         _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+#endif
         _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
 
         _logger.LogInformation("LambdaInstance {instanceId} opened", instance.Id);
@@ -643,7 +659,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
         // We need to keep track of how many Lambdas are running
         // We will replace this one if it's still desired
         _runningInstanceCount++;
+#if !SKIP_METRICS
         _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+#endif
         _metricsLogger.PutMetric("LambdaInstanceRunningCount", _runningInstanceCount, Unit.Count);
       }
 
@@ -662,7 +680,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
       {
         // Stopping instance count allows early replace
         _stoppingInstanceCount++;
+#if !SKIP_METRICS
         _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
+#endif
         _metricsLogger.PutMetric("LambdaInstanceStoppingCount", _stoppingInstanceCount, Unit.Count);
 
         if (instance.LamdbdaInitiatedClose)
@@ -701,7 +721,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           if (!transitionResult.TransitionedToDraining)
           {
             _stoppingInstanceCount--;
+#if !SKIP_METRICS
             _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceStoppingCount, _stoppingInstanceCount);
+#endif
             _metricsLogger.PutMetric("LambdaInstanceStoppingCount", _stoppingInstanceCount, Unit.Count);
 
             _logger.LogInformation("LambdaInstance {instanceId} was closed already, _stoppingInstanceCount {_stoppingInstanceCount} (after decrement)", instance.Id, _stoppingInstanceCount);
@@ -717,7 +739,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
           {
             // The instance opened, so decrement the running count not the starting count
             _runningInstanceCount--;
+#if !SKIP_METRICS
             _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceRunningCount, _runningInstanceCount);
+#endif
             _metricsLogger.PutMetric("LambdaInstanceRunningCount", _runningInstanceCount, Unit.Count);
           }
           else
@@ -725,7 +749,9 @@ public class LambdaInstanceManager : ILambdaInstanceManager
             _logger.LogInformation("LambdaInstance {instanceId} was never opened", instance.Id);
             // The instance never opened (e.g. throttled and failed) so decrement the starting count
             _startingInstanceCount--;
+#if !SKIP_METRICS
             _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.LambdaInstanceStartingCount, _startingInstanceCount);
+#endif
             _metricsLogger.PutMetric("LambdaInstanceStartingCount", _startingInstanceCount, Unit.Count);
           }
 
