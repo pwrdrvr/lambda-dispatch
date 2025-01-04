@@ -2,6 +2,7 @@ import express from 'express';
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { promisify } from 'util';
+import morgan from 'morgan';
 import path from 'path';
 import spdy from 'spdy';
 import fs from 'fs';
@@ -11,6 +12,9 @@ import throng from 'throng';
 const sleep = promisify(setTimeout);
 
 export const app = express();
+
+app.use(morgan('combined'));
+
 const port = 3001;
 const spdyPort = 3002;
 const spdyInsecurePort = 3003;
@@ -108,6 +112,28 @@ app.post('/echo', async (req, res) => {
   }
   // Pipe the req body to the response with back pressure
   // This will stream incoming bytes as they arrive
+  req.pipe(res);
+});
+
+app.all('/debug', async (req, res) => {
+  // Set response to plain text
+  res.setHeader('Content-Type', 'text/plain');
+
+  // Write the request line and headers first
+  const headerDump = [
+    `${req.method} ${req.url} HTTP/${req.httpVersion}`,
+    ...Object.entries(req.headers).map(([key, value]) => `${key}: ${value}`),
+    '\n',
+  ].join('\n');
+
+  // When no body just send the headers
+  if (!req.headers['content-length'] && !/chunked/.test(req.headers['transfer-encoding'])) {
+    res.send(headerDump);
+    return;
+  }
+
+  // Otherwise write headers and pipe body
+  res.write(headerDump);
   req.pipe(res);
 });
 
