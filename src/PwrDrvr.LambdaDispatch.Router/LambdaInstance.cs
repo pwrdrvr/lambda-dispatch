@@ -322,7 +322,9 @@ public class LambdaInstance : ILambdaInstance
 
   private readonly IBackgroundDispatcher dispatcher;
 
+#if !SKIP_METRICS
   private readonly IMetricsRegistry metricsRegistry;
+#endif
 
   /// <summary>
   /// 
@@ -340,7 +342,9 @@ public class LambdaInstance : ILambdaInstance
     string poolId,
     IGetCallbackIP getCallbackIP,
     IBackgroundDispatcher dispatcher,
+#if !SKIP_METRICS
     IMetricsRegistry metricsRegistry,
+#endif
     ILambdaClientConfig lambdaClientConfig,
     IAmazonLambda? lambdaClient = null,
     int channelCount = -1)
@@ -354,7 +358,9 @@ public class LambdaInstance : ILambdaInstance
     }
     this.functionName = functionName;
     this.poolId = poolId;
+#if !SKIP_METRICS
     this.metricsRegistry = metricsRegistry;
+#endif
 
     if (maxConcurrentCount < 1)
     {
@@ -406,14 +412,18 @@ public class LambdaInstance : ILambdaInstance
           firstConnectionForInstance = true;
           // Signal that we are open
           WasOpened = true;
+#if !SKIP_METRICS
           metricsRegistry.Metrics.Measure.Histogram.Update(metricsRegistry.LambdaOpenDelay, _startTime.ElapsedMilliseconds);
+#endif
           OnOpen?.Invoke(this);
         }
       }
     }
 
     Interlocked.Increment(ref openConnectionCount);
+#if !SKIP_METRICS
     metricsRegistry.Metrics.Measure.Histogram.Update(metricsRegistry.LambdaInstanceOpenConnections, openConnectionCount);
+#endif
 
     var connection = new LambdaConnection(request, response, this, channelId, firstConnectionForInstance);
 
@@ -860,7 +870,9 @@ public class LambdaInstance : ILambdaInstance
   {
     _logger.LogInformation("Starting Lambda Instance {Id}", Id);
 
+#if !SKIP_METRICS
     metricsRegistry.Metrics.Measure.Counter.Increment(metricsRegistry.LambdaInvokeCount);
+#endif
 
     // Throw if the instance is already open or closed
     // There should only be a single call to this ever
@@ -904,7 +916,9 @@ public class LambdaInstance : ILambdaInstance
     // Handle completion of the task
     _ = invokeTask.ContinueWith(t =>
      {
+#if !SKIP_METRICS
        metricsRegistry.Metrics.Measure.Counter.Decrement(metricsRegistry.LambdaInvokeCount);
+#endif
 
        // NOTE: The Lambda will return via the callback to indicate that it's shutting down
        // but it will linger until we close the responses to it's requests
