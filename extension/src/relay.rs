@@ -14,10 +14,10 @@ use hyper::body::{Body, Bytes, Frame, Incoming};
 use flate2::write::GzEncoder;
 pub async fn relay_request_to_app(
   left_over_buf: Vec<u8>,
-  pool_id_clone: PoolId,
-  lambda_id_clone: LambdaId,
-  channel_id_clone: ChannelId,
-  requests_in_flight_clone: Arc<AtomicUsize>,
+  pool_id: PoolId,
+  lambda_id: LambdaId,
+  channel_id: ChannelId,
+  requests_in_flight: Arc<AtomicUsize>,
   mut app_req_tx: Sender<Result<Frame<Bytes>, Error>>,
   mut router_response_stream: Incoming,
 ) -> Result<usize, LambdaRequestError> {
@@ -28,9 +28,9 @@ pub async fn relay_request_to_app(
     bytes_sent += left_over_buf.len();
     log::debug!(
       "PoolId: {}, LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
-      pool_id_clone,
-      lambda_id_clone,
-      channel_id_clone,
+      pool_id,
+      lambda_id,
+      channel_id,
       left_over_buf.len()
     );
     app_req_tx
@@ -54,9 +54,9 @@ pub async fn relay_request_to_app(
       Ok(value) => value,
       Err(_) => {
         log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
-        lambda_id_clone,
-        channel_id_clone,
-        requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+        lambda_id,
+        channel_id,
+        requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
         bytes_sent,
         chunk.err());
         return Err(LambdaRequestError::RouterConnectionError);
@@ -73,9 +73,9 @@ pub async fn relay_request_to_app(
     if chunk_len == 0 {
       log::debug!(
         "PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed",
-        pool_id_clone,
-        lambda_id_clone,
-        channel_id_clone,
+        pool_id,
+        lambda_id,
+        channel_id,
         bytes_sent,
         chunk_len
       );
@@ -85,10 +85,10 @@ pub async fn relay_request_to_app(
       Ok(_) => {}
       Err(err) => {
         log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {}",
-                            pool_id_clone,
-                            lambda_id_clone,
-                            channel_id_clone,
-                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            pool_id,
+                            lambda_id,
+                            channel_id,
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_sent,
                             chunk_len,
                             err);
@@ -114,10 +114,10 @@ pub async fn relay_request_to_app(
 /// Reads from: App response body stream
 /// Writes to: Router request body stream
 pub async fn relay_response_to_router(
-  pool_id_clone: PoolId,
-  lambda_id_clone: LambdaId,
-  channel_id_clone: ChannelId,
-  requests_in_flight_clone: Arc<AtomicUsize>,
+  pool_id: PoolId,
+  lambda_id: LambdaId,
+  channel_id: ChannelId,
+  requests_in_flight: Arc<AtomicUsize>,
   mut app_res_stream: Incoming,
   mut encoder: Option<GzEncoder<Writer<BytesMut>>>,
   mut tx: Sender<Result<Frame<Bytes>, Error>>,
@@ -130,10 +130,10 @@ pub async fn relay_response_to_router(
       Ok(value) => value,
       Err(_) => {
         log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
-              pool_id_clone,
-              lambda_id_clone,
-              channel_id_clone,
-              requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+              pool_id,
+              lambda_id,
+              channel_id,
+              requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
               bytes_read,
               chunk.err());
         return Err(LambdaRequestError::AppConnectionError);
@@ -168,10 +168,10 @@ pub async fn relay_response_to_router(
         Ok(_) => {}
         Err(err) => {
           log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
-                            pool_id_clone,
-                            lambda_id_clone,
-                            channel_id_clone,
-                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            pool_id,
+                            lambda_id,
+                            channel_id,
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_read,
                             err);
           return Err(LambdaRequestError::RouterConnectionError);
@@ -182,10 +182,10 @@ pub async fn relay_response_to_router(
         Ok(_) => {}
         Err(err) => {
           log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
-                            pool_id_clone,
-                            lambda_id_clone,
-                            channel_id_clone,
-                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            pool_id,
+                            lambda_id,
+                            channel_id,
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_read,
                             err);
           return Err(LambdaRequestError::RouterConnectionError);
