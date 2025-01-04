@@ -1,12 +1,12 @@
-import express from "express";
-import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { promisify } from "util";
-import path from "path";
-import spdy from "spdy";
-import fs from "fs";
-import http2 from "http2";
-import throng from "throng";
+import express from 'express';
+import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { promisify } from 'util';
+import path from 'path';
+import spdy from 'spdy';
+import fs from 'fs';
+import http2 from 'http2';
+import throng from 'throng';
 
 const sleep = promisify(setTimeout);
 
@@ -30,7 +30,7 @@ const initSleepMs = parseInt(process.env.INIT_SLEEP_MS) || 7000;
 
 export async function performInit() {
   console.log(
-    `${new Date().toISOString()} Contained App - Performing Init - Delaying ${initSleepMs} ms`
+    `${new Date().toISOString()} Contained App - Performing Init - Delaying ${initSleepMs} ms`,
   );
   await sleep(initSleepMs);
 
@@ -38,88 +38,84 @@ export async function performInit() {
   initPerformed = true;
 
   console.log(
-    `${new Date().toISOString()} Contained App - Performed Init - Delayed ${initSleepMs} ms`
+    `${new Date().toISOString()} Contained App - Performed Init - Delayed ${initSleepMs} ms`,
   );
 }
 
 // Serve static files from the "public" directory
-app.use("/public", express.static(path.join(__dirname, "public")));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
-app.get("/health", async (req, res) => {
+app.get('/health', async (req, res) => {
   if (!initPerformed) {
     await performInit();
   }
 
-  res.send("OK");
+  res.send('OK');
 });
 
-app.get("/ping", async (req, res) => {
-  res.send("pong");
+app.get('/ping', async (req, res) => {
+  res.send('pong');
 });
 
-app.get("/headers", async (req, res) => {
+app.get('/headers', async (req, res) => {
   res.json(req.headers);
 });
 
-app.get("/delay", async (req, res) => {
+app.get('/delay', async (req, res) => {
   const delay = parseInt(req.query.delay) || 20;
   await sleep(delay);
   res.send(`Delayed for ${delay} ms`);
 });
 
-app.get("/chunked-response", async (req, res) => {
+app.get('/chunked-response', async (req, res) => {
   // Send headers right away
-  res.setHeader("Content-Type", "text/plain");
-  res.setHeader("Transfer-Encoding", "chunked");
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Transfer-Encoding', 'chunked');
   res.status(200);
 
   // Send initial payload
-  res.write("INITIAL PAYLOAD RESPONSE\n");
+  res.write('INITIAL PAYLOAD RESPONSE\n');
 
   // Wait for 5 seconds
   await sleep(5000);
 
   // Send final payload and close out the response
-  res.end("FINAL PAYLOAD RESPONSE\n");
+  res.end('FINAL PAYLOAD RESPONSE\n');
 });
 
 // This will read the entire request body into memory before sending the response
-app.post(
-  "/echo-slow",
-  express.raw({ type: "*/*", limit: "40mb" }),
-  async (req, res) => {
-    const contentType = req.get("Content-Type");
-    if (contentType) {
-      res.set("Content-Type", contentType);
-    }
-    if (req.body) {
-      res.send(req.body);
-    } else {
-      res.send("");
-    }
+app.post('/echo-slow', express.raw({ type: '*/*', limit: '40mb' }), async (req, res) => {
+  const contentType = req.get('Content-Type');
+  if (contentType) {
+    res.set('Content-Type', contentType);
   }
-);
+  if (req.body) {
+    res.send(req.body);
+  } else {
+    res.send('');
+  }
+});
 
 // This will stream the request body to the response
-app.post("/echo", async (req, res) => {
-  const contentType = req.get("Content-Type");
-  const contentLength = req.get("Content-Length");
+app.post('/echo', async (req, res) => {
+  const contentType = req.get('Content-Type');
+  const contentLength = req.get('Content-Length');
   if (contentType) {
-    res.set("Content-Type", contentType);
+    res.set('Content-Type', contentType);
   }
   if (contentLength) {
-    res.set("Content-Length", contentLength);
+    res.set('Content-Length', contentLength);
   }
   // Pipe the req body to the response with back pressure
   // This will stream incoming bytes as they arrive
   req.pipe(res);
 });
 
-app.get("/read-s3", async (req, res) => {
+app.get('/read-s3', async (req, res) => {
   // Create a GetObjectCommand
   const command = new GetObjectCommand({
-    Bucket: "pwrdrvr-lambdadispatch-demo",
-    Key: "silly-test-image.jpg",
+    Bucket: 'pwrdrvr-lambdadispatch-demo',
+    Key: 'silly-test-image.jpg',
   });
 
   try {
@@ -127,37 +123,28 @@ app.get("/read-s3", async (req, res) => {
     const data = await s3Client.send(command);
 
     if (data.ContentLength) {
-      res.setHeader("Content-Length", data.ContentLength);
+      res.setHeader('Content-Length', data.ContentLength);
     }
     if (data.ContentType) {
-      res.setHeader("Content-Type", data.ContentType);
+      res.setHeader('Content-Type', data.ContentType);
     }
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=silly-test-image.jpg"
-    );
+    res.setHeader('Content-Disposition', 'attachment; filename=silly-test-image.jpg');
     // Pipe the S3 Object content to the response
-    data.Body.pipe(res).on("error", (err) => {
-      console.error(
-        `${new Date().toISOString()} Contained App - Failed to read item`,
-        err
-      );
+    data.Body.pipe(res).on('error', (err) => {
+      console.error(`${new Date().toISOString()} Contained App - Failed to read item`, err);
       res.status(500).send(err.toString());
     });
   } catch (err) {
-    console.error(
-      `${new Date().toISOString()} Contained App - Failed to read item`,
-      err
-    );
+    console.error(`${new Date().toISOString()} Contained App - Failed to read item`, err);
     res.status(500).send(err.toString());
   }
 });
 
-app.get("/odd-status", async (req, res) => {
+app.get('/odd-status', async (req, res) => {
   res.status(519).send("I'm a teapot");
 });
 
-app.get("/read", async (req, res) => {
+app.get('/read', async (req, res) => {
   // Log that we got a request
   // console.log(`${new Date().toISOString()} Contained App - Received request`);
   // Generate a random id in the range 1-10000
@@ -165,7 +152,7 @@ app.get("/read", async (req, res) => {
 
   // Create a GetItemCommand
   const command = new GetItemCommand({
-    TableName: "LambdaDispatchDemo",
+    TableName: 'LambdaDispatchDemo',
     Key: {
       id: { N: id.toString() },
     },
@@ -184,17 +171,14 @@ app.get("/read", async (req, res) => {
 
     res.json(data.Item);
   } catch (err) {
-    console.error(
-      `${new Date().toISOString()} Contained App - Failed to read item`,
-      err
-    );
+    console.error(`${new Date().toISOString()} Contained App - Failed to read item`, err);
     res.status(500).send(err.toString());
   }
 });
 
 if (process.env.NUMBER_OF_WORKERS) {
   throng({
-    workers: process.env.NUMBER_OF_WORKERS ?? "1",
+    workers: process.env.NUMBER_OF_WORKERS ?? '1',
     grace: 60000,
     master: async () => {
       console.log(`> Master started - starting workers`);
@@ -206,7 +190,7 @@ if (process.env.NUMBER_OF_WORKERS) {
 
       console.log(`> Worker ${id} - listening`);
     },
-    signals: ["SIGTERM", "SIGINT"],
+    signals: ['SIGTERM', 'SIGINT'],
   });
 } else {
   createServer();
@@ -217,8 +201,8 @@ function createServer() {
     console.log(`App listening at http://localhost:${port}`);
   });
 
-  const certPath = "../../certs/lambdadispatch.local.crt";
-  const keyPath = "../../certs/lambdadispatch.local.key";
+  const certPath = '../../certs/lambdadispatch.local.crt';
+  const keyPath = '../../certs/lambdadispatch.local.key';
 
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     const options = {
@@ -232,40 +216,28 @@ function createServer() {
       console.log(`App listening on HTTP2 at https://localhost:${spdyPort}`);
     });
 
-    const serverInsecure = http2.createSecureServer(
-      { ...options },
-      (req, res) => {
-        res.writeHead(200, { "Content-Type": req.headers["content-type"] });
-        res.write("\r\n");
-        req.on("data", (chunk) => {
-          // Print each body chunk as hex and possibly UTF-8 text
-          console.log(
-            `${new Date().toISOString()} Contained App - Received chunk: ${chunk.toString(
-              "hex"
-            )}`
-          );
-          res.write(chunk);
-        });
-        req.on("aborted", (err) => {
-          console.log(
-            `${new Date().toISOString()} Contained App - Request aborted`,
-            err
-          );
-        });
-        req.on("end", () => {
-          res.end();
-        });
-      }
-    );
+    const serverInsecure = http2.createSecureServer({ ...options }, (req, res) => {
+      res.writeHead(200, { 'Content-Type': req.headers['content-type'] });
+      res.write('\r\n');
+      req.on('data', (chunk) => {
+        // Print each body chunk as hex and possibly UTF-8 text
+        console.log(
+          `${new Date().toISOString()} Contained App - Received chunk: ${chunk.toString('hex')}`,
+        );
+        res.write(chunk);
+      });
+      req.on('aborted', (err) => {
+        console.log(`${new Date().toISOString()} Contained App - Request aborted`, err);
+      });
+      req.on('end', () => {
+        res.end();
+      });
+    });
 
     serverInsecure.listen(spdyInsecurePort, () => {
-      console.log(
-        `App listening on HTTP2 at http://localhost:${spdyInsecurePort}`
-      );
+      console.log(`App listening on HTTP2 at http://localhost:${spdyInsecurePort}`);
     });
   } else {
-    console.log(
-      "Certificate or key file not found. HTTP/2 server not started."
-    );
+    console.log('Certificate or key file not found. HTTP/2 server not started.');
   }
 }
