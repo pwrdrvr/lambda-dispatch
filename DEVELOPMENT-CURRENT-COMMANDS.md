@@ -18,7 +18,7 @@ NUMBER_OF_WORKERS=4 node dist/app.cjs
 
 dotnet build -c Release src/PwrDrvr.LambdaDispatch.Router
 
-BUILD_TIME=$(date) GIT_HASH=$(git rev-parse --short HEAD) LAMBDA_DISPATCH_MaxWorkerThreads=2 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_InstanceCountMultiplier=4 LAMBDA_DISPATCH_MaxConcurrentCount=20 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
+BUILD_TIME=$(date) GIT_HASH=$(git rev-parse --short HEAD) LAMBDA_DISPATCH_MinWorkerThreads=1 LAMBDA_DISPATCH_MaxWorkerThreads=4 DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 LAMBDA_DISPATCH_InstanceCountMultiplier=4 LAMBDA_DISPATCH_MaxConcurrentCount=20 LAMBDA_DISPATCH_AllowInsecureControlChannel=true LAMBDA_DISPATCH_PreferredControlChannelScheme=http LAMBDA_DISPATCH_FunctionName=dogs AWS_LAMBDA_SERVICE_URL=http://localhost:5051 AWS_REGION=us-east-2 AWS_ACCESS_KEY_ID=test-access-key-id AWS_SECRET_ACCESS_KEY=test-secret-access-key AWS_SESSION_TOKEN=test-session-token src/PwrDrvr.LambdaDispatch.Router/bin/Release/net8.0/PwrDrvr.LambdaDispatch.Router 2>&1 | tee router.log
 
 # extension
 
