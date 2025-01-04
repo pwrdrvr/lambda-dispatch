@@ -140,7 +140,8 @@ export class LambdaDispatchECS extends Construct {
       }),
       environment: {
         DOTNET_ThreadPool_UnfairSemaphoreSpinLimit: '0',
-        LAMBDA_DISPATCH_MaxWorkerThreads: '2',
+        LAMBDA_DISPATCH_MinWorkerThreads: '1',
+        LAMBDA_DISPATCH_MaxWorkerThreads: '4',
         LAMBDA_DISPATCH_FunctionName: props.lambdaFunction.functionArn,
         LAMBDA_DISPATCH_MaxConcurrentCount: '10',
         LAMBDA_DISPATCH_AllowInsecureControlChannel: 'true',
