@@ -40,6 +40,7 @@ public interface IConfig
   /// Drives the number of Lambda instances to create: `(ConcurrentRequests / MaxConcurrentCount) * 2`
   /// Drives the number of requests the Lambda instances send back to the router to pickup requests
   /// </summary>
+  /// <default>10</default>
   int MaxConcurrentCount { get; }
 
   /// <summary>
@@ -60,16 +61,19 @@ public interface IConfig
   /// <summary>
   /// The HTTP (insecure) port the router listens on for requests that will be proxied to Lambda functions
   /// </summary>
+  /// <default>5001</default>
   int IncomingRequestHTTPPort { get; }
 
   /// <summary>
   /// The HTTPS port the router listens on for requests that will be proxied to Lambda functions
   /// </summary>
+  /// <default>5002</default>
   int IncomingRequestHTTPSPort { get; }
 
   /// <summary>
   /// The HTTP2 (secure, https) port the router listens on for Lambda control channel requests
   /// </summary>
+  /// <default>5004</default>
   int ControlChannelHTTP2Port { get; }
 
   /// <summary>
@@ -104,10 +108,23 @@ public interface IConfig
 
   public TimeSpan IncomingRequestTimeoutTimeSpan { get; }
 
+  /// <summary>
+  /// The scaling algorithm to use
+  /// </summary>
+  /// <default>Simple</default>
+
   public string ScalingAlgorithm { get; set; }
 
+  /// <summary>
+  /// The scaling algorithm to use, as an enum
+  /// </summary>
+  /// <default>Simple</default>
   public ScalingAlgorithms ScalingAlgorithmEnum { get; }
 
+  /// <summary>
+  /// Should CloudWatch metrics be enabled
+  /// </summary>
+  /// <default>false</default>
   public bool CloudWatchMetricsEnabled { get; set; }
 }
 
@@ -126,7 +143,6 @@ public class Config : IConfig
   public int IncomingRequestHTTPPort { get; set; }
 
   public int IncomingRequestHTTPSPort { get; set; }
-
 
   public int ControlChannelHTTP2Port { get; set; }
 
