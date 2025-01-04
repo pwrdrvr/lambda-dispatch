@@ -19,7 +19,9 @@ COPY src/demo-app/ ./
 # Build the app
 RUN npm run build
 
-
+#
+# During GitHub Actions this gets swapped in for the PR built extension, using sed
+#
 FROM lambda-dispatch-extension AS extension
 
 #
