@@ -20,7 +20,7 @@ pub async fn relay_request_to_app(
   requests_in_flight_clone: Arc<AtomicUsize>,
   mut app_req_tx: Sender<Result<Frame<Bytes>, Error>>,
   mut router_response_stream: Incoming,
-) -> Result<(), LambdaRequestError> {
+) -> Result<usize, LambdaRequestError> {
   let mut bytes_sent = 0;
 
   // Send any overflow body bytes to the contained app
@@ -108,7 +108,7 @@ pub async fn relay_request_to_app(
     .await
     .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
-  Ok(())
+  Ok(bytes_sent)
 }
 
 /// Reads from: App response body stream
@@ -121,7 +121,7 @@ pub async fn relay_response_to_router(
   mut app_res_stream: Incoming,
   mut encoder: Option<GzEncoder<Writer<BytesMut>>>,
   mut tx: Sender<Result<Frame<Bytes>, Error>>,
-) -> Result<(), LambdaRequestError> {
+) -> Result<usize, LambdaRequestError> {
   let mut bytes_read = 0;
   while let Some(chunk) =
     futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut app_res_stream), cx)).await
@@ -211,5 +211,5 @@ pub async fn relay_response_to_router(
     .await
     .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
-  Ok(())
+  Ok(bytes_read)
 }

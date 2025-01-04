@@ -246,7 +246,7 @@ impl RouterChannel {
       .store(time::current_time_millis(), Ordering::Release);
 
     // Read until we get all the request headers so we can construct our app request
-    let (app_req_builder, is_goaway, left_over_buf) = app_request::read_until_req_headers(
+    let (app_req_builder, is_goaway, left_over_buf, app_url) = app_request::read_until_req_headers(
       self.app_endpoint.clone(),
       &mut router_response_stream,
       &self.pool_id,
@@ -458,16 +458,29 @@ impl RouterChannel {
       router_tx,
     ));
 
+    let sent_bytes;
+    let received_bytes;
+
     // Wait for both to finish
     match futures::future::try_join_all([relay_request_to_app_task, relay_response_to_router_task])
       .await
     {
-      Ok(result) => {
+      Ok(results) => {
+        // Extract sent_bytes from first task (relay_request_to_app_task)
+        sent_bytes = match &results[0] {
+          Ok(bytes) => *bytes,
+          Err(_) => 0,
+        };
+        received_bytes = match &results[1] {
+          Ok(bytes) => *bytes,
+          Err(_) => 0,
+        };
+
         // Find the worst error, if any
         let mut worst_error = None;
 
         // This case can have errors in the vector
-        for res in result {
+        for res in results {
           if let Err(err) = res {
             log::error!("PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all: {}", self.pool_id, self.lambda_id, self.channel_id, err);
             worst_error =
@@ -494,6 +507,18 @@ impl RouterChannel {
         return Err(LambdaRequestError::ChannelErrorOther);
       }
     }
+
+    // TODO: Add an access log statement
+    // Include: Path and Query string, status code, bytes sent, bytes received, duration, time since
+    // last bytes sent, time since last bytes received
+    // log::info()
+    log::info!(
+      "{} - {} - BytesSentToApp: {} - BytesRcvdFromApp: {} - Access Log",
+      app_url,
+      status_code,
+      sent_bytes,
+      received_bytes,
+    );
 
     self.count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 

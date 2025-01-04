@@ -117,7 +117,7 @@ async fn test_read_until_req_headers_valid_req() {
     ))
   );
   assert_ok!(&result);
-  let (app_req_builder, goaway, left_over_buf) = result.unwrap();
+  let (app_req_builder, goaway, left_over_buf, _) = result.unwrap();
   let host_header = app_req_builder.headers_ref().unwrap().get("host");
   assert_eq!(host_header, Some(&HeaderValue::from_static("localhost")));
   let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
@@ -216,7 +216,7 @@ async fn test_read_until_req_headers_no_host_header() {
     ))
   );
   assert_ok!(&result);
-  let (app_req_builder, goaway, left_over_buf) = result.unwrap();
+  let (app_req_builder, goaway, left_over_buf, _) = result.unwrap();
   let host_header = app_req_builder.headers_ref().unwrap().get("host");
   assert_eq!(host_header, None);
   let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
@@ -315,7 +315,7 @@ async fn test_read_until_req_headers_double_slash_path() {
     ))
   );
   assert_ok!(&result);
-  let (app_req_builder, goaway, left_over_buf) = result.unwrap();
+  let (app_req_builder, goaway, left_over_buf, _) = result.unwrap();
   let host_header = app_req_builder.headers_ref().unwrap().get("host");
   assert_eq!(host_header, Some(&HeaderValue::from_static("localhost")));
   let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
@@ -410,7 +410,7 @@ async fn test_read_until_req_headers_go_away_path() {
     ))
   );
   assert_ok!(&result);
-  let (app_req_builder, goaway, left_over_buf) = result.unwrap();
+  let (app_req_builder, goaway, left_over_buf, _) = result.unwrap();
   let host_header = app_req_builder.headers_ref().unwrap().get("host");
   assert_eq!(host_header, None);
   let test_header = app_req_builder.headers_ref().unwrap().get("test-header");
@@ -596,7 +596,7 @@ async fn test_read_until_req_headers_partial_reads() {
     ))
   );
   assert_ok!(&result);
-  let (app_req_builder, goaway, left_over_buf) = result.unwrap();
+  let (app_req_builder, goaway, left_over_buf, _) = result.unwrap();
   let host_header = app_req_builder.headers_ref().unwrap().get("host");
   assert_eq!(host_header, Some(&HeaderValue::from_static("localhost")));
   let test_header = app_req_builder.headers_ref().unwrap().get("test-header");

@@ -15,7 +15,7 @@ pub async fn read_until_req_headers(
   pool_id: &str,
   lambda_id: &str,
   channel_id: &str,
-) -> Result<(hyper::http::request::Builder, bool, Vec<u8>), LambdaRequestError> {
+) -> Result<(hyper::http::request::Builder, bool, Vec<u8>, String), LambdaRequestError> {
   let mut buf = Vec::<u8>::with_capacity(32 * 1024);
 
   while let Some(chunk) =
@@ -51,7 +51,7 @@ pub async fn read_until_req_headers(
     match req.parse(&buf) {
       Ok(httparse::Status::Complete(offset)) => {
         if req.path.unwrap() == "/_lambda_dispatch/goaway" {
-          return Ok((Request::builder(), true, Vec::<u8>::new()));
+          return Ok((Request::builder(), true, Vec::<u8>::new(), String::new()));
         }
 
         log::debug!(
@@ -66,6 +66,7 @@ pub async fn read_until_req_headers(
         // Next.js, for one, gives a 308 redirect if you give it `http://localhost:3000/`
         // and it mangles that to `http:/localhost:3000/`
         let app_url = format!("{}{}", app_endpoint, req.path.unwrap());
+        let app_url_str = app_url.clone();
         let app_url = Uri::from_str(app_url.as_str()).unwrap();
 
         let mut app_req_bld = Request::builder()
@@ -103,7 +104,7 @@ pub async fn read_until_req_headers(
           );
         }
 
-        return Ok((app_req_bld, false, left_over_buf));
+        return Ok((app_req_bld, false, left_over_buf, app_url_str));
       }
       Ok(httparse::Status::Partial) => {
         log::debug!("Partial header received, waiting for more data");
