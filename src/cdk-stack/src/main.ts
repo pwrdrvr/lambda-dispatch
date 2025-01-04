@@ -28,7 +28,10 @@ new EcsClusterStack(app, 'ecs-stack', {
 });
 
 // Compute Lambda image tag
-const lambdaImageTag = process.env.PR_NUMBER ? `pr-${process.env.PR_NUMBER}-arm64` : 'main-arm64';
+const gitShaSuffix = process.env.GIT_SHA_SHORT ? `-${process.env.GIT_SHA_SHORT}` : '';
+const lambdaImageTag = process.env.PR_NUMBER
+  ? `pr-${process.env.PR_NUMBER}-arm64${gitShaSuffix}`
+  : 'main-arm64';
 
 const lambdaDispatchStack = new LambdaDispatchStack(app, 'lambda-dispatch', {
   env: devEnv,

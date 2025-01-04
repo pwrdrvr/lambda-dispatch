@@ -637,9 +637,14 @@ jobs:
             echo stack-url-suffix="" >> $GITHUB_OUTPUT
           fi
 
+      - name: Get Git SHA
+        id: git-sha
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Deploy Stack
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          GIT_SHA_SHORT: ${{ steps.git-sha.outputs.sha_short }}
         run: |
           cd src/cdk-stack
           STACK_SUFFIX=${{ github.event_name == 'pull_request' && '-pr' || '' }}
