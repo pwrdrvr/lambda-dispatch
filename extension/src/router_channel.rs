@@ -238,7 +238,7 @@ impl RouterChannel {
     // We have to hold the pinger up else it will exit before connections to the router are established
     // We also count re-establishing a channel as an action since it can allow a request to flow in
     if self.last_active.load(Ordering::Acquire) == 0 {
-      log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
+      log::debug!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
                 self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
     }
     self
@@ -278,7 +278,7 @@ impl RouterChannel {
         .load(std::sync::atomic::Ordering::Acquire)
       {
         channel_result = Some(ChannelResult::GoAwayReceived);
-        log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
+        log::debug!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                     self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
 
         // This is from a goaway so we do not need to ask to close

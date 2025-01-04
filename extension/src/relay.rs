@@ -129,7 +129,7 @@ pub async fn relay_response_to_router(
     let chunk = match chunk {
       Ok(value) => value,
       Err(_) => {
-        log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+        log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
               pool_id_clone,
               lambda_id_clone,
               channel_id_clone,

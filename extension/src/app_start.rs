@@ -77,7 +77,7 @@ pub async fn health_check_contained_app(
 
     match send_healthcheck(app_client, healthcheck_url).await {
       Ok(_) => {
-        log::info!("Health check - Complete - Success");
+        log::debug!("Health check - Complete - Success");
         return true;
       }
       Err(_) => {
