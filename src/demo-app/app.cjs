@@ -2,6 +2,7 @@ import express from 'express';
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { promisify } from 'util';
+import { Transform } from 'stream';
 import morgan from 'morgan';
 import path from 'path';
 import spdy from 'spdy';
@@ -152,11 +153,94 @@ app.post('/echo-slow', express.raw({ type: '*/*', limit: '40mb' }), async (req, 
 app.post('/echo', async (req, res) => {
   const contentType = req.get('Content-Type');
   const contentLength = req.get('Content-Length');
+  const debugMode = req.get('X-Lambda-Dispatch-Debug') === 'true';
   if (contentType) {
     res.set('Content-Type', contentType);
   }
   if (contentLength) {
     res.set('Content-Length', contentLength);
+  }
+
+  const logPrefix = `${req.method} ${req.url} HTTP/${req.httpVersion}`;
+
+  if (debugMode) {
+    // Log the request line
+    console.log(`${logPrefix} - STARTING`);
+  }
+
+  // Handle client disconnect
+  req.on('close', () => {
+    console.log('Request closed');
+  });
+
+  // Handle potential errors
+  req.on('error', (err) => {
+    console.log(`${logPrefix} - ERROR`, err);
+    if (!res.finished && !res.headersSent) {
+      res.status(500).end();
+    } else if (!res.finished) {
+      res.destroy();
+    }
+  });
+
+  // Create transform stream that doubles each chunk
+  const logger = new Transform({
+    transform(chunk, encoding, callback) {
+      const timestamp = new Date().toISOString();
+      if (debugMode) {
+        console.log(`${logPrefix} - RECEIVED ${chunk.length} bytes at ${timestamp}`);
+      }
+
+      this.push(chunk);
+
+      process.nextTick(() => {
+        if (debugMode) {
+          const timestamp = new Date().toISOString();
+          console.log(`${logPrefix} - ECHOED ${chunk.length} bytes at ${timestamp}`);
+        }
+      });
+      
+      callback();
+    },
+    flush(callback) {
+      if (debugMode) {
+        console.log(`${logPrefix} - FINISHED`);
+      }
+      callback();
+    }
+  });
+
+  // Pipe the req body to the response with back pressure
+  // This will stream incoming bytes as they arrive
+  req
+    .pipe(logger)
+    .pipe(res)
+    .on('error', (err) => {
+      console.error(`${logPrefix} - PIPE ERROR`, err);
+      if (!res.finished) {
+        res.status(500).end();
+      }
+    })
+    .on('finish', () => {
+      if (debugMode) {
+        console.log(`${logPrefix} - RESPONSE FINISHED`);
+      }
+      if (!res.finished) {
+        res.end();
+      }
+    });
+});
+
+app.post('/double-echo', async (req, res) => {
+  const contentType = req.get('Content-Type');
+  const contentLength = req.get('Content-Length');
+
+  if (contentType) {
+    res.set('Content-Type', contentType);
+  }
+  if (contentLength) {
+    // Double the content length since we're duplicating each chunk
+    res.set('Content-Length', (parseInt(contentLength) * 2).toString());
   }
 
   // Handle client disconnect
@@ -174,9 +258,68 @@ app.post('/echo', async (req, res) => {
     }
   });
 
-  // Pipe the req body to the response with back pressure
-  // This will stream incoming bytes as they arrive
+  // Create transform stream that doubles each chunk
+  const doubler = new Transform({
+    transform(chunk, encoding, callback) {
+      // Push the chunk twice
+      this.push(chunk);
+      this.push(chunk);
+      callback();
+    },
+  });
+
+  // Pipe through doubler transform then to response
   req
+    .pipe(doubler)
+    .pipe(res)
+    .on('error', (err) => {
+      console.error('Pipe error:', err);
+      if (!res.finished) {
+        res.status(500).end();
+      }
+    })
+    .on('finish', () => {
+      if (!res.finished) {
+        res.end();
+      }
+    });
+});
+
+app.post('/half-echo', async (req, res) => {
+  const contentType = req.get('Content-Type');
+  
+  if (contentType) {
+    res.set('Content-Type', contentType);
+  }
+
+  // Handle client disconnect
+  req.on('close', () => {
+    console.log('Request closed');
+  });
+
+  // Handle potential errors
+  req.on('error', (err) => {
+    console.error('Request error:', err);
+    if (!res.finished && !res.headersSent) {
+      res.status(500).end();
+    } else if (!res.finished) {
+      res.destroy();
+    }
+  });
+
+  // Create transform stream that halves each chunk
+  const halver = new Transform({
+    transform(chunk, encoding, callback) {
+      // Only push half of the chunk
+      const halfLength = chunk.length >> 1;
+      this.push(chunk.slice(0, halfLength), 'binary');
+      callback();
+    }
+  });
+
+  // Pipe through halver transform then to response
+  req
+    .pipe(halver)
     .pipe(res)
     .on('error', (err) => {
       console.error('Pipe error:', err);
