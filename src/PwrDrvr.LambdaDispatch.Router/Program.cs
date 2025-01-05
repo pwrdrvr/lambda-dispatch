@@ -193,6 +193,8 @@ public class Program
 
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
+                    Console.WriteLine(config);
+
                     //
                     // Incoming Requests
                     //
@@ -227,6 +229,10 @@ public class Program
                         });
                     }
                 });
-                webBuilder.UseStartup<Startup>();
+                webBuilder.UseStartup(serviceProvider =>
+                {
+                    var config = Config.CreateAndValidate(serviceProvider.Configuration);
+                    return new Startup(config);
+                });
             });
 }
