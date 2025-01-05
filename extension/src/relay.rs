@@ -44,7 +44,7 @@ pub async fn relay_request_to_app(
   //
   // Reads from: Router response body stream (containing request from client)
   // Writes to: App request body stream
-  // Source: res_stream
+  // Source: router_res_stream
   // Sink: app_req_tx
   while let Some(chunk) =
     futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut router_response_stream), cx))
@@ -53,7 +53,7 @@ pub async fn relay_request_to_app(
     let chunk = match chunk {
       Ok(value) => value,
       Err(_) => {
-        log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
+        log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from router_res_stream: {:?}",
         lambda_id,
         channel_id,
         requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
