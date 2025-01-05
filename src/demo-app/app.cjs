@@ -13,7 +13,55 @@ const sleep = promisify(setTimeout);
 
 export const app = express();
 
-app.use(morgan('combined'));
+const trackBytes = (req, res, next) => {
+  // Initialize counters in res.locals
+  res.locals.bytesReceived = 0;
+  res.locals.bytesSent = 0;
+
+  // Wrap write/end to count response bytes
+  const originalWrite = res.write;
+  const originalEnd = res.end;
+
+  res.write = function (chunk, ...args) {
+    if (chunk) {
+      res.locals.bytesSent += chunk.length;
+    }
+    return originalWrite.call(this, chunk, ...args);
+  };
+
+  res.end = function (chunk, ...args) {
+    if (chunk) {
+      res.locals.bytesSent += chunk.length;
+    }
+    return originalEnd.call(this, chunk, ...args);
+  };
+
+  // Track request bytes
+  let receivedBytes = 0;
+  req.on('data', (chunk) => {
+    receivedBytes += chunk.length;
+    res.locals.bytesReceived = receivedBytes;
+  });
+
+  next();
+};
+
+// Update morgan tokens to use tracked values
+morgan.token('request-bytes', (req, res) => {
+  return res.locals.bytesReceived ?? 0;
+});
+
+morgan.token('response-bytes', (req, res) => {
+  return res.locals.bytesSent ?? 0;
+});
+
+// Create custom format string
+const logFormat =
+  ':method :url :status :response-time[3]ms :request-bytes bytes received :response-bytes bytes sent';
+
+// Use the custom format
+app.use(trackBytes);
+app.use(morgan(logFormat));
 
 const port = 3001;
 const spdyPort = 3002;
