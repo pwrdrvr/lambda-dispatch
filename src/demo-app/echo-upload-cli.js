@@ -3,6 +3,38 @@ const https = require('https');
 const fs = require('fs');
 const { URL } = require('url');
 
+class SentChunkTracker {
+  constructor() {
+    this.chunks = []; // [{offset, length, timestamp}]
+    this.totalOffset = 0;
+  }
+
+  addChunk(length, timestamp) {
+    this.chunks.push({
+      offset: this.totalOffset,
+      length,
+      timestamp,
+    });
+    this.totalOffset += length;
+  }
+
+  getLatencyForReceivedBytes(bytesReceived, currentTime) {
+    while (this.chunks.length > 0) {
+      const chunk = this.chunks[0];
+      const chunkEndOffset = chunk.offset + chunk.length;
+
+      // If this chunk has been fully received
+      if (bytesReceived >= chunkEndOffset) {
+        const latencyNs = Number(currentTime - chunk.timestamp);
+        this.chunks.shift(); // Remove processed chunk
+        return latencyNs / 1_000_000; // Convert to ms
+      }
+      break;
+    }
+    return null;
+  }
+}
+
 // Get URL and filepath from command line
 if (process.argv.length < 4) {
   console.error('Usage: node echo-upload-cli.js <URL> <filepath>');
@@ -17,8 +49,8 @@ const filepath = process.argv[3];
 let bytesInFlight = 0;
 let totalBytesSent = 0;
 let totalBytesReceived = 0;
-const chunkTimings = new Map(); // Maps chunk data to send time
 let startTime = null;
+const sentChunks = new SentChunkTracker();
 
 function formatBytes(bytes) {
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -69,17 +101,8 @@ try {
       totalBytesReceived += chunk.length;
       bytesInFlight -= chunk.length;
 
-      // Find the send time for this chunk
-      let minLatency = Number.MAX_VALUE;
-      for (const [sentChunk, sendTime] of chunkTimings) {
-        if (chunk.equals(sentChunk)) {
-          const latencyNs = Number(receiveTime - sendTime);
-          const latencyMs = latencyNs / 1_000_000;
-          minLatency = Math.min(minLatency, latencyMs);
-          chunkTimings.delete(sentChunk);
-          break;
-        }
-      }
+      // Calculate latency based on byte position
+      const latencyMs = sentChunks.getLatencyForReceivedBytes(totalBytesReceived, receiveTime);
 
       const sendProgress = ((totalBytesSent / fileSize) * 100).toFixed(1);
       const receiveProgress = ((totalBytesReceived / fileSize) * 100).toFixed(1);
@@ -95,9 +118,7 @@ try {
             totalBytesReceived,
           )}) @ ${receiveThroughputMBps.toFixed(1)} MB/s | ` +
           `In flight: ${formatBytes(bytesInFlight)} | ` +
-          `Chunk latency: ${
-            minLatency === Number.MAX_VALUE ? 'N/A' : formatDuration(minLatency)
-          }     `,
+          `Chunk latency: ${latencyMs ? formatDuration(latencyMs) : 'N/A'}     `,
       );
     });
 
@@ -138,12 +159,11 @@ try {
     totalBytesSent += chunk.length;
     bytesInFlight += chunk.length;
 
-    // Store send time for this chunk
-    chunkTimings.set(chunk, process.hrtime.bigint());
+    // Track when this chunk was sent
+    sentChunks.addChunk(chunk.length, process.hrtime.bigint());
 
-    // Check if we need to pause reading to let the server catch up
+    // Check if we need to pause reading
     if (bytesInFlight > 5 * 1024 * 1024) {
-      // 5MB in flight limit
       readStream.pause();
       setTimeout(() => readStream.resume(), 100);
     }
