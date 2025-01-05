@@ -7,18 +7,33 @@ public class LoggerInstance
 {
   private static readonly ILoggerFactory _loggerFactory = LoggerFactory.Create(builder =>
     {
+      var awsOptions = new AWSLoggerConfig
+      {
+        Region = System.Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1",
+        // Disable JSON formatting to keep plain text with newlines
+        DisableLogGroupCreation = true,
+        BatchPushInterval = TimeSpan.FromMilliseconds(50), // Optional: faster delivery
+        MaxQueuedMessages = 200 // Optional: prevent memory growth
+      };
+
       builder
 #if DEBUG
-          .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Debug)
+          .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Debug);
 #else
-          .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Information)
+          .AddFilter(level => level >= Microsoft.Extensions.Logging.LogLevel.Information);
 #endif
-          .AddSimpleConsole(options =>
-          {
-            // options.IncludeScopes = true;
-            // options.SingleLine = true;
-            options.TimestampFormat = "HH:mm:ss.fff ";
-          });
+
+      if (Environment.GetEnvironmentVariable("ECS_CONTAINER_METADATA_URI") == null)
+      {
+        builder.AddSimpleConsole(options =>
+        {
+          options.TimestampFormat = "HH:mm:ss.fff ";
+        });
+      }
+      else
+      {
+        builder.AddAWSProvider(awsOptions);
+      }
     });
 
   public static ILogger<T> CreateLogger<T>()
