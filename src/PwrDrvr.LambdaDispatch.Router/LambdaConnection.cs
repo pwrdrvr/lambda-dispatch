@@ -629,14 +629,61 @@ public class LambdaConnection : ILambdaConnection
     //
 
     var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
+    int totalHeaderBytesRead = 0;
+    int totalBodyBytesRead = 0;
+    int totalBodyBytesWritten = 0;
+    var loopTimer = Stopwatch.StartNew();
+    var lastReadTimer = Stopwatch.StartNew();
     try
     {
       // Read from the source stream and write to the destination stream in a loop
       int bytesRead;
       var responseStream = Request.Body;
-      while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token).ConfigureAwait(false)) > 0)
+      while (true)
       {
-        await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token).ConfigureAwait(false);
+        try
+        {
+          bytesRead = await responseStream.ReadAsync(bytes, CTS.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+          _logger.LogError(ex,
+              "LambdaConnection.RelayResponseFromLambda - LambdaId: {}, ChannelId: {} - Exception READING response body from Lambda - Path: {}, Header Bytes: {}, Body Bytes Read: {}, Body Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+              Instance.Id,
+              ChannelId,
+              incomingRequest.Path,
+              totalHeaderBytesRead,
+              totalBodyBytesRead,
+              totalBodyBytesWritten,
+              loopTimer.ElapsedMilliseconds,
+              lastReadTimer.ElapsedMilliseconds);
+          throw;
+        }
+
+        if (bytesRead == 0) break;
+
+        totalBodyBytesRead += bytesRead;
+        lastReadTimer.Restart();
+
+        try
+        {
+          await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token).ConfigureAwait(false);
+          totalBodyBytesWritten += bytesRead;
+        }
+        catch (Exception ex)
+        {
+          _logger.LogError(ex,
+              "LambdaConnection.RelayResponseFromLambda - LambdaId: {}, ChannelId: {} - Exception WRITING response body to client - Path: {}, Header Bytes: {}, Body Bytes Read: {}, Body Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+              Instance.Id,
+              ChannelId,
+              incomingRequest.Path,
+              totalHeaderBytesRead,
+              totalBodyBytesRead,
+              totalBodyBytesWritten,
+              loopTimer.ElapsedMilliseconds,
+              lastReadTimer.ElapsedMilliseconds);
+          throw;
+        }
       }
     }
     finally
