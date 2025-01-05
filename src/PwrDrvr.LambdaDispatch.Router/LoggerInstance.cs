@@ -12,8 +12,6 @@ public class LoggerInstance
         Region = System.Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1",
         // Disable JSON formatting to keep plain text with newlines
         DisableLogGroupCreation = true,
-        BatchPushInterval = TimeSpan.FromMilliseconds(50), // Optional: faster delivery
-        MaxQueuedMessages = 200 // Optional: prevent memory growth
       };
 
       builder
