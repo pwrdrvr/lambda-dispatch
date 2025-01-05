@@ -482,12 +482,16 @@ jobs:
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      - name: Get Git SHA
+        id: git-sha
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Compute Versions
         id: version
         run: |
           if [ -n "${{ github.event.pull_request.number }}" ]; then
             IMAGE_TAG="pr-${{ github.event.pull_request.number }}"
-            echo "imageTag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "imageTag=pr-${{ github.event.pull_request.number }}-${{ steps.git-sha.outputs.sha_short }}" >> $GITHUB_OUTPUT
             echo "PR_SUFFIX=-pr-"${{ github.event.pull_request.number }} >> $GITHUB_ENV
           else
             TAG_OR_BRANCH=$(echo $GITHUB_REF | sed -e 's|refs/tags/v||' -e 's|refs/heads/||')
@@ -531,10 +535,6 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: private
-
-      - name: Get Git SHA
-        id: git-sha
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image for arm64
         run: |
