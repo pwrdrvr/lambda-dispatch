@@ -183,23 +183,19 @@ app.post('/echo', async (req, res) => {
     }
   });
 
+  let totalBytesReceived = 0;
+
   // Create transform stream that doubles each chunk
   const logger = new Transform({
     transform(chunk, encoding, callback) {
       const timestamp = new Date().toISOString();
+      totalBytesReceived += chunk.length;
       if (debugMode) {
-        console.log(`${logPrefix} - RECEIVED ${chunk.length} bytes at ${timestamp}`);
+        console.log(`${logPrefix} - RECEIVED chunk ${chunk.length} bytes, total ${totalBytesReceived} bytes at ${timestamp}`);
       }
 
       this.push(chunk);
 
-      process.nextTick(() => {
-        if (debugMode) {
-          const timestamp = new Date().toISOString();
-          console.log(`${logPrefix} - ECHOED ${chunk.length} bytes at ${timestamp}`);
-        }
-      });
-      
       callback();
     },
     flush(callback) {

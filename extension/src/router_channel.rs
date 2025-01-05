@@ -271,6 +271,12 @@ impl RouterChannel {
       .get("accept-encoding")
       .map(|v| v.to_str().unwrap_or_default().contains("gzip"))
       .unwrap_or_default();
+    let debug_mode = app_req_builder
+      .headers_ref()
+      .unwrap()
+      .get("x-lambda-dispatch-debug")
+      .map(|v| v.to_str().unwrap_or_default().contains("true"))
+      .unwrap_or_default();
 
     if is_goaway {
       if !self
@@ -288,6 +294,18 @@ impl RouterChannel {
       }
       router_tx.close().await.unwrap_or(());
       return Ok(channel_result);
+    }
+
+    if debug_mode {
+      log::info!(
+        "{} - PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - RECEIVED REQUEST",
+        app_url,
+        self.pool_id,
+        self.lambda_id,
+        self.channel_id,
+        self.channel_number,
+        self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire)
+      );
     }
 
     // We got a request to run
@@ -328,6 +346,8 @@ impl RouterChannel {
       Arc::clone(&self.requests_in_flight),
       app_req_tx,
       router_response_stream,
+      debug_mode,
+      app_url.clone(),
     ));
 
     //
@@ -456,6 +476,8 @@ impl RouterChannel {
       app_res_stream,
       encoder,
       router_tx,
+      debug_mode,
+      app_url.clone(),
     ));
 
     let sent_bytes;
