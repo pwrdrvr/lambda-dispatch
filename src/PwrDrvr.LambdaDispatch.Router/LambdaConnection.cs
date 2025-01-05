@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Extensions;
+using System.Diagnostics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
@@ -213,6 +214,8 @@ public class LambdaConnection : ILambdaConnection
         var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
         int totalBytesRead = 0;
         int totalBytesWritten = 0;
+        var loopTimer = Stopwatch.StartNew();
+        var lastReadTimer = Stopwatch.StartNew();
         try
         {
           // Read from the source stream and write to the destination stream in a loop
@@ -223,11 +226,20 @@ public class LambdaConnection : ILambdaConnection
             totalBytesRead += bytesRead;
             await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
             totalBytesWritten += bytesRead;
+            lastReadTimer.Restart();
           }
         }
         catch (Exception ex)
         {
-          _logger.LogError(ex, "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception reading request body from incoming request - Requset Line: {}, Bytes Read: {}, Bytes Written: {}", Instance.Id, ChannelId, requestLine, totalBytesRead, totalBytesWritten);
+          _logger.LogError(ex,
+            "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception reading request body from incoming request - Request Line: {}, Bytes Read: {}, Bytes Written: {}, Total Time: {:.0f}ms, Time Since Last Read: {:.0f}ms",
+            Instance.Id,
+            ChannelId,
+            requestLine,
+            totalBytesRead,
+            totalBytesWritten,
+            loopTimer.ElapsedMilliseconds,
+            lastReadTimer.ElapsedMilliseconds);
           throw;
         }
         finally
