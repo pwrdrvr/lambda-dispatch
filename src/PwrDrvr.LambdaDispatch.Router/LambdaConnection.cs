@@ -164,6 +164,12 @@ public class LambdaConnection : ILambdaConnection
     }
   }
 
+  /// <summary>
+  /// Reads From - Incoming request to router
+  /// Writes To - Lambda Response reverse request - which is the Lambda Request
+  /// </summary>
+  /// <param name="incomingRequest"></param>
+  /// <returns></returns>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private async Task ProxyRequestToLambda(HttpRequest incomingRequest)
   {
@@ -221,26 +227,51 @@ public class LambdaConnection : ILambdaConnection
           // Read from the source stream and write to the destination stream in a loop
           var responseStream = incomingRequest.Body;
           int bytesRead;
-          while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token)) > 0)
+          while (true)
           {
+            try
+            {
+              bytesRead = await responseStream.ReadAsync(bytes, CTS.Token);
+            }
+            catch (Exception ex)
+            {
+              _logger.LogError(ex,
+                  "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception READING request body from incoming request - Request Line: {}, Bytes Read: {}, Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+                  Instance.Id,
+                  ChannelId,
+                  requestLine,
+                  totalBytesRead,
+                  totalBytesWritten,
+                  loopTimer.ElapsedMilliseconds,
+                  lastReadTimer.ElapsedMilliseconds);
+              throw;
+            }
+
             totalBytesRead += bytesRead;
-            await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
-            totalBytesWritten += bytesRead;
             lastReadTimer.Restart();
+
+            if (bytesRead == 0) break;
+
+            try
+            {
+              await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
+            }
+            catch (Exception ex)
+            {
+              _logger.LogError(ex,
+                  "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception WRITING request body to Lambda - Request Line: {}, Bytes Read: {}, Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+                  Instance.Id,
+                  ChannelId,
+                  requestLine,
+                  totalBytesRead,
+                  totalBytesWritten,
+                  loopTimer.ElapsedMilliseconds,
+                  lastReadTimer.ElapsedMilliseconds);
+              throw;
+            }
+
+            totalBytesWritten += bytesRead;
           }
-        }
-        catch (Exception ex)
-        {
-          _logger.LogError(ex,
-            "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception reading request body from incoming request - Request Line: {}, Bytes Read: {}, Bytes Written: {}, Total Time: {:.0f}ms, Time Since Last Read: {:.0f}ms",
-            Instance.Id,
-            ChannelId,
-            requestLine,
-            totalBytesRead,
-            totalBytesWritten,
-            loopTimer.ElapsedMilliseconds,
-            lastReadTimer.ElapsedMilliseconds);
-          throw;
         }
         finally
         {
