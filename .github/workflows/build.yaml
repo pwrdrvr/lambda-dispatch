@@ -235,9 +235,9 @@ jobs:
           tags: |
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
-            type=sha,prefix=,suffix=,format=short
+            # Custom combined PR+SHA tag
+            type=ref,event=pr,suffix=-{{sha}}
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}

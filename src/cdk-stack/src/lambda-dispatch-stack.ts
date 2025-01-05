@@ -129,11 +129,7 @@ export class LambdaDispatchStack extends cdk.Stack {
     // Compute Lambda image tag
     const lambdaArchTag =
       props.lambdaArchitecture === lambda.Architecture.ARM_64 ? 'arm64' : 'amd64';
-    const lambdaTag = props.lambdaImageTag
-      ? props.lambdaImageTag
-      : process.env.PR_NUMBER
-        ? `pr-${process.env.PR_NUMBER}-${lambdaArchTag}`
-        : `latest-${lambdaArchTag}`;
+    const lambdaTag = props.lambdaImageTag ? props.lambdaImageTag : `latest-${lambdaArchTag}`;
     const lambdaECRRepoName = props.lambdaECRRepoName ?? 'lambda-dispatch-demo-app';
 
     // Create Lambda construct
@@ -144,11 +140,11 @@ export class LambdaDispatchStack extends cdk.Stack {
       dockerImage:
         !usePublicImages && (props.lambdaECRRepoName || props.lambdaImageTag)
           ? lambda.DockerImageCode.fromEcr(
-            ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
-            {
-              tagOrDigest: lambdaTag,
-            },
-          )
+              ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
+              {
+                tagOrDigest: lambdaTag,
+              },
+            )
           : undefined,
     });
 
@@ -160,9 +156,9 @@ export class LambdaDispatchStack extends cdk.Stack {
       containerImage:
         !usePublicImages && process.env.PR_NUMBER
           ? ecs.ContainerImage.fromEcrRepository(
-            ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
-            `pr-${process.env.PR_NUMBER}`,
-          )
+              ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
+              `pr-${process.env.PR_NUMBER}-${process.env.GIT_SHA_SHORT}`,
+            )
           : undefined,
       useFargateSpot: props.useFargateSpot ?? true,
       removalPolicy: props.removalPolicy,
