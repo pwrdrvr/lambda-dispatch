@@ -158,9 +158,37 @@ app.post('/echo', async (req, res) => {
   if (contentLength) {
     res.set('Content-Length', contentLength);
   }
+
+  // Handle client disconnect
+  req.on('close', () => {
+    console.log('Request closed');
+  });
+
+  // Handle potential errors
+  req.on('error', (err) => {
+    console.error('Request error:', err);
+    if (!res.finished && !res.headersSent) {
+      res.status(500).end();
+    } else if (!res.finished) {
+      res.destroy();
+    }
+  });
+
   // Pipe the req body to the response with back pressure
   // This will stream incoming bytes as they arrive
-  req.pipe(res);
+  req
+    .pipe(res)
+    .on('error', (err) => {
+      console.error('Pipe error:', err);
+      if (!res.finished) {
+        res.status(500).end();
+      }
+    })
+    .on('finish', () => {
+      if (!res.finished) {
+        res.end();
+      }
+    });
 });
 
 app.all('/debug', async (req, res) => {
