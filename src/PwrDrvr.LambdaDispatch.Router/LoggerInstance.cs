@@ -12,6 +12,7 @@ public class LoggerInstance
         Region = System.Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1",
         // Disable JSON formatting to keep plain text with newlines
         DisableLogGroupCreation = true,
+        LogGroup = System.Environment.GetEnvironmentVariable("AWS_CLOUDWATCH_LOG_GROUP") ?? "/aws/ecs/lambda-dispatch-router",
       };
 
       builder
