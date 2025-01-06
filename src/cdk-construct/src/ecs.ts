@@ -149,6 +149,7 @@ export class LambdaDispatchECS extends Construct {
         LAMBDA_DISPATCH_MaxConcurrentCount: '10',
         LAMBDA_DISPATCH_AllowInsecureControlChannel: 'true',
         LAMBDA_DISPATCH_PreferredControlChannelScheme: 'http',
+        AWS_CLOUDWATCH_LOG_GROUP: logGroup.logGroupName,
       },
     });
 
