@@ -118,7 +118,7 @@ export class LambdaDispatchECS extends Construct {
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', {
       memoryLimitMiB: props.memoryLimitMiB ?? 2048,
       cpu: props.cpu ?? 1024,
-      taskRole: taskRole,
+      taskRole,
       runtimePlatform: {
         cpuArchitecture: props.cpuArchitecture ?? ecs.CpuArchitecture.ARM64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
@@ -129,6 +129,9 @@ export class LambdaDispatchECS extends Construct {
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: props.removalPolicy,
     });
+
+    // Give the task role permission to describe the log group, create log streams in that group, and write log events to those streams
+    logGroup.grant(taskRole, 'logs:DescribeLogGroups', 'logs:CreateLogStream', 'logs:PutLogEvents');
 
     const container = taskDefinition.addContainer('LambdaDispatchRouter', {
       image:
