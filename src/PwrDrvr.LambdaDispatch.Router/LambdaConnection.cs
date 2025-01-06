@@ -434,7 +434,11 @@ public class LambdaConnection : ILambdaConnection
       try { Response.HttpContext.Abort(); } catch { }
 
       // Just in case anything is still stuck
-      CTS.Cancel();
+      try
+      {
+        CTS.Cancel();
+      }
+      catch { }
 
       throw;
     }
@@ -450,7 +454,11 @@ public class LambdaConnection : ILambdaConnection
       catch { }
 
       // Mark that the Response has been sent on the LambdaInstance
-      TCS.SetResult();
+      try
+      {
+        TCS.SetResult();
+      }
+      catch { }
     }
 
     return new RunRequestResult
