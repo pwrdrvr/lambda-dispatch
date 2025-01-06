@@ -176,7 +176,7 @@ public class LambdaConnection : ILambdaConnection
     }
     finally
     {
-      TCS.SetResult();
+      try { TCS.SetResult(); } catch { }
     }
   }
 
