@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http.Extensions;
+
 namespace PwrDrvr.LambdaDispatch.Router;
 
 public class IncomingRequestMiddleware
@@ -27,10 +29,20 @@ public class IncomingRequestMiddleware
 
       // Get the X-Lambda-Name header value, if any, or default to "default"
       var lambdaArn = context.Request.Headers["X-Lambda-Name"].FirstOrDefault() ?? "default";
+      var debugMode = context.Request.Headers["X-Lambda-Dispatch-Debug"].FirstOrDefault() == "true";
+
+      AccessLogProps accessLogProps = new()
+      {
+        Method = context.Request.Method,
+        Uri = context.Request.GetDisplayUrl(),
+        Protocol = context.Request.Protocol,
+        RemoteAddress = context.Request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "-",
+        UserAgent = context.Request.Headers.UserAgent.Count > 0 ? context.Request.Headers.UserAgent.ToString() : "-",
+      };
 
       // We're going to handle this
       // We will prevent the endpoint router from ever seeing this request
-      await _poolManager.GetOrCreatePoolByLambdaName(lambdaArn).Dispatcher.AddRequest(context.Request, context.Response);
+      await _poolManager.GetOrCreatePoolByLambdaName(lambdaArn).Dispatcher.AddRequest(context.Request, context.Response, accessLogProps, debugMode);
     }
     else
     {

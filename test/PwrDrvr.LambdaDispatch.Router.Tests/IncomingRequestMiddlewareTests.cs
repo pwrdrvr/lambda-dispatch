@@ -49,7 +49,7 @@ public class IncomingRequestMiddlewareTests
 
     await _middleware.InvokeAsync(_httpContext);
 
-    mockDispatcher.Verify(m => m.AddRequest(_httpContext.Request, _httpContext.Response), Times.Once);
+    mockDispatcher.Verify(m => m.AddRequest(_httpContext.Request, _httpContext.Response, It.IsAny<AccessLogProps>(), false), Times.Once);
   }
 
   [Test]
