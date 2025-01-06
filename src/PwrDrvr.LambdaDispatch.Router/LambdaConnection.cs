@@ -192,6 +192,21 @@ public class LambdaConnection : ILambdaConnection
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request headers to Lambda", Instance.Id, ChannelId);
 
+    if (debugMode)
+    {
+      // Log an access log entry - before the request is run
+      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - PROXYREQUESTTOLAMBDA - START",
+        accessLogProps.Method,
+        accessLogProps.Uri,
+        accessLogProps.Protocol,
+        accessLogProps.RemoteAddress,
+        accessLogProps.UserAgent,
+        "-",
+        "-",
+        "-"
+      );
+    }
+
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
     long totalBytesWritten = 0;
@@ -224,6 +239,21 @@ public class LambdaConnection : ILambdaConnection
 
       // Send the headers to the Lambda
       await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
+
+      if (debugMode)
+      {
+        // Log an access log entry - before the request is run
+        _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - PROXYREQUESTTOLAMBDA - FINISHED HEADERS",
+          accessLogProps.Method,
+          accessLogProps.Uri,
+          accessLogProps.Protocol,
+          accessLogProps.RemoteAddress,
+          accessLogProps.UserAgent,
+          "-",
+          totalBytesWritten,
+          "-"
+        );
+      }
 
       // Only copy the request body if the request has a body
       // or it's HTTP2, in which case we don't know until we start reading
@@ -361,6 +391,21 @@ public class LambdaConnection : ILambdaConnection
       UserAgent = "-",
     };
 
+    if (debugMode)
+    {
+      // Log an access log entry - before the request is run
+      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - START",
+        accessLogProps.Method,
+        accessLogProps.Uri,
+        accessLogProps.Protocol,
+        accessLogProps.RemoteAddress,
+        accessLogProps.UserAgent,
+        "-",
+        totalBytesRead,
+        totalBytesWritten
+      );
+    }
+
     try
     {
       // Check if the connection has already been used
@@ -377,6 +422,21 @@ public class LambdaConnection : ILambdaConnection
 
       // Set the state to busy
       State = LambdaConnectionState.Busy;
+
+      if (debugMode)
+      {
+        // Log an access log entry - before the request is run
+        _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - CALLING PROXYREQUESTTOLAMBDA",
+          accessLogProps.Method,
+          accessLogProps.Uri,
+          accessLogProps.Protocol,
+          accessLogProps.RemoteAddress,
+          accessLogProps.UserAgent,
+          "-",
+          totalBytesRead,
+          totalBytesWritten
+        );
+      }
 
       var proxyRequestTask = ProxyRequestToLambda(incomingRequest, accessLogProps, debugMode);
       var proxyResponseTask = RelayResponseFromLambda(incomingResponse, accessLogProps, debugMode);
