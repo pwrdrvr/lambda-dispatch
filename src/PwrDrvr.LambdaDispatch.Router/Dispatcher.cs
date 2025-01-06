@@ -24,7 +24,7 @@ public interface IBackgroundDispatcher
 
 public interface IDispatcher
 {
-  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps = null, bool debugMode = false);
+  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps? accessLogProps = null, bool debugMode = false);
   Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId);
   Task CloseInstance(string instanceId, bool lambdaInitiated = false);
   bool PingInstance(string instanceId);
