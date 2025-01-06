@@ -283,7 +283,7 @@ public class LambdaConnection : ILambdaConnection
               if (debugMode)
               {
                 // Log an access log entry - before the request is run
-                _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - INCOMING REQUEST READ",
+                _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - PROXYREQUESTTOLAMBDA - INCOMING REQUEST READ",
                   accessLogProps.Method,
                   accessLogProps.Uri,
                   accessLogProps.Protocol,
