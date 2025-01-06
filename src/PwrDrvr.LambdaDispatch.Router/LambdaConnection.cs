@@ -229,7 +229,7 @@ public class LambdaConnection : ILambdaConnection
       // or it's HTTP2, in which case we don't know until we start reading
       if (incomingRequest.Protocol == HttpProtocol.Http2
           || incomingRequest.ContentLength > 0
-          || incomingRequest.Headers.TransferEncoding == "chunked")
+          || incomingRequest.Headers.TransferEncoding.FirstOrDefault() == "chunked")
       {
         _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request body to Lambda", Instance.Id, ChannelId);
 
