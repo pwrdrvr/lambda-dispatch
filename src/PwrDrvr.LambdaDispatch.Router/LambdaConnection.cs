@@ -447,6 +447,16 @@ public class LambdaConnection : ILambdaConnection
       var completedTask = await Task.WhenAny(proxyRequestTask, proxyResponseTask).ConfigureAwait(false);
       if (completedTask.Exception != null)
       {
+        _logger.LogError(completedTask.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - EXCEPTION",
+          accessLogProps.Method,
+          accessLogProps.Uri,
+          accessLogProps.Protocol,
+          accessLogProps.RemoteAddress,
+          accessLogProps.UserAgent,
+          "-",
+          "-",
+          "-"
+        );
         throw completedTask.Exception;
       }
 
