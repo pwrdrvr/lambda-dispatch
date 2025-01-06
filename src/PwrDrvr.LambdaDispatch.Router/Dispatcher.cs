@@ -24,7 +24,7 @@ public interface IBackgroundDispatcher
 
 public interface IDispatcher
 {
-  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps = new(), bool debugMode = false);
+  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps = null, bool debugMode = false);
   Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId);
   Task CloseInstance(string instanceId, bool lambdaInitiated = false);
   bool PingInstance(string instanceId);
@@ -121,11 +121,20 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   }
 
   // Add a new request, dispatch immediately if able
-  public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps = new(), bool debugMode = false)
+  public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps? accessLogProps = null, bool debugMode = false)
   {
     _logger.LogDebug("Adding request to the Dispatcher");
 
     RunRequestResult runRequestResult = new();
+
+    accessLogProps ??= new AccessLogProps
+    {
+      Method = incomingRequest.Method,
+      Uri = incomingRequest.GetDisplayUrl(),
+      Protocol = incomingRequest.Protocol,
+      RemoteAddress = incomingRequest.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "-",
+      UserAgent = incomingRequest.Headers.UserAgent.Count > 0 ? incomingRequest.Headers.UserAgent.ToString() : "-",
+    };
 
     if (debugMode)
     {
@@ -169,9 +178,38 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
       try
       {
+        if (debugMode)
+        {
+          // Log an access log entry - before the request is run
+          _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST IMMEDIATE",
+            accessLogProps.Method,
+            accessLogProps.Uri,
+            accessLogProps.Protocol,
+            accessLogProps.RemoteAddress,
+            accessLogProps.UserAgent,
+            "-",
+            "-",
+            "-"
+            );
+        }
+
         // TODO: If we want to cancel we need to pass a token in here
         runRequestResult = await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
         accessLogProps.StatusCode = incomingResponse.StatusCode;
+
+        if (debugMode)
+        {
+          _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST IMMEDIATE RETURNED",
+            accessLogProps.Method,
+            accessLogProps.Uri,
+            accessLogProps.Protocol,
+            accessLogProps.RemoteAddress,
+            accessLogProps.UserAgent,
+            accessLogProps.StatusCode,
+            runRequestResult.RequestBytes,
+            runRequestResult.ResponseBytes
+            );
+        }
       }
       catch (Exception ex)
       {
@@ -238,7 +276,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
     // If there are no idle lambdas, add the request to the pending queue
     // Add the request to the pending queue
-    var pendingRequest = new PendingRequest(incomingRequest, incomingResponse, accessLogProps);
+    var pendingRequest = new PendingRequest(incomingRequest, incomingResponse, accessLogProps, debugMode);
     _pendingRequests.Add(pendingRequest);
     var pendingRequestCount = Interlocked.Increment(ref _pendingRequestCount);
 #if !SKIP_METRICS
@@ -258,6 +296,17 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
     }
     catch (Exception ex)
     {
+      _logger.LogError(ex, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Dispatcher.AddRequest - Exception",
+        accessLogProps.Method,
+        accessLogProps.Uri,
+        accessLogProps.Protocol,
+        accessLogProps.RemoteAddress,
+        accessLogProps.UserAgent,
+        accessLogProps.StatusCode,
+        runRequestResult.RequestBytes,
+        runRequestResult.ResponseBytes
+        );
+
       // Mark the request as aborted
       // This is the only place we call Abort on a pending request
       // If the request is picked up for dispatch just after this Abort call
@@ -586,82 +635,135 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       // TODO: If we want to be able to cancel, we need to pass in a token here
       // TODO: Get the Request and Response through a mutating call to the PendingRequest
       // that only succeeds if the request is not already canceled
+      if (pendingRequest.DebugMode)
+      {
+        _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST BACKGROUND",
+          pendingRequest.AccessLogProps.Method,
+          pendingRequest.AccessLogProps.Uri,
+          pendingRequest.AccessLogProps.Protocol,
+          pendingRequest.AccessLogProps.RemoteAddress,
+          pendingRequest.AccessLogProps.UserAgent,
+          "-",
+          "-",
+          "-"
+          );
+      }
       _ = lambdaConnection.RunRequest(incomingRequest, incomingResponse).ContinueWith(async Task (task) =>
       {
         Interlocked.Decrement(ref _runningRequestCount);
 #if !SKIP_METRICS
         _metricsRegistry.Metrics.Measure.Counter.Decrement(_metricsRegistry.RunningRequests);
 #endif
-
-        // Signal the pending request that it's been completed
-        pendingRequest.ResponseFinishedTCS.SetResult();
-
-        // Record the duration
-        _incomingRequestDurationAverage.Add((long)pendingRequest.Duration.TotalMilliseconds * 1000);
-#if !SKIP_METRICS
-        _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
-        _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDuration, (long)pendingRequest.Duration.TotalMilliseconds);
-        _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDurationAfterDispatch, (long)(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds));
-#endif
-        _metricsLogger.PutMetric("IncomingRequestDuration", Math.Round(pendingRequest.Duration.TotalMilliseconds, 1), Unit.Milliseconds);
-        _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
-
-        // Update number of instances that we want
-        // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
-
-        // Handle the exception
-        if (task.IsFaulted)
+        try
         {
-          _logger.LogError(task.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Background Task Faulted",
-            incomingRequest.Method,
-            incomingRequest.GetDisplayUrl(),
-            incomingRequest.Protocol,
-            incomingRequest.HttpContext.Connection.RemoteIpAddress,
-            incomingRequest.Headers.UserAgent,
-            "-",
-            "-",
-            "-"
-            );
 
-          try
+          if (task.Status == TaskStatus.RanToCompletion)
           {
-            incomingResponse.ContentType = "text/plain";
-            incomingResponse.Headers.Append("Server", "PwrDrvr.LambdaDispatch.Router");
-
-            if (task.Exception.InnerExceptions.Any(e => e is TimeoutException))
+            try
             {
-              incomingResponse.StatusCode = StatusCodes.Status504GatewayTimeout;
-              await incomingResponse.WriteAsync("Gateway timeout");
+              pendingRequest.AccessLogProps.StatusCode = incomingResponse.StatusCode;
             }
-            else
+            catch
             {
-              incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
-              await incomingResponse.WriteAsync("Bad gateway");
+              pendingRequest.AccessLogProps.StatusCode = -1;
             }
           }
-          catch
+
+          if (pendingRequest.DebugMode)
           {
-            // This can throw if the request/response have already been sent/aborted
-            try { incomingResponse.HttpContext.Abort(); } catch { }
+            _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST BACKGROUND RETURNED",
+              pendingRequest.AccessLogProps.Method,
+              pendingRequest.AccessLogProps.Uri,
+              pendingRequest.AccessLogProps.Protocol,
+              pendingRequest.AccessLogProps.RemoteAddress,
+              pendingRequest.AccessLogProps.UserAgent,
+              pendingRequest.AccessLogProps.StatusCode,
+              "-",
+              "-"
+              );
+          }
+
+          // Record the duration
+          _incomingRequestDurationAverage.Add((long)pendingRequest.Duration.TotalMilliseconds * 1000);
+#if !SKIP_METRICS
+          _metricsRegistry.Metrics.Measure.Gauge.SetValue(_metricsRegistry.IncomingRequestDurationEWMA, _incomingRequestDurationAverage.EWMA / 1000);
+          _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDuration, (long)pendingRequest.Duration.TotalMilliseconds);
+          _metricsRegistry.Metrics.Measure.Histogram.Update(_metricsRegistry.IncomingRequestDurationAfterDispatch, (long)(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds));
+#endif
+          _metricsLogger.PutMetric("IncomingRequestDuration", Math.Round(pendingRequest.Duration.TotalMilliseconds, 1), Unit.Milliseconds);
+          _metricsLogger.PutMetric("IncomingRequestDurationAfterDispatch", Math.Round(pendingRequest.Duration.TotalMilliseconds - pendingRequest.DispatchDelay.TotalMilliseconds, 1), Unit.Milliseconds);
+
+          // Signal the pending request that it's been completed
+          try { pendingRequest.ResponseFinishedTCS.SetResult(); } catch { }
+
+          // Update number of instances that we want
+          // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
+
+          // Handle the exception
+          if (task.IsFaulted)
+          {
+            _logger.LogError(task.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Background Task Faulted",
+              pendingRequest.AccessLogProps.Method,
+              pendingRequest.AccessLogProps.Uri,
+              pendingRequest.AccessLogProps.Protocol,
+              pendingRequest.AccessLogProps.RemoteAddress,
+              pendingRequest.AccessLogProps.UserAgent,
+              pendingRequest.AccessLogProps.StatusCode,
+              "-",
+              "-"
+              );
+
+            try
+            {
+              incomingResponse.ContentType = "text/plain";
+              incomingResponse.Headers.Append("Server", "PwrDrvr.LambdaDispatch.Router");
+
+              if (task.Exception.InnerExceptions.Any(e => e is TimeoutException))
+              {
+                incomingResponse.StatusCode = StatusCodes.Status504GatewayTimeout;
+                await incomingResponse.WriteAsync("Gateway timeout");
+              }
+              else
+              {
+                incomingResponse.StatusCode = StatusCodes.Status502BadGateway;
+                await incomingResponse.WriteAsync("Bad gateway");
+              }
+            }
+            catch
+            {
+              // This can throw if the request/response have already been sent/aborted
+              try { incomingResponse.HttpContext.Abort(); } catch { }
+            }
+          }
+          else
+          {
+            RunRequestResult runRequestResult = task.Result;
+
+            // Log an access log entry
+            _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log - Background",
+              pendingRequest.AccessLogProps.Method,
+              pendingRequest.AccessLogProps.Uri,
+              pendingRequest.AccessLogProps.Protocol,
+              pendingRequest.AccessLogProps.RemoteAddress,
+              pendingRequest.AccessLogProps.UserAgent,
+              pendingRequest.AccessLogProps.StatusCode,
+              runRequestResult.RequestBytes,
+              runRequestResult.ResponseBytes
+              );
           }
         }
-        else
+        catch (Exception ex)
         {
-          RunRequestResult runRequestResult = task.Result;
-
-          // Log an access log entry
-          var accessLogProps = pendingRequest.AccessLogProps;
-          accessLogProps.StatusCode = incomingResponse.StatusCode;
-          _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log - Background",
-            accessLogProps.Method,
-            accessLogProps.Uri,
-            accessLogProps.Protocol,
-            accessLogProps.RemoteAddress,
-            accessLogProps.UserAgent,
-            accessLogProps.StatusCode,
-            runRequestResult.RequestBytes,
-            runRequestResult.ResponseBytes
-            );
+          _logger.LogError(ex, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST BACKGROUND EXCEPTION",
+              pendingRequest.AccessLogProps.Method,
+              pendingRequest.AccessLogProps.Uri,
+              pendingRequest.AccessLogProps.Protocol,
+              pendingRequest.AccessLogProps.RemoteAddress,
+              pendingRequest.AccessLogProps.UserAgent,
+              pendingRequest.AccessLogProps.StatusCode,
+              "-",
+              "-"
+              );
         }
       }).ConfigureAwait(false);
 

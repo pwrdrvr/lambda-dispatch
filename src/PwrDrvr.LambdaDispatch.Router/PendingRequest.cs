@@ -25,16 +25,18 @@ public class PendingRequest
   public CancellationTokenSource GatewayTimeoutCTS { get; private set; } = new CancellationTokenSource();
   public DateTime? DispatchTime { get; private set; }
   public bool Dispatched { get; private set; } = false;
-  public AccessLogProps AccessLogProps { get; set; }
+  public AccessLogProps AccessLogProps { get; private set; }
+  public bool DebugMode { get; private set; } = false;
 
   private readonly Stopwatch _swDispatch = Stopwatch.StartNew();
   private readonly Stopwatch _swResponse = Stopwatch.StartNew();
 
-  public PendingRequest(HttpRequest request, HttpResponse response, AccessLogProps accessLogProps)
+  public PendingRequest(HttpRequest request, HttpResponse response, AccessLogProps? accessLogProps = null, bool debugMode = false)
   {
     _request = request;
     _response = response;
-    AccessLogProps = accessLogProps;
+    AccessLogProps = accessLogProps ?? new AccessLogProps();
+    DebugMode = debugMode;
   }
 
   /// <summary>
