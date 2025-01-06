@@ -8,6 +8,22 @@ using System.Diagnostics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
 
+public struct RunRequestResult
+{
+  public long RequestBytes;
+  public long ResponseBytes;
+}
+
+public struct AccessLogProps
+{
+  public string Method;
+  public string Uri;
+  public string Protocol;
+  public int StatusCode;
+  public string RemoteAddress;
+  public string UserAgent;
+}
+
 public enum LambdaConnectionState
 {
   /// <summary>
@@ -66,7 +82,7 @@ public interface ILambdaConnection
 
   public Task Discard();
 
-  public Task RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse);
+  public Task<RunRequestResult> RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, bool debugMode = false);
 
 }
 
@@ -171,13 +187,14 @@ public class LambdaConnection : ILambdaConnection
   /// <param name="incomingRequest"></param>
   /// <returns></returns>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private async Task ProxyRequestToLambda(HttpRequest incomingRequest)
+  private async Task<long> ProxyRequestToLambda(HttpRequest incomingRequest)
   {
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request headers to Lambda", Instance.Id, ChannelId);
 
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    long totalBytesWritten = 0;
     try
     {
       int offset = 0;
@@ -219,7 +236,6 @@ public class LambdaConnection : ILambdaConnection
         // Send the body to the Lambda
         var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
         int totalBytesRead = 0;
-        int totalBytesWritten = 0;
         var loopTimer = Stopwatch.StartNew();
         var lastReadTimer = Stopwatch.StartNew();
         try
@@ -293,14 +309,18 @@ public class LambdaConnection : ILambdaConnection
     {
       ArrayPool<byte>.Shared.Return(headerBuffer);
     }
+
+    return totalBytesWritten;
   }
 
   /// <summary>
   /// Run the request on the Lambda
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public async Task RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
+  public async Task<RunRequestResult> RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, bool debugMode = false)
   {
+    long totalBytesRead = 0;
+    long totalBytesWritten = 0;
     try
     {
       // Check if the connection has already been used
@@ -334,13 +354,15 @@ public class LambdaConnection : ILambdaConnection
       {
         // ProxyRequestToLambda finished first
         // Wait for RelayResponseFromLambda to finish
-        await proxyResponseTask.ConfigureAwait(false);
+        totalBytesWritten = await proxyResponseTask.ConfigureAwait(false);
+        totalBytesRead = completedTask.Result;
       }
       else
       {
         // RelayResponseFromLambda finished first
         // Wait for ProxyRequestToLambda to finish
-        await proxyRequestTask.ConfigureAwait(false);
+        totalBytesRead = await proxyRequestTask.ConfigureAwait(false);
+        totalBytesWritten = completedTask.Result;
       }
     }
     catch (AggregateException ae)
@@ -430,9 +452,15 @@ public class LambdaConnection : ILambdaConnection
       // Mark that the Response has been sent on the LambdaInstance
       TCS.SetResult();
     }
+
+    return new RunRequestResult
+    {
+      RequestBytes = totalBytesRead,
+      ResponseBytes = totalBytesWritten
+    };
   }
 
-  private async Task RelayResponseFromLambda(HttpRequest incomingRequest, HttpResponse incomingResponse)
+  private async Task<long> RelayResponseFromLambda(HttpRequest incomingRequest, HttpResponse incomingResponse)
   {
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
 
@@ -629,9 +657,9 @@ public class LambdaConnection : ILambdaConnection
     //
 
     var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
-    int totalHeaderBytesRead = 0;
-    int totalBodyBytesRead = 0;
-    int totalBodyBytesWritten = 0;
+    long totalHeaderBytesRead = 0;
+    long totalBodyBytesRead = 0;
+    long totalBodyBytesWritten = 0;
     var loopTimer = Stopwatch.StartNew();
     var lastReadTimer = Stopwatch.StartNew();
     try
@@ -692,5 +720,7 @@ public class LambdaConnection : ILambdaConnection
     }
 
     _logger.LogDebug("LambdaId: {} - Copied response body from Lambda", Instance.Id);
+
+    return totalBodyBytesWritten;
   }
 }

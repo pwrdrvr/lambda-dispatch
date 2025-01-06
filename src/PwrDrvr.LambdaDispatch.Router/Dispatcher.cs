@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Microsoft.AspNetCore.Http.Extensions;
 using PwrDrvr.LambdaDispatch.Router.EmbeddedMetrics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
@@ -23,7 +24,7 @@ public interface IBackgroundDispatcher
 
 public interface IDispatcher
 {
-  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse);
+  Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps = new(), bool debugMode = false);
   Task<DispatcherAddConnectionResult> AddConnectionForLambda(HttpRequest request, HttpResponse response, string lambdaId, string channelId);
   Task CloseInstance(string instanceId, bool lambdaInitiated = false);
   bool PingInstance(string instanceId);
@@ -120,9 +121,18 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
   }
 
   // Add a new request, dispatch immediately if able
-  public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
+  public async Task AddRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps = new(), bool debugMode = false)
   {
     _logger.LogDebug("Adding request to the Dispatcher");
+
+    RunRequestResult runRequestResult = new();
+
+    if (debugMode)
+    {
+      // Log an access log entry - but before the request starts - Should include request line
+      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - RECEIVED",
+        accessLogProps.Method, accessLogProps.Uri, accessLogProps.Protocol, accessLogProps.RemoteAddress, accessLogProps.UserAgent);
+    }
 
 #if !SKIP_METRICS
     _metricsRegistry.Metrics.Measure.Counter.Increment(_metricsRegistry.RequestCount);
@@ -160,10 +170,12 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       try
       {
         // TODO: If we want to cancel we need to pass a token in here
-        await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
+        runRequestResult = await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
+        accessLogProps.StatusCode = incomingResponse.StatusCode;
       }
       catch (Exception ex)
       {
+        // CRASH - This is where the exception is caught
         _logger.LogError(ex, "Dispatcher.AddRequest - Exception while running request");
         try
         {
@@ -206,6 +218,19 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         // Tell the scaler about the lowered request count
         // _lambdaInstanceManager.UpdateDesiredCapacity(_pendingRequestCount, _runningRequestCount, _incomingRequestsWeightedAverage.EWMA, _incomingRequestDurationAverage.EWMA / 1000);
       }
+
+      // Log an access log entry
+      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log",
+        accessLogProps.Method,
+        accessLogProps.Uri,
+        accessLogProps.Protocol,
+        accessLogProps.RemoteAddress,
+        accessLogProps.UserAgent,
+        accessLogProps.StatusCode,
+        runRequestResult.RequestBytes,
+        runRequestResult.ResponseBytes
+        );
+
       return;
     }
 
@@ -213,7 +238,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
     // If there are no idle lambdas, add the request to the pending queue
     // Add the request to the pending queue
-    var pendingRequest = new PendingRequest(incomingRequest, incomingResponse);
+    var pendingRequest = new PendingRequest(incomingRequest, incomingResponse, accessLogProps);
     _pendingRequests.Add(pendingRequest);
     var pendingRequestCount = Interlocked.Increment(ref _pendingRequestCount);
 #if !SKIP_METRICS
@@ -587,6 +612,17 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         // Handle the exception
         if (task.IsFaulted)
         {
+          _logger.LogError(task.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Background Task Faulted",
+            incomingRequest.Method,
+            incomingRequest.GetDisplayUrl(),
+            incomingRequest.Protocol,
+            incomingRequest.HttpContext.Connection.RemoteIpAddress,
+            incomingRequest.Headers.UserAgent,
+            "-",
+            "-",
+            "-"
+            );
+
           try
           {
             incomingResponse.ContentType = "text/plain";
@@ -608,6 +644,24 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
             // This can throw if the request/response have already been sent/aborted
             try { incomingResponse.HttpContext.Abort(); } catch { }
           }
+        }
+        else
+        {
+          RunRequestResult runRequestResult = task.Result;
+
+          // Log an access log entry
+          var accessLogProps = pendingRequest.AccessLogProps;
+          accessLogProps.StatusCode = incomingResponse.StatusCode;
+          _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log - Background",
+            accessLogProps.Method,
+            accessLogProps.Uri,
+            accessLogProps.Protocol,
+            accessLogProps.RemoteAddress,
+            accessLogProps.UserAgent,
+            accessLogProps.StatusCode,
+            runRequestResult.RequestBytes,
+            runRequestResult.ResponseBytes
+            );
         }
       }).ConfigureAwait(false);
 

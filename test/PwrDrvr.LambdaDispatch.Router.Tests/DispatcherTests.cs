@@ -502,7 +502,7 @@ public class DispatcherTests
     mockConnection.SetupGet(c => c.Instance).Returns(mockInstance.Object);
     mockConnection.SetupGet(c => c.ChannelId).Returns("channel-1");
     mockConnection.SetupGet(c => c.State).Returns(LambdaConnectionState.Open);
-    mockConnection.Setup(c => c.RunRequest(mockIncomingRequest.Object, mockIncomingResponse.Object)).Returns(Task.Delay(5000));
+    mockConnection.Setup(c => c.RunRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, false)).Returns(async () => { await Task.Delay(5000); return new RunRequestResult { RequestBytes = 0, ResponseBytes = 0 }; });
 
     // Act
     var stopwatch = Stopwatch.StartNew();
@@ -519,7 +519,7 @@ public class DispatcherTests
       // within the idle timeout it should be left to run?
       // Assert.That(stopwatch.ElapsedMilliseconds, Is.LessThan(2000));
     });
-    mockConnection.Verify(c => c.RunRequest(mockIncomingRequest.Object, mockIncomingResponse.Object), Times.Once);
+    mockConnection.Verify(c => c.RunRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, false), Times.Once);
     _metricsRegistry.Verify(m => m.Metrics.Measure.Counter.Increment(It.IsAny<CounterOptions>()), Times.AtLeast(1));
     _metricsRegistry.Verify(m => m.Metrics.Measure.Meter.Mark(It.IsAny<MeterOptions>(), 1), Times.AtLeast(1));
     _metricsRegistry.Verify(m => m.Metrics.Measure.Gauge.SetValue(It.IsAny<GaugeOptions>(), It.IsAny<double>()), Times.AtLeast(1));
@@ -735,7 +735,7 @@ public class DispatcherTests
       mockConnection.SetupGet(c => c.Instance).Returns(mockInstance.Object);
       mockConnection.SetupGet(c => c.ChannelId).Returns("channel-1");
       mockConnection.SetupGet(c => c.State).Returns(LambdaConnectionState.Open);
-      mockConnection.Setup(c => c.RunRequest(mockIncomingRequest.Object, mockIncomingResponse.Object)).Returns(Task.Delay(5000));
+      mockConnection.Setup(c => c.RunRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, false)).Returns(async () => { await Task.Delay(5000); return new RunRequestResult { RequestBytes = 0, ResponseBytes = 0 }; });
 
       // Allow the dispatcher to return our connection
       mockLambdaInstanceManager.Setup(l => l.TryGetConnection(out mockConnectionOut, false)).Returns(true);
