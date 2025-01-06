@@ -241,13 +241,13 @@ public class LambdaConnection : ILambdaConnection
         try
         {
           // Read from the source stream and write to the destination stream in a loop
-          var responseStream = incomingRequest.Body;
+          var incomingRequestStream = incomingRequest.Body;
           int bytesRead;
           while (true)
           {
             try
             {
-              bytesRead = await responseStream.ReadAsync(bytes, CTS.Token);
+              bytesRead = await incomingRequestStream.ReadAsync(bytes, CTS.Token);
             }
             catch (Exception ex)
             {
