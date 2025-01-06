@@ -248,7 +248,7 @@ jobs:
             enable=${{ github.event_name == 'release' }},type=raw,value=latest
             type=ref,event=branch
             type=semver,pattern={{version}}
-            # Custom combined PR+SHA tag
+            type=ref,event=pr
             type=ref,event=pr,suffix=-{{sha}}
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
