@@ -110,6 +110,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set up values to identify image build
+        id: image-ids
+        run: |
+          echo "BUILD_TIME=$(date)" >> $GITHUB_OUTPUT
+          echo "GIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Configure AWS Credentials
         if: needs.check-access.outputs.has-token-access == 'true'
         uses: aws-actions/configure-aws-credentials@v4
@@ -146,7 +152,10 @@ jobs:
         with:
           context: .
           file: ./DockerfileRouter
-          build-args: BUILD_ARCH=${{ matrix.build_arch }}
+          build-args: |
+            BUILD_ARCH=${{ matrix.build_arch }}
+            BUILD_TIME=${{ steps.image-ids.outputs.BUILD_TIME }}
+            GIT_HASH=${{ steps.image-ids.outputs.GIT_HASH }}
           platforms: ${{ matrix.platform }}
           outputs: |
             type=image,name=${{ env.PRIVATE_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
@@ -157,7 +166,10 @@ jobs:
         with:
           context: .
           file: ./DockerfileRouter
-          build-args: BUILD_ARCH=${{ matrix.build_arch }}
+          build-args: |
+            BUILD_ARCH=${{ matrix.build_arch }}
+            BUILD_TIME=${{ steps.image-ids.outputs.BUILD_TIME }}
+            GIT_HASH=${{ steps.image-ids.outputs.GIT_HASH }}
           platforms: ${{ matrix.platform }}
           outputs: |
             type=image,name=${{ env.PUBLIC_REGISTRY_IMAGE }},push-by-digest=${{ needs.check-access.outputs.has-token-access == 'true' }},name-canonical=true,push=${{ needs.check-access.outputs.has-token-access == 'true' }}
