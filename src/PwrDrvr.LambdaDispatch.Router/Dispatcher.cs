@@ -656,7 +656,6 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 #endif
         try
         {
-
           if (task.Status == TaskStatus.RanToCompletion)
           {
             try
