@@ -5,6 +5,8 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 public class Program
 {
+    private static readonly ILogger _logger = LoggerInstance.CreateLogger<Program>();
+
     /// <summary>
     /// Adjust the ThreadPool settings based on environment variables
     /// LAMBDA_DISPATCH_MinWorkerThreads
@@ -21,8 +23,8 @@ public class Program
         ThreadPool.GetMinThreads(out var minWorkerThreads, out var minCompletionPortThreads);
         ThreadPool.GetMaxThreads(out var maxWorkerThreads, out var maxCompletionPortThreads);
 
-        Console.WriteLine($"Default min threads: {minWorkerThreads} worker threads, {minCompletionPortThreads} completion port threads");
-        Console.WriteLine($"Default max threads: {maxWorkerThreads} worker threads, {maxCompletionPortThreads} completion port threads");
+        _logger.LogInformation("Default min threads: {minWorkerThreads} worker threads, {minCompletionPortThreads} completion port threads", minWorkerThreads, minCompletionPortThreads);
+        _logger.LogInformation("Default max threads: {maxWorkerThreads} worker threads, {maxCompletionPortThreads} completion port threads", maxWorkerThreads, maxCompletionPortThreads);
 
         // Check for LAMBDA_DISPATCH_MaxWorkerThreads and LAMBDA_DISPATCH_MaxCompletionPortThreads and apply those new max limits if set
         var maxWorkerThreadsEnv = Environment.GetEnvironmentVariable("LAMBDA_DISPATCH_MaxWorkerThreads");
@@ -67,16 +69,14 @@ public class Program
         // Print the final max threads setting
         ThreadPool.GetMinThreads(out minWorkerThreads, out minCompletionPortThreads);
         ThreadPool.GetMaxThreads(out maxWorkerThreads, out maxCompletionPortThreads);
-        Console.WriteLine("");
-        Console.WriteLine($"Final min threads: {minWorkerThreads} worker threads, {minCompletionPortThreads} completion port threads");
-        Console.WriteLine($"Final max threads: {maxWorkerThreads} worker threads, {maxCompletionPortThreads} completion port threads");
-        Console.WriteLine("");
+        _logger.LogInformation("Final min threads: {minWorkerThreads} worker threads, {minCompletionPortThreads} completion port threads", minWorkerThreads, minCompletionPortThreads);
+        _logger.LogInformation("Final max threads: {maxWorkerThreads} worker threads, {maxCompletionPortThreads} completion port threads", maxWorkerThreads, maxCompletionPortThreads);
     }
 
     public static void Main(string[] args)
     {
-        Console.WriteLine($"GIT_HASH: {Environment.GetEnvironmentVariable("GIT_HASH") ?? "none"}");
-        Console.WriteLine($"BUILD_TIME: {Environment.GetEnvironmentVariable("BUILD_TIME") ?? "none"}");
+        _logger.LogInformation("GIT_HASH: {GIT_HASH}", Environment.GetEnvironmentVariable("GIT_HASH") ?? "none");
+        _logger.LogInformation("BUILD_TIME: {BUILD_TIME}", Environment.GetEnvironmentVariable("BUILD_TIME") ?? "none");
         AdjustThreadPool();
         CreateHostBuilder(args).Build().Run();
     }
@@ -126,7 +126,7 @@ public class Program
                 services.AddSingleton<IConfig>(config);
 
                 var metadataService = new MetadataService(config: config);
-                Console.WriteLine("CALLBACK NETWORK IP/HOST: " + metadataService.NetworkIP);
+                _logger.LogInformation("CALLBACK NETWORK IP/HOST: {NetworkIP}", metadataService.NetworkIP);
                 services.AddSingleton<IMetadataService>(metadataService);
 
                 var metricsDimensions = new Dictionary<string, string>
@@ -193,7 +193,7 @@ public class Program
 
                     // We have to reparse the config once, bummer
                     var config = Config.CreateAndValidate(context.Configuration);
-                    Console.WriteLine(config);
+                    _logger.LogInformation("{Config}", config);
 
                     //
                     // Incoming Requests
@@ -201,7 +201,7 @@ public class Program
                     serverOptions.ListenAnyIP(config.IncomingRequestHTTPPort);
                     if (certPath == null)
                     {
-                        Console.WriteLine("No cert found, not starting HTTPS incoming request channel");
+                        _logger.LogWarning("No cert found, not starting HTTPS incoming request channel");
                     }
                     else
                     {
@@ -219,7 +219,7 @@ public class Program
                     }
                     if (certPath == null)
                     {
-                        Console.WriteLine("No cert found, not starting HTTPS control channel");
+                        _logger.LogWarning("No cert found, not starting HTTPS control channel");
                     }
                     else
                     {
