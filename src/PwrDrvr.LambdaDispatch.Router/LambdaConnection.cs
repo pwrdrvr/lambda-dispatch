@@ -14,14 +14,14 @@ public struct RunRequestResult
   public long ResponseBytes;
 }
 
-public struct AccessLogProps
+public class AccessLogProps
 {
-  public string Method;
-  public string Uri;
-  public string Protocol;
-  public int StatusCode;
-  public string RemoteAddress;
-  public string UserAgent;
+  public string Method { get; set; } = "-";
+  public string Uri { get; set; } = "-";
+  public string Protocol { get; set; } = "-";
+  public int StatusCode { get; set; } = 0;
+  public string RemoteAddress { get; set; } = "-";
+  public string UserAgent { get; set; } = "-";
 }
 
 public enum LambdaConnectionState
