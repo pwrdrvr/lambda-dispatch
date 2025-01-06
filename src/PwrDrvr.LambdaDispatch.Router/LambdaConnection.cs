@@ -379,7 +379,7 @@ public class LambdaConnection : ILambdaConnection
       State = LambdaConnectionState.Busy;
 
       var proxyRequestTask = ProxyRequestToLambda(incomingRequest, accessLogProps, debugMode);
-      var proxyResponseTask = RelayResponseFromLambda(incomingRequest, incomingResponse, accessLogProps, debugMode);
+      var proxyResponseTask = RelayResponseFromLambda(incomingResponse, accessLogProps, debugMode);
 
       // Wait for both to finish
       // This allows us to continue sending request body while receiving
@@ -500,7 +500,7 @@ public class LambdaConnection : ILambdaConnection
     };
   }
 
-  private async Task<long> RelayResponseFromLambda(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps accessLogProps, bool debugMode = false)
+  private async Task<long> RelayResponseFromLambda(HttpResponse incomingResponse, AccessLogProps accessLogProps, bool debugMode = false)
   {
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
 
@@ -673,7 +673,7 @@ public class LambdaConnection : ILambdaConnection
       // The lambda application has not sent valid response headers
       // We do what an AWS ALB does which is to send a 502 status code
       // and close the connection
-      _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, incomingRequest.Path);
+      _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, accessLogProps.Uri);
       try
       {// Clear the headers
         incomingResponse.Headers.Clear();
@@ -723,7 +723,7 @@ public class LambdaConnection : ILambdaConnection
               "LambdaConnection.RelayResponseFromLambda - LambdaId: {}, ChannelId: {} - Exception READING response body from Lambda - Path: {}, Header Bytes: {}, Body Bytes Read: {}, Body Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
               Instance.Id,
               ChannelId,
-              incomingRequest.Path,
+              accessLogProps.Uri,
               totalHeaderBytesRead,
               totalBodyBytesRead,
               totalBodyBytesWritten,
@@ -748,7 +748,7 @@ public class LambdaConnection : ILambdaConnection
               "LambdaConnection.RelayResponseFromLambda - LambdaId: {}, ChannelId: {} - Exception WRITING response body to client - Path: {}, Header Bytes: {}, Body Bytes Read: {}, Body Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
               Instance.Id,
               ChannelId,
-              incomingRequest.Path,
+              accessLogProps.Uri,
               totalHeaderBytesRead,
               totalBodyBytesRead,
               totalBodyBytesWritten,
