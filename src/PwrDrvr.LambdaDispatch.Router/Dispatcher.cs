@@ -648,7 +648,13 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
           "-"
           );
       }
-      _ = lambdaConnection.RunRequest(incomingRequest, incomingResponse, pendingRequest.AccessLogProps, pendingRequest.DebugMode).ContinueWith(async Task (task) =>
+
+      // The deployed self-contained build on ECS is failing to see
+      // the correct captured values for these params if accessed directly
+      var accessLogProps = pendingRequest.AccessLogProps;
+      var debugMode = pendingRequest.DebugMode;
+
+      _ = lambdaConnection.RunRequest(incomingRequest, incomingResponse, accessLogProps, debugMode).ContinueWith(async Task (task) =>
       {
         Interlocked.Decrement(ref _runningRequestCount);
 #if !SKIP_METRICS
@@ -660,23 +666,23 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
           {
             try
             {
-              pendingRequest.AccessLogProps.StatusCode = incomingResponse.StatusCode;
+              accessLogProps.StatusCode = incomingResponse.StatusCode;
             }
             catch
             {
-              pendingRequest.AccessLogProps.StatusCode = -1;
+              accessLogProps.StatusCode = -1;
             }
           }
 
-          if (pendingRequest.DebugMode)
+          if (debugMode)
           {
             _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST BACKGROUND RETURNED",
-              pendingRequest.AccessLogProps.Method,
-              pendingRequest.AccessLogProps.Uri,
-              pendingRequest.AccessLogProps.Protocol,
-              pendingRequest.AccessLogProps.RemoteAddress,
-              pendingRequest.AccessLogProps.UserAgent,
-              pendingRequest.AccessLogProps.StatusCode,
+              accessLogProps.Method,
+              accessLogProps.Uri,
+              accessLogProps.Protocol,
+              accessLogProps.RemoteAddress,
+              accessLogProps.UserAgent,
+              accessLogProps.StatusCode,
               "-",
               "-"
               );
@@ -702,12 +708,12 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
           if (task.IsFaulted)
           {
             _logger.LogError(task.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Background Task Faulted",
-              pendingRequest.AccessLogProps.Method,
-              pendingRequest.AccessLogProps.Uri,
-              pendingRequest.AccessLogProps.Protocol,
-              pendingRequest.AccessLogProps.RemoteAddress,
-              pendingRequest.AccessLogProps.UserAgent,
-              pendingRequest.AccessLogProps.StatusCode,
+              accessLogProps.Method,
+              accessLogProps.Uri,
+              accessLogProps.Protocol,
+              accessLogProps.RemoteAddress,
+              accessLogProps.UserAgent,
+              accessLogProps.StatusCode,
               "-",
               "-"
               );
@@ -740,12 +746,12 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
 
             // Log an access log entry
             _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log - Background",
-              pendingRequest.AccessLogProps.Method,
-              pendingRequest.AccessLogProps.Uri,
-              pendingRequest.AccessLogProps.Protocol,
-              pendingRequest.AccessLogProps.RemoteAddress,
-              pendingRequest.AccessLogProps.UserAgent,
-              pendingRequest.AccessLogProps.StatusCode,
+              accessLogProps.Method,
+              accessLogProps.Uri,
+              accessLogProps.Protocol,
+              accessLogProps.RemoteAddress,
+              accessLogProps.UserAgent,
+              accessLogProps.StatusCode,
               runRequestResult.RequestBytes,
               runRequestResult.ResponseBytes
               );
@@ -754,12 +760,12 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         catch (Exception ex)
         {
           _logger.LogError(ex, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST BACKGROUND EXCEPTION",
-              pendingRequest.AccessLogProps.Method,
-              pendingRequest.AccessLogProps.Uri,
-              pendingRequest.AccessLogProps.Protocol,
-              pendingRequest.AccessLogProps.RemoteAddress,
-              pendingRequest.AccessLogProps.UserAgent,
-              pendingRequest.AccessLogProps.StatusCode,
+              accessLogProps.Method,
+              accessLogProps.Uri,
+              accessLogProps.Protocol,
+              accessLogProps.RemoteAddress,
+              accessLogProps.UserAgent,
+              accessLogProps.StatusCode,
               "-",
               "-"
               );
