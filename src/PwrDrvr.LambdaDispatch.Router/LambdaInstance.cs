@@ -936,12 +936,12 @@ public class LambdaInstance : ILambdaInstance
        else if (t.IsCompleted)
        {
          // The Lambda invocation has completed
-         _tcs.SetResult(true);
+         try { _tcs.SetResult(true); } catch { }
          _logger.LogDebug("LambdaInvoke completed for LambdaId: {Id}", this.Id);
        }
        else
        {
-         _tcs.SetException(new Exception("LambdaInvoke for LambdaId: " + this.Id + " did not complete"));
+         try { _tcs.SetException(new Exception("LambdaInvoke for LambdaId: " + this.Id + " did not complete")); } catch { }
        }
      });
 
