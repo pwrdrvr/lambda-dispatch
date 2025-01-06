@@ -22,6 +22,15 @@ public class DispatcherTests
   private CancellationTokenSource _ctsShutdownSignal;
   private Mock<IMetricsRegistry> _metricsRegistry;
 
+  readonly private AccessLogProps _defaultAccessLogProps = new AccessLogProps
+  {
+    Method = "GET",
+    Uri = "/some/test/path",
+    Protocol = "HTTP/1.1",
+    RemoteAddress = "-",
+    UserAgent = "-"
+  };
+
   [SetUp]
   public void SetUp()
   {
@@ -258,7 +267,7 @@ public class DispatcherTests
     var mockIncomingResponse = new Mock<HttpResponse>();
 
     // Act
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
 
     // Assert
     _metricsRegistry.Verify(m => m.Metrics.Measure.Counter.Increment(It.IsAny<CounterOptions>()), Times.AtLeast(3));
@@ -336,7 +345,7 @@ public class DispatcherTests
     });
 
     // Act
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
 
     // Assert
     Assert.Multiple(() =>
@@ -432,7 +441,7 @@ public class DispatcherTests
     });
 
     // Act
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
 
     // Assert
     Assert.Multiple(() =>
@@ -506,7 +515,7 @@ public class DispatcherTests
 
     // Act
     var stopwatch = Stopwatch.StartNew();
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
     stopwatch.Stop();
 
     // Assert
@@ -571,7 +580,7 @@ public class DispatcherTests
     var mockIncomingResponse = new Mock<HttpResponse>();
 
     // Act
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
 
     // Assert
     Assert.Multiple(() =>
@@ -662,7 +671,7 @@ public class DispatcherTests
     });
 
     // Act
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
 
     // Wait for timeout
     await Task.Delay(2500);
@@ -743,7 +752,7 @@ public class DispatcherTests
 
     // Act
     var stopwatch = Stopwatch.StartNew();
-    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object);
+    await dispatcher.AddRequest(mockIncomingRequest.Object, mockIncomingResponse.Object, _defaultAccessLogProps);
     stopwatch.Stop();
 
     // Assert
