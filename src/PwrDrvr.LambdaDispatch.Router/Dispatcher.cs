@@ -194,7 +194,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         }
 
         // TODO: If we want to cancel we need to pass a token in here
-        runRequestResult = await lambdaConnection.RunRequest(incomingRequest, incomingResponse).ConfigureAwait(false);
+        runRequestResult = await lambdaConnection.RunRequest(incomingRequest, incomingResponse, accessLogProps, debugMode).ConfigureAwait(false);
         accessLogProps.StatusCode = incomingResponse.StatusCode;
 
         if (debugMode)
@@ -648,7 +648,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
           "-"
           );
       }
-      _ = lambdaConnection.RunRequest(incomingRequest, incomingResponse).ContinueWith(async Task (task) =>
+      _ = lambdaConnection.RunRequest(incomingRequest, incomingResponse, pendingRequest.AccessLogProps, pendingRequest.DebugMode).ContinueWith(async Task (task) =>
       {
         Interlocked.Decrement(ref _runningRequestCount);
 #if !SKIP_METRICS
