@@ -472,6 +472,9 @@ public class LambdaConnection : ILambdaConnection
   {
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
 
+    long totalBodyBytesRead = 0;
+    long totalBodyBytesWritten = 0;
+
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
     try
@@ -623,12 +626,14 @@ public class LambdaConnection : ILambdaConnection
       incomingResponse.Headers.Append("x-lambda-dispatch-version", _gitHash);
       incomingResponse.Headers.Append("x-lambda-dispatch-build-time", _buildTime);
 
-      // Flush any remaining bytes in the buffer
+      // Flush any remaining bytes in the buffer to the response as they are part of the response body
       if (startOfNextLine < totalBytesRead)
       {
         // There are bytes left in the buffer
         // Copy them to the response
+        totalBodyBytesRead += totalBytesRead - startOfNextLine;
         await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine), CTS.Token).ConfigureAwait(false);
+        totalBodyBytesWritten += totalBytesRead - startOfNextLine;
       }
     }
     catch (Exception ex)
@@ -666,8 +671,7 @@ public class LambdaConnection : ILambdaConnection
 
     var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
     long totalHeaderBytesRead = 0;
-    long totalBodyBytesRead = 0;
-    long totalBodyBytesWritten = 0;
+
     var loopTimer = Stopwatch.StartNew();
     var lastReadTimer = Stopwatch.StartNew();
     try
