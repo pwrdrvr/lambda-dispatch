@@ -25,6 +25,7 @@ public class IncomingRequestMiddleware
       // Disable request body buffering
       // context.Request.EnableBuffering(bufferThreshold: 0);
 
+      // Disable response body buffering
       context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
 
       // Handle /health route
@@ -45,13 +46,6 @@ public class IncomingRequestMiddleware
         {
           _logger.LogInformation("/echo-local - Echoing request body back to client");
 
-          // Echo the request body back to the client
-          // context.Response.StatusCode = 200;
-          // await context.Request.Body.CopyToAsync(context.Response.Body);
-          // _logger.LogInformation("/echo-local - CopyToAsync completed");
-          // await context.Response.Body.FlushAsync();
-          // await context.Response.CompleteAsync();
-          // _logger.LogInformation("/echo-local - CompleteAsync completed");
 
           const int bufferSize = 128 * 1024; // 128KB chunks
           byte[] buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
@@ -62,9 +56,13 @@ public class IncomingRequestMiddleware
             long totalBytes = 0;
 
             context.Response.Headers.ContentType = "application/octet-stream";
-            context.Response.Headers.TransferEncoding = "chunked";
+            // Do NOT set the transfer encoding to chunked... it will cause Kestrel to NOT write the chunk headers
+            // context.Response.Headers.TransferEncoding = "chunked";
+
+            // Start the response (sends the headers)
             await context.Response.StartAsync();
 
+            // Echo the request body back to the client
             while (true)
             {
               int bytesRead = await context.Request.Body.ReadAsync(
@@ -72,8 +70,7 @@ public class IncomingRequestMiddleware
 
               if (bytesRead == 0) break;
 
-              await context.Response.Body.WriteAsync(
-                  buffer, 0, bytesRead);
+              await context.Response.Body.WriteAsync(buffer, 0, bytesRead);
               await context.Response.Body.FlushAsync();
 
               totalBytes += bytesRead;
@@ -93,7 +90,6 @@ public class IncomingRequestMiddleware
         }
         return;
       }
-
 
       AccessLogProps accessLogProps = new()
       {
