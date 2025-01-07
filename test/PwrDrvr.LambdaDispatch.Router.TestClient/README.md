@@ -9,7 +9,7 @@ This tool is used to confirm that full duplex (receiving while sending) is possi
 dotnet build -c Release test/PwrDrvr.LambdaDispatch.Router.TestClient/PwrDrvr.LambdaDispatch.Router.TestClient.csproj 
 
 ## Self-contained
-dotnet publish -c Release test/PwrDrvr.LambdaDispatch.Router.TestClient/PwrDrvr.LambdaDispatch.Router.TestClient.csproj  --self-contained true --runtime linux-amd64 /p:NativeAot=true
+dotnet build -c Release test/PwrDrvr.LambdaDispatch.Router.TestClient/PwrDrvr.LambdaDispatch.Router.TestClient.csproj  --self-contained true --runtime linux-amd64 /p:NativeAot=true
 ```
 
 ## Usage
@@ -23,11 +23,11 @@ test/PwrDrvr.LambdaDispatch.Router.TestClient/bin/Release/net8.0/PwrDrvr.LambdaD
 ## Package for CloudShell
 
 ```shell
-rm testclient.zip && zip -j -r testclient.zip test/PwrDrvr.LambdaDispatch.Router.TestClient/bin/Release/net8.0/linux-x64
+dotnet build -c Release test/PwrDrvr.LambdaDispatch.Router.TestClient/PwrDrvr.LambdaDispatch.Router.TestClient.csproj  --self-contained true --runtime linux-amd64 /p:NativeAot=true && rm testclient.zip && zip -j -r testclient.zip test/PwrDrvr.LambdaDispatch.Router.TestClient/bin/Release/net8.0/linux-x64
 ```
 
 ## Unpackage in CloudShell
 
 ```shell
-rm -rf testclient && unzip testclient.zip -d testclient && chmod +x testclient/bootstrap
+rm -rf testclient && unzip testclient.zip -d testclient && chmod +x testclient/PwrDrvr.LambdaDispatch.Router.TestClient
 ```
