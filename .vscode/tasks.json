@@ -42,6 +42,19 @@
       "problemMatcher": "$msCompile"
     },
     {
+      "label": "build-router-test",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "test/PwrDrvr.LambdaDispatch.Router.TestClient",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign",
+        "/property:TestRunners=true",
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "publish",
       "command": "dotnet",
       "type": "process",
