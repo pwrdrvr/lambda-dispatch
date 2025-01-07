@@ -92,8 +92,10 @@
       "preLaunchTask": "build-router-test",
       "program": "${workspaceFolder}/test/PwrDrvr.LambdaDispatch.Router.TestClient/bin/Debug/net8.0/PwrDrvr.LambdaDispatch.Router.TestClient.dll",
       "args": [
-        "http://localhost:5001/echo-local?foo=bar",
-        "./src/demo-app/public/silly-test-6MB.jpg"
+        "https://lambdadispatch-pr-257.ghpublic.pwrdrvr.com/echo-local",
+        //"http://localhost:5001/echo-local?foo=bar",
+        "./src/demo-app/public/silly-test-6MB.jpg",
+        "--verbose"
       ],
       "cwd": "${workspaceFolder}",
       "console": "internalConsole",
