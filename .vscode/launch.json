@@ -76,12 +76,30 @@
         "LAMBDA_DISPATCH_FunctionName": "arn:aws:lambda:us-east-2:220761759939:function:dogs",
         "LAMBDA_DISPATCH_InstanceCountMultiplier": "1",
         "LAMBDA_DISPATCH_MaxConcurrentCount": "1",
+        "LAMBDA_DISPATCH_AllowInsecureControlChannel": "true",
+        "LAMBDA_DISPATCH_PreferredControlChannelScheme": "http",
         "AWS_ACCESS_KEY_ID": "test-access-key-id",
         "AWS_SECRET_ACCESS_KEY": "test-secret-access-key",
         "AWS_SESSION_TOKEN": "test-session-token",
         "AWS_LAMBDA_SERVICE_URL": "http://localhost:5051"
         // "AWS_LAMBDA_SERVICE_URL": "http://host.docker.internal:5051"
-      }
+      },
+    },
+    {
+      "name": "Router (test request)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-router-test",
+      "program": "${workspaceFolder}/test/PwrDrvr.LambdaDispatch.Router.TestClient/bin/Debug/net8.0/PwrDrvr.LambdaDispatch.Router.TestClient.dll",
+      "args": [
+        "http://localhost:5001/echo-local?foo=bar",
+        "./src/demo-app/public/silly-test-6MB.jpg"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "stopAtEntry": false,
+      "env": {
+      },
     },
     {
       "name": ".NET Core Attach",
