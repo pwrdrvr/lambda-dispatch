@@ -1,5 +1,5 @@
 [package]
-name = "extension"
+name = "router"
 version = "0.1.0"
 edition = "2021"
 
@@ -43,10 +43,10 @@ tokio-rustls = { version = "0.25.0" }
 rustls-pki-types = { version = "1.1.0" }
 bytes = "1.6.0"
 
-shared = { path = "../shared" }
-
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.16.0"
+
+shared = { path = "../shared" }
 
 [dev-dependencies]
 # ntest = "0.9.2"

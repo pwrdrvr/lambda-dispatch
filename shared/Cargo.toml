@@ -1,0 +1,12 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+procfs = { version = "0.14", optional = true }
+
+[features]
+default = []
+linux = ["procfs"]
+

@@ -6,13 +6,14 @@ use hyper::Uri;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::timeout;
 
+use shared::threads;
+
 use crate::app_client::create_app_client;
 use crate::app_start;
 use crate::lambda_service::LambdaService;
 use crate::{
   options::{Options, Runtime},
   prelude::*,
-  threads,
 };
 
 pub fn startup() -> Result<()> {

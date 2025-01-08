@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
   "extension",
+  "router",
+  "shared",
 ]
 
 # Include debug symbols

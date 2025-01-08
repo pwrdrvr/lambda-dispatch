@@ -15,6 +15,5 @@ pub mod relay;
 pub mod router_channel;
 pub mod router_client;
 pub mod startup;
-pub mod threads;
 pub mod time;
 pub mod utils;
