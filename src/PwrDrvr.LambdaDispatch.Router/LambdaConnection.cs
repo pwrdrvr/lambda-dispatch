@@ -170,7 +170,7 @@ public class LambdaConnection : ILambdaConnection
     _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request headers to Lambda", Instance.Id, ChannelId);
 
     // TODO: Get the 32 KB header size limit from configuration
-    var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    var headerBuffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
     try
     {
       int offset = 0;
@@ -186,12 +186,35 @@ public class LambdaConnection : ILambdaConnection
       // Send the headers to the Lambda
       foreach (var header in incomingRequest.Headers)
       {
+        // Skip any cookie headers, they are handled below
+        // Cookies need to be consolidated into a single header
+        // if (string.Compare(header.Key, "Cookie", StringComparison.OrdinalIgnoreCase) == 0)
+        // {
+        //   continue;
+        // }
+
         // Write the header to the buffer
         var headerLine = $"{header.Key}: {header.Value}\r\n";
         var headerLineBytes = Encoding.UTF8.GetBytes(headerLine);
         headerLineBytes.CopyTo(headerBuffer, offset);
         offset += headerLineBytes.Length;
       }
+
+      // Combine all cookies into a single Cookie header
+      // if (incomingRequest.Cookies.Count != 0)
+      // {
+      //   var cookies = string.Join("; ", incomingRequest.Cookies.Select(c => $"{c.Key}={c.Value}"));
+      //   var cookieHeaderLine = $"Cookie: {cookies}\r\n";
+      //   var cookieHeaderLineBytes = Encoding.UTF8.GetBytes(cookieHeaderLine);
+      //   cookieHeaderLineBytes.CopyTo(headerBuffer, offset);
+      //   offset += cookieHeaderLineBytes.Length;
+      // }
+
+      // Add X-Forwarded-Proto Header
+      var forwardedProtoHeaderLine = "X-Forwarded-Proto: https\r\n";
+      var forwardedProtoHeaderLineBytes = Encoding.UTF8.GetBytes(forwardedProtoHeaderLine);
+      forwardedProtoHeaderLineBytes.CopyTo(headerBuffer, offset);
+      offset += forwardedProtoHeaderLineBytes.Length;
 
       // Send the end of the headers
       headerBuffer[offset + 1] = (byte)'\n';
@@ -385,7 +408,7 @@ public class LambdaConnection : ILambdaConnection
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
 
     // TODO: Get the 32 KB header size limit from configuration
-    var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    var headerBuffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
     try
     {
       // Read up to max headers size of data
@@ -526,6 +549,9 @@ public class LambdaConnection : ILambdaConnection
         // We append otherwise we'd overwrite keys that appear multiple times
         // such as Set-Cookie
         incomingResponse.Headers.Append(key, value);
+
+        // Print the header
+        _logger.LogInformation("LambdaId: {}, ChannelId: {} - Response header: {headerLine}", Instance.Id, ChannelId, headerLine);
 
         // Move the start to the character after '\n'
         startOfNextLine = endOfLine + 1;
