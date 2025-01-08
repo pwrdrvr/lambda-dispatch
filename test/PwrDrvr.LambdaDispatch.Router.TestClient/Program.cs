@@ -87,7 +87,6 @@ public class Program
       var sslStream = new SslStream(
           client.GetStream(),
           false
-      // new RemoteCertificateValidationCallback((sender, certificate, chain, errors) => true)
       );
 
       await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
@@ -141,9 +140,12 @@ public class Program
 
           // Write chunk data
           await stream.WriteAsync(buffer.AsMemory(0, bytesRead));
-          await stream.WriteAsync(Encoding.ASCII.GetBytes("\r\n"));
 
-          await Task.Delay(30);
+          // Write the trailing \r\n after the chunk data
+          await stream.WriteAsync(Encoding.ASCII.GetBytes("\r\n"));
+          // await stream.FlushAsync();
+
+          // await Task.Delay(30);
 
           totalBytesSent += bytesRead;
 
@@ -435,6 +437,14 @@ public class Program
 
             if (chunkSizeBytes.Count == 0)
             {
+              if (b == -1)
+              {
+                Console.WriteLine("ERROR - Received (chunked): EOF when reading chunk size");
+              }
+              else
+              {
+                Console.WriteLine("ERROR - Received (chunked): empty chunk size");
+              }
               break;
             }
 
@@ -457,8 +467,9 @@ public class Program
 
               totalBytesReceived += bytesRead;
 
-              if (bytesRead == 0)
+              if (bytesRead <= 0)
               {
+                Console.WriteLine("ERROR - Received (chunked): EOF when reading chunk data");
                 break;
               }
               remaining -= bytesRead;
