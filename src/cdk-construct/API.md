@@ -103,7 +103,8 @@ Any object.
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.securityGroup">securityGroup</a></code> | <code>aws-cdk-lib.aws_ec2.SecurityGroup</code> | Security group for the ECS tasks. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.service">service</a></code> | <code>aws-cdk-lib.aws_ecs.FargateService</code> | The ECS Fargate service. |
-| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroup">targetGroup</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Target group for the ECS service. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupDemoApp">targetGroupDemoApp</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Target group for the Demo App service. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupRouter">targetGroupRouter</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Target group for the Router service. |
 
 ---
 
@@ -143,15 +144,27 @@ The ECS Fargate service.
 
 ---
 
-##### `targetGroup`<sup>Required</sup> <a name="targetGroup" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroup"></a>
+##### `targetGroupDemoApp`<sup>Required</sup> <a name="targetGroupDemoApp" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupDemoApp"></a>
 
 ```typescript
-public readonly targetGroup: ApplicationTargetGroup;
+public readonly targetGroupDemoApp: ApplicationTargetGroup;
 ```
 
 - *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup
 
-Target group for the ECS service.
+Target group for the Demo App service.
+
+---
+
+##### `targetGroupRouter`<sup>Required</sup> <a name="targetGroupRouter" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupRouter"></a>
+
+```typescript
+public readonly targetGroupRouter: ApplicationTargetGroup;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup
+
+Target group for the Router service.
 
 ---
 
@@ -305,13 +318,14 @@ const lambdaDispatchECSProps: LambdaDispatchECSProps = { ... }
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.cluster">cluster</a></code> | <code>aws-cdk-lib.aws_ecs.ICluster</code> | ECS Cluster. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.lambdaFunction">lambdaFunction</a></code> | <code>aws-cdk-lib.aws_lambda.IFunction</code> | Lambda function that will be invoked by the ECS service. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.vpc">vpc</a></code> | <code>aws-cdk-lib.aws_ec2.IVpc</code> | VPC where the ECS service will be deployed. |
-| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.containerImage">containerImage</a></code> | <code>aws-cdk-lib.aws_ecs.ContainerImage</code> | Container image for the ECS task. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.cpu">cpu</a></code> | <code>number</code> | CPU units for the ECS task. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.cpuArchitecture">cpuArchitecture</a></code> | <code>aws-cdk-lib.aws_ecs.CpuArchitecture</code> | CPU architecture to use for the ECS tasks Note: Fargate Spot only supports AMD64 architecture. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.demoAppImage">demoAppImage</a></code> | <code>aws-cdk-lib.aws_ecs.ContainerImage</code> | Image for the demo app This can be the same as the lambda image because it just won't start the lambda extension. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.maxCapacity">maxCapacity</a></code> | <code>number</code> | Maximum number of ECS tasks. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.memoryLimitMiB">memoryLimitMiB</a></code> | <code>number</code> | Memory limit for the ECS task in MiB. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.minCapacity">minCapacity</a></code> | <code>number</code> | Minimum number of ECS tasks. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.removalPolicy">removalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | The removal policy to apply to the log group. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.routerImage">routerImage</a></code> | <code>aws-cdk-lib.aws_ecs.ContainerImage</code> | Image for the lambda-dispatch Router. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.useFargateSpot">useFargateSpot</a></code> | <code>boolean</code> | Whether to use Fargate Spot capacity provider Note: Fargate Spot only supports AMD64 architecture. |
 
 ---
@@ -352,19 +366,6 @@ VPC where the ECS service will be deployed.
 
 ---
 
-##### `containerImage`<sup>Optional</sup> <a name="containerImage" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.containerImage"></a>
-
-```typescript
-public readonly containerImage: ContainerImage;
-```
-
-- *Type:* aws-cdk-lib.aws_ecs.ContainerImage
-- *Default:* latest image from public ECR repository
-
-Container image for the ECS task.
-
----
-
 ##### `cpu`<sup>Optional</sup> <a name="cpu" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.cpu"></a>
 
 ```typescript
@@ -388,6 +389,19 @@ public readonly cpuArchitecture: CpuArchitecture;
 - *Default:* ARM64
 
 CPU architecture to use for the ECS tasks Note: Fargate Spot only supports AMD64 architecture.
+
+---
+
+##### `demoAppImage`<sup>Optional</sup> <a name="demoAppImage" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.demoAppImage"></a>
+
+```typescript
+public readonly demoAppImage: ContainerImage;
+```
+
+- *Type:* aws-cdk-lib.aws_ecs.ContainerImage
+- *Default:* undefined
+
+Image for the demo app This can be the same as the lambda image because it just won't start the lambda extension.
 
 ---
 
@@ -440,6 +454,19 @@ public readonly removalPolicy: RemovalPolicy;
 - *Default:* undefined
 
 The removal policy to apply to the log group.
+
+---
+
+##### `routerImage`<sup>Optional</sup> <a name="routerImage" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.routerImage"></a>
+
+```typescript
+public readonly routerImage: ContainerImage;
+```
+
+- *Type:* aws-cdk-lib.aws_ecs.ContainerImage
+- *Default:* latest image from public ECR repository
+
+Image for the lambda-dispatch Router.
 
 ---
 
