@@ -4,8 +4,25 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Extensions;
+using System.Diagnostics;
 
 namespace PwrDrvr.LambdaDispatch.Router;
+
+public struct RunRequestResult
+{
+  public long RequestBytes;
+  public long ResponseBytes;
+}
+
+public class AccessLogProps
+{
+  public string Method { get; set; } = "-";
+  public string Uri { get; set; } = "-";
+  public string Protocol { get; set; } = "-";
+  public int StatusCode { get; set; } = 0;
+  public string RemoteAddress { get; set; } = "-";
+  public string UserAgent { get; set; } = "-";
+}
 
 public enum LambdaConnectionState
 {
@@ -65,7 +82,7 @@ public interface ILambdaConnection
 
   public Task Discard();
 
-  public Task RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse);
+  public Task<RunRequestResult> RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps? accessLogProps = null, bool debugMode = false);
 
 }
 
@@ -159,18 +176,40 @@ public class LambdaConnection : ILambdaConnection
     }
     finally
     {
-      TCS.SetResult();
+      try { TCS.SetResult(); } catch { }
     }
   }
 
+  /// <summary>
+  /// Reads From - Incoming request to router
+  /// Writes To - Lambda Response reverse request - which is the Lambda Request
+  /// </summary>
+  /// <param name="incomingRequest"></param>
+  /// <returns></returns>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private async Task ProxyRequestToLambda(HttpRequest incomingRequest)
+  private async Task<long> ProxyRequestToLambda(HttpRequest incomingRequest, AccessLogProps accessLogProps, bool debugMode = false)
   {
     // Send the incoming Request on the lambda's Response
     _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request headers to Lambda", Instance.Id, ChannelId);
 
+    if (debugMode)
+    {
+      // Log an access log entry - before the request is run
+      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - PROXYREQUESTTOLAMBDA - START",
+        accessLogProps.Method,
+        accessLogProps.Uri,
+        accessLogProps.Protocol,
+        accessLogProps.RemoteAddress,
+        accessLogProps.UserAgent,
+        "-",
+        "-",
+        "-"
+      );
+    }
+
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
+    long totalBytesWritten = 0;
     try
     {
       int offset = 0;
@@ -201,30 +240,119 @@ public class LambdaConnection : ILambdaConnection
       // Send the headers to the Lambda
       await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
 
+      if (debugMode)
+      {
+        // Log an access log entry - before the request is run
+        _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - PROXYREQUESTTOLAMBDA - FINISHED HEADERS",
+          accessLogProps.Method,
+          accessLogProps.Uri,
+          accessLogProps.Protocol,
+          accessLogProps.RemoteAddress,
+          accessLogProps.UserAgent,
+          "-",
+          totalBytesWritten,
+          "-"
+        );
+      }
+
       // Only copy the request body if the request has a body
       // or it's HTTP2, in which case we don't know until we start reading
       if (incomingRequest.Protocol == HttpProtocol.Http2
           || incomingRequest.ContentLength > 0
-          || incomingRequest.Headers.TransferEncoding == "chunked")
+          || incomingRequest.Headers.TransferEncoding.FirstOrDefault() == "chunked")
       {
         _logger.LogDebug("LambdaId: {}, ChannelId: {} - Sending incoming request body to Lambda", Instance.Id, ChannelId);
 
         // Send the body to the Lambda
         var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
+        int totalBytesRead = 0;
+        var loopTimer = Stopwatch.StartNew();
+        var lastReadTimer = Stopwatch.StartNew();
         try
         {
           // Read from the source stream and write to the destination stream in a loop
+          var incomingRequestStream = incomingRequest.Body;
           int bytesRead;
-          var responseStream = incomingRequest.Body;
-          while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token)) > 0)
+          while (true)
           {
-            await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
+            try
+            {
+              bytesRead = await incomingRequestStream.ReadAsync(bytes, CTS.Token);
+              totalBytesRead += bytesRead;
+
+              if (debugMode)
+              {
+                // Log an access log entry - before the request is run
+                _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - PROXYREQUESTTOLAMBDA - INCOMING REQUEST READ",
+                  accessLogProps.Method,
+                  accessLogProps.Uri,
+                  accessLogProps.Protocol,
+                  accessLogProps.RemoteAddress,
+                  accessLogProps.UserAgent,
+                   "-",
+                  totalBytesRead,
+                  totalBytesWritten
+                );
+              }
+            }
+            catch (Exception ex)
+            {
+              _logger.LogError(ex,
+                  "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception READING request body from incoming request - Request Line: {}, Bytes Read: {}, Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+                  Instance.Id,
+                  ChannelId,
+                  requestLine,
+                  totalBytesRead,
+                  totalBytesWritten,
+                  loopTimer.ElapsedMilliseconds,
+                  lastReadTimer.ElapsedMilliseconds);
+              throw;
+            }
+
+            lastReadTimer.Restart();
+
+            if (bytesRead == 0) break;
+
+            try
+            {
+              await Response.BodyWriter.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
+              totalBytesWritten += bytesRead;
+
+              if (debugMode)
+              {
+                // Log an access log entry - before the request is run
+                _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - INCOMING REQUEST WROTE",
+                  accessLogProps.Method,
+                  accessLogProps.Uri,
+                  accessLogProps.Protocol,
+                  accessLogProps.RemoteAddress,
+                  accessLogProps.UserAgent,
+                  "-",
+                  totalBytesRead,
+                  totalBytesWritten
+                );
+              }
+            }
+            catch (Exception ex)
+            {
+              _logger.LogError(ex,
+                  "LambdaConnection.ProxyRequestToLambda - LambdaId: {}, ChannelId: {} - Exception WRITING request body to Lambda - Request Line: {}, Bytes Read: {}, Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+                  Instance.Id,
+                  ChannelId,
+                  requestLine,
+                  totalBytesRead,
+                  totalBytesWritten,
+                  loopTimer.ElapsedMilliseconds,
+                  lastReadTimer.ElapsedMilliseconds);
+              throw;
+            }
           }
         }
         finally
         {
           ArrayPool<byte>.Shared.Return(bytes);
         }
+
         await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
 
         _logger.LogDebug("Finished sending incoming request body to Lambda");
@@ -241,14 +369,43 @@ public class LambdaConnection : ILambdaConnection
     {
       ArrayPool<byte>.Shared.Return(headerBuffer);
     }
+
+    return totalBytesWritten;
   }
 
   /// <summary>
   /// Run the request on the Lambda
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public async Task RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse)
+  public async Task<RunRequestResult> RunRequest(HttpRequest incomingRequest, HttpResponse incomingResponse, AccessLogProps? accessLogProps = null, bool debugMode = false)
   {
+    long totalBytesRead = 0;
+    long totalBytesWritten = 0;
+
+    accessLogProps ??= new AccessLogProps
+    {
+      Method = "-",
+      Uri = "-",
+      Protocol = "-",
+      RemoteAddress = "-",
+      UserAgent = "-",
+    };
+
+    if (debugMode)
+    {
+      // Log an access log entry - before the request is run
+      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - START",
+        accessLogProps.Method,
+        accessLogProps.Uri,
+        accessLogProps.Protocol,
+        accessLogProps.RemoteAddress,
+        accessLogProps.UserAgent,
+        "-",
+        totalBytesRead,
+        totalBytesWritten
+      );
+    }
+
     try
     {
       // Check if the connection has already been used
@@ -266,8 +423,23 @@ public class LambdaConnection : ILambdaConnection
       // Set the state to busy
       State = LambdaConnectionState.Busy;
 
-      var proxyRequestTask = ProxyRequestToLambda(incomingRequest);
-      var proxyResponseTask = RelayResponseFromLambda(incomingRequest, incomingResponse);
+      if (debugMode)
+      {
+        // Log an access log entry - before the request is run
+        _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - CALLING PROXYREQUESTTOLAMBDA",
+          accessLogProps.Method,
+          accessLogProps.Uri,
+          accessLogProps.Protocol,
+          accessLogProps.RemoteAddress,
+          accessLogProps.UserAgent,
+          "-",
+          totalBytesRead,
+          totalBytesWritten
+        );
+      }
+
+      var proxyRequestTask = ProxyRequestToLambda(incomingRequest, accessLogProps, debugMode);
+      var proxyResponseTask = RelayResponseFromLambda(incomingResponse, accessLogProps, debugMode);
 
       // Wait for both to finish
       // This allows us to continue sending request body while receiving
@@ -275,6 +447,16 @@ public class LambdaConnection : ILambdaConnection
       var completedTask = await Task.WhenAny(proxyRequestTask, proxyResponseTask).ConfigureAwait(false);
       if (completedTask.Exception != null)
       {
+        _logger.LogError(completedTask.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - EXCEPTION",
+          accessLogProps.Method,
+          accessLogProps.Uri,
+          accessLogProps.Protocol,
+          accessLogProps.RemoteAddress,
+          accessLogProps.UserAgent,
+          "-",
+          "-",
+          "-"
+        );
         throw completedTask.Exception;
       }
 
@@ -282,13 +464,15 @@ public class LambdaConnection : ILambdaConnection
       {
         // ProxyRequestToLambda finished first
         // Wait for RelayResponseFromLambda to finish
-        await proxyResponseTask.ConfigureAwait(false);
+        totalBytesWritten = await proxyResponseTask.ConfigureAwait(false);
+        totalBytesRead = completedTask.Result;
       }
       else
       {
         // RelayResponseFromLambda finished first
         // Wait for ProxyRequestToLambda to finish
-        await proxyRequestTask.ConfigureAwait(false);
+        totalBytesRead = await proxyRequestTask.ConfigureAwait(false);
+        totalBytesWritten = completedTask.Result;
       }
     }
     catch (AggregateException ae)
@@ -360,7 +544,7 @@ public class LambdaConnection : ILambdaConnection
       try { Response.HttpContext.Abort(); } catch { }
 
       // Just in case anything is still stuck
-      CTS.Cancel();
+      try { CTS.Cancel(); } catch { }
 
       throw;
     }
@@ -376,13 +560,22 @@ public class LambdaConnection : ILambdaConnection
       catch { }
 
       // Mark that the Response has been sent on the LambdaInstance
-      TCS.SetResult();
+      try { TCS.SetResult(); } catch { }
     }
+
+    return new RunRequestResult
+    {
+      RequestBytes = totalBytesRead,
+      ResponseBytes = totalBytesWritten
+    };
   }
 
-  private async Task RelayResponseFromLambda(HttpRequest incomingRequest, HttpResponse incomingResponse)
+  private async Task<long> RelayResponseFromLambda(HttpResponse incomingResponse, AccessLogProps accessLogProps, bool debugMode = false)
   {
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
+
+    long totalBodyBytesRead = 0;
+    long totalBodyBytesWritten = 0;
 
     // TODO: Get the 32 KB header size limit from configuration
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
@@ -535,12 +728,14 @@ public class LambdaConnection : ILambdaConnection
       incomingResponse.Headers.Append("x-lambda-dispatch-version", _gitHash);
       incomingResponse.Headers.Append("x-lambda-dispatch-build-time", _buildTime);
 
-      // Flush any remaining bytes in the buffer
+      // Flush any remaining bytes in the buffer to the response as they are part of the response body
       if (startOfNextLine < totalBytesRead)
       {
         // There are bytes left in the buffer
         // Copy them to the response
+        totalBodyBytesRead += totalBytesRead - startOfNextLine;
         await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine), CTS.Token).ConfigureAwait(false);
+        totalBodyBytesWritten += totalBytesRead - startOfNextLine;
       }
     }
     catch (Exception ex)
@@ -548,7 +743,7 @@ public class LambdaConnection : ILambdaConnection
       // The lambda application has not sent valid response headers
       // We do what an AWS ALB does which is to send a 502 status code
       // and close the connection
-      _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, incomingRequest.Path);
+      _logger.LogError(ex, "LambdaId: {}, ChannelId: {} - Exception reading response headers from Lambda, Path: {}", Instance.Id, ChannelId, accessLogProps.Uri);
       try
       {// Clear the headers
         incomingResponse.Headers.Clear();
@@ -577,14 +772,60 @@ public class LambdaConnection : ILambdaConnection
     //
 
     var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
+    long totalHeaderBytesRead = 0;
+
+    var loopTimer = Stopwatch.StartNew();
+    var lastReadTimer = Stopwatch.StartNew();
     try
     {
       // Read from the source stream and write to the destination stream in a loop
       int bytesRead;
       var responseStream = Request.Body;
-      while ((bytesRead = await responseStream.ReadAsync(bytes, CTS.Token).ConfigureAwait(false)) > 0)
+      while (true)
       {
-        await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token).ConfigureAwait(false);
+        try
+        {
+          bytesRead = await responseStream.ReadAsync(bytes, CTS.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+          _logger.LogError(ex,
+              "LambdaConnection.RelayResponseFromLambda - LambdaId: {}, ChannelId: {} - Exception READING response body from Lambda - Path: {}, Header Bytes: {}, Body Bytes Read: {}, Body Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+              Instance.Id,
+              ChannelId,
+              accessLogProps.Uri,
+              totalHeaderBytesRead,
+              totalBodyBytesRead,
+              totalBodyBytesWritten,
+              loopTimer.ElapsedMilliseconds,
+              lastReadTimer.ElapsedMilliseconds);
+          throw;
+        }
+
+        if (bytesRead == 0) break;
+
+        totalBodyBytesRead += bytesRead;
+        lastReadTimer.Restart();
+
+        try
+        {
+          await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token).ConfigureAwait(false);
+          totalBodyBytesWritten += bytesRead;
+        }
+        catch (Exception ex)
+        {
+          _logger.LogError(ex,
+              "LambdaConnection.RelayResponseFromLambda - LambdaId: {}, ChannelId: {} - Exception WRITING response body to client - Path: {}, Header Bytes: {}, Body Bytes Read: {}, Body Bytes Written: {}, Total Time: {} ms, Time Since Last Read: {} ms",
+              Instance.Id,
+              ChannelId,
+              accessLogProps.Uri,
+              totalHeaderBytesRead,
+              totalBodyBytesRead,
+              totalBodyBytesWritten,
+              loopTimer.ElapsedMilliseconds,
+              lastReadTimer.ElapsedMilliseconds);
+          throw;
+        }
       }
     }
     finally
@@ -593,5 +834,7 @@ public class LambdaConnection : ILambdaConnection
     }
 
     _logger.LogDebug("LambdaId: {} - Copied response body from Lambda", Instance.Id);
+
+    return totalBodyBytesWritten;
   }
 }

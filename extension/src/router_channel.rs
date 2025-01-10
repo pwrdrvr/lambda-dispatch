@@ -238,7 +238,7 @@ impl RouterChannel {
     // We have to hold the pinger up else it will exit before connections to the router are established
     // We also count re-establishing a channel as an action since it can allow a request to flow in
     if self.last_active.load(Ordering::Acquire) == 0 {
-      log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
+      log::debug!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - First request, releasing pinger",
                 self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
     }
     self
@@ -246,7 +246,7 @@ impl RouterChannel {
       .store(time::current_time_millis(), Ordering::Release);
 
     // Read until we get all the request headers so we can construct our app request
-    let (app_req_builder, is_goaway, left_over_buf) = app_request::read_until_req_headers(
+    let (app_req_builder, is_goaway, left_over_buf, app_url) = app_request::read_until_req_headers(
       self.app_endpoint.clone(),
       &mut router_response_stream,
       &self.pool_id,
@@ -271,6 +271,12 @@ impl RouterChannel {
       .get("accept-encoding")
       .map(|v| v.to_str().unwrap_or_default().contains("gzip"))
       .unwrap_or_default();
+    let debug_mode = app_req_builder
+      .headers_ref()
+      .unwrap()
+      .get("x-lambda-dispatch-debug")
+      .map(|v| v.to_str().unwrap_or_default().contains("true"))
+      .unwrap_or_default();
 
     if is_goaway {
       if !self
@@ -278,7 +284,7 @@ impl RouterChannel {
         .load(std::sync::atomic::Ordering::Acquire)
       {
         channel_result = Some(ChannelResult::GoAwayReceived);
-        log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
+        log::debug!("PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - GoAway received, exiting loop",
                     self.pool_id, self.lambda_id, self.channel_id, self.channel_number, self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire));
 
         // This is from a goaway so we do not need to ask to close
@@ -288,6 +294,18 @@ impl RouterChannel {
       }
       router_tx.close().await.unwrap_or(());
       return Ok(channel_result);
+    }
+
+    if debug_mode {
+      log::info!(
+        "{} - PoolId: {}, LambdaId: {}, ChannelId: {}, ChannelNum: {}, Reqs in Flight: {} - RECEIVED REQUEST",
+        app_url,
+        self.pool_id,
+        self.lambda_id,
+        self.channel_id,
+        self.channel_number,
+        self.requests_in_flight.load(std::sync::atomic::Ordering::Acquire)
+      );
     }
 
     // We got a request to run
@@ -328,6 +346,8 @@ impl RouterChannel {
       Arc::clone(&self.requests_in_flight),
       app_req_tx,
       router_response_stream,
+      debug_mode,
+      app_url.clone(),
     ));
 
     //
@@ -456,18 +476,33 @@ impl RouterChannel {
       app_res_stream,
       encoder,
       router_tx,
+      debug_mode,
+      app_url.clone(),
     ));
+
+    let sent_bytes;
+    let received_bytes;
 
     // Wait for both to finish
     match futures::future::try_join_all([relay_request_to_app_task, relay_response_to_router_task])
       .await
     {
-      Ok(result) => {
+      Ok(results) => {
+        // Extract sent_bytes from first task (relay_request_to_app_task)
+        sent_bytes = match &results[0] {
+          Ok(bytes) => *bytes,
+          Err(_) => 0,
+        };
+        received_bytes = match &results[1] {
+          Ok(bytes) => *bytes,
+          Err(_) => 0,
+        };
+
         // Find the worst error, if any
         let mut worst_error = None;
 
         // This case can have errors in the vector
-        for res in result {
+        for res in results {
           if let Err(err) = res {
             log::error!("PoolId: {}, LambdaId: {}, ChannelId: {} - Error in futures::future::try_join_all: {}", self.pool_id, self.lambda_id, self.channel_id, err);
             worst_error =
@@ -494,6 +529,18 @@ impl RouterChannel {
         return Err(LambdaRequestError::ChannelErrorOther);
       }
     }
+
+    // TODO: Add an access log statement
+    // Include: Path and Query string, status code, bytes sent, bytes received, duration, time since
+    // last bytes sent, time since last bytes received
+    // log::info()
+    log::info!(
+      "{} - {} - BytesSentToApp: {} - BytesRcvdFromApp: {} - Access Log",
+      app_url,
+      status_code,
+      sent_bytes,
+      received_bytes,
+    );
 
     self.count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 

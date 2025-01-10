@@ -122,10 +122,16 @@ public interface IConfig
   public ScalingAlgorithms ScalingAlgorithmEnum { get; }
 
   /// <summary>
-  /// Should CloudWatch metrics be enabled
+  /// Emit CloudWatch metrics in the logs using the EmbeddedMetrics format
   /// </summary>
   /// <default>false</default>
   public bool CloudWatchMetricsEnabled { get; set; }
+
+  /// <summary>
+  /// Emit periodic metrics to the logs
+  /// </summary>
+  /// <default>false</default>
+  public bool LogPeriodicMetrics { get; set; }
 }
 
 public class Config : IConfig
@@ -168,6 +174,8 @@ public class Config : IConfig
 
   public bool CloudWatchMetricsEnabled { get; set; }
 
+  public bool LogPeriodicMetrics { get; set; }
+
   /// <summary>
   /// These config properties declared in the IConfig are automatically loaded from environment variables prefixed with LAMBDA_DISPATCH_
   /// </summary>
@@ -190,6 +198,7 @@ public class Config : IConfig
     ScalingAlgorithm = "Simple";
     ScalingAlgorithmEnum = ScalingAlgorithms.Simple;
     CloudWatchMetricsEnabled = false;
+    LogPeriodicMetrics = false;
   }
 
   public static Config CreateAndValidate(IConfiguration configuration)
@@ -274,5 +283,28 @@ public class Config : IConfig
     {
       throw new ApplicationException($"Invalid EnvVarForCallbackIp in configuration: {EnvVarForCallbackIp}");
     }
+  }
+
+  public override string ToString()
+  {
+    return $@"Config:
+  FunctionName: {FunctionName}
+  FunctionNameOnly: {FunctionNameOnly}
+  FunctionNameQualifier: {FunctionNameQualifier}
+  MaxConcurrentCount: {MaxConcurrentCount}
+  ChannelCount: {ChannelCount}
+  InstanceCountMultiplier: {InstanceCountMultiplier}
+  IncomingRequestHTTPPort: {IncomingRequestHTTPPort}
+  IncomingRequestHTTPSPort: {IncomingRequestHTTPSPort}
+  ControlChannelHTTP2Port: {ControlChannelHTTP2Port}
+  ControlChannelInsecureHTTP2Port: {ControlChannelInsecureHTTP2Port}
+  AllowInsecureControlChannel: {AllowInsecureControlChannel}
+  PreferredControlChannelScheme: {PreferredControlChannelScheme}
+  RouterCallbackHost: {RouterCallbackHost}
+  EnvVarForCallbackIp: {EnvVarForCallbackIp}
+  IncomingRequestTimeout: {IncomingRequestTimeout}
+  ScalingAlgorithm: {ScalingAlgorithm}
+  CloudWatchMetricsEnabled: {CloudWatchMetricsEnabled}
+  LogPeriodicMetrics: {LogPeriodicMetrics}";
   }
 }

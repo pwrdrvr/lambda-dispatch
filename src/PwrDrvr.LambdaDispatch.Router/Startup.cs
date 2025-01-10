@@ -9,12 +9,14 @@ namespace PwrDrvr.LambdaDispatch.Router;
 
 public class Startup
 {
-    // public IConfiguration Configuration { get; }
     private readonly ILogger _logger = LoggerInstance.CreateLogger<Startup>();
     private readonly ShutdownSignal _shutdownSignal = new();
 
-    public Startup()
+    private readonly IConfig _config;
+
+    public Startup(IConfig config)
     {
+        _config = config;
         // var configuration = new ConfigurationBuilder()
         //     // .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
         //     .AddEnvironmentVariables(prefix: "LAMBDA_DISPATCH_")
@@ -50,7 +52,10 @@ public class Startup
         services.AddSingleton<IShutdownSignal>(_shutdownSignal);
 
 #if !SKIP_METRICS
-        Task.Run(metricsRegistry.PrintMetrics).ConfigureAwait(false);
+        if (_config.LogPeriodicMetrics)
+        {
+            Task.Run(metricsRegistry.PrintMetrics).ConfigureAwait(false);
+        }
 #endif
     }
 

@@ -12,26 +12,41 @@ use futures::{channel::mpsc::Sender, SinkExt};
 use hyper::body::{Body, Bytes, Frame, Incoming};
 
 use flate2::write::GzEncoder;
+
+macro_rules! log_debug {
+  ($debug:expr, $($arg:tt)*) => {
+      if $debug {
+          log::info!($($arg)*);
+      } else {
+          log::debug!($($arg)*);
+      }
+  };
+}
+
 pub async fn relay_request_to_app(
   left_over_buf: Vec<u8>,
-  pool_id_clone: PoolId,
-  lambda_id_clone: LambdaId,
-  channel_id_clone: ChannelId,
-  requests_in_flight_clone: Arc<AtomicUsize>,
+  pool_id: PoolId,
+  lambda_id: LambdaId,
+  channel_id: ChannelId,
+  requests_in_flight: Arc<AtomicUsize>,
   mut app_req_tx: Sender<Result<Frame<Bytes>, Error>>,
   mut router_response_stream: Incoming,
-) -> Result<(), LambdaRequestError> {
+  debug_mode: bool,
+  app_url: String,
+) -> Result<usize, LambdaRequestError> {
   let mut bytes_sent = 0;
 
   // Send any overflow body bytes to the contained app
   if !left_over_buf.is_empty() {
     bytes_sent += left_over_buf.len();
-    log::debug!(
-      "PoolId: {}, LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
-      pool_id_clone,
-      lambda_id_clone,
-      channel_id_clone,
-      left_over_buf.len()
+    log_debug!(
+      debug_mode,
+      "{} PoolId: {}, LambdaId: {}, ChannelId: {} - Sending left over bytes to contained app: {:?}",
+      app_url,
+      pool_id,
+      lambda_id,
+      channel_id,
+      left_over_buf.len(),
     );
     app_req_tx
       .send(Ok(Frame::data(left_over_buf.into())))
@@ -44,7 +59,7 @@ pub async fn relay_request_to_app(
   //
   // Reads from: Router response body stream (containing request from client)
   // Writes to: App request body stream
-  // Source: res_stream
+  // Source: router_res_stream
   // Sink: app_req_tx
   while let Some(chunk) =
     futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut router_response_stream), cx))
@@ -53,10 +68,11 @@ pub async fn relay_request_to_app(
     let chunk = match chunk {
       Ok(value) => value,
       Err(_) => {
-        log::error!("LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from res_stream: {:?}",
-        lambda_id_clone,
-        channel_id_clone,
-        requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+        log::error!("{} LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Error reading from router_res_stream: {:?}",
+        app_url,
+        lambda_id,
+        channel_id,
+        requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
         bytes_sent,
         chunk.err());
         return Err(LambdaRequestError::RouterConnectionError);
@@ -71,11 +87,13 @@ pub async fn relay_request_to_app(
     let chunk_len = chunk_data.len();
     // If chunk_len is zero the channel has closed
     if chunk_len == 0 {
-      log::debug!(
-        "PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Channel closed",
-        pool_id_clone,
-        lambda_id_clone,
-        channel_id_clone,
+      log_debug!(
+        debug_mode,
+        "{} PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Request from router - Channel closed",
+        app_url,
+        pool_id,
+        lambda_id,
+        channel_id,
         bytes_sent,
         chunk_len
       );
@@ -85,10 +103,10 @@ pub async fn relay_request_to_app(
       Ok(_) => {}
       Err(err) => {
         log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {}, ChunkLen: {} - Error sending to app_req_tx: {}",
-                            pool_id_clone,
-                            lambda_id_clone,
-                            channel_id_clone,
-                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            pool_id,
+                            lambda_id,
+                            channel_id,
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_sent,
                             chunk_len,
                             err);
@@ -96,6 +114,17 @@ pub async fn relay_request_to_app(
       }
     }
     bytes_sent += chunk_len;
+
+    log_debug!(
+      debug_mode,
+      "{} PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {}, ChunkLen: {} - Sent bytes to contained app",
+      app_url,
+      pool_id,
+      lambda_id,
+      channel_id,
+      bytes_sent,
+      chunk_len
+    );
   }
 
   // This may error if the router closed the connection
@@ -108,20 +137,32 @@ pub async fn relay_request_to_app(
     .await
     .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
-  Ok(())
+  log_debug!(
+    debug_mode,
+    "{} PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {} - Request from router - Completed",
+    app_url,
+    pool_id,
+    lambda_id,
+    channel_id,
+    bytes_sent
+  );
+
+  Ok(bytes_sent)
 }
 
 /// Reads from: App response body stream
 /// Writes to: Router request body stream
 pub async fn relay_response_to_router(
-  pool_id_clone: PoolId,
-  lambda_id_clone: LambdaId,
-  channel_id_clone: ChannelId,
-  requests_in_flight_clone: Arc<AtomicUsize>,
+  pool_id: PoolId,
+  lambda_id: LambdaId,
+  channel_id: ChannelId,
+  requests_in_flight: Arc<AtomicUsize>,
   mut app_res_stream: Incoming,
   mut encoder: Option<GzEncoder<Writer<BytesMut>>>,
   mut tx: Sender<Result<Frame<Bytes>, Error>>,
-) -> Result<(), LambdaRequestError> {
+  debug_mode: bool,
+  app_url: String,
+) -> Result<usize, LambdaRequestError> {
   let mut bytes_read = 0;
   while let Some(chunk) =
     futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut app_res_stream), cx)).await
@@ -129,11 +170,11 @@ pub async fn relay_response_to_router(
     let chunk = match chunk {
       Ok(value) => value,
       Err(_) => {
-        log::info!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
-              pool_id_clone,
-              lambda_id_clone,
-              channel_id_clone,
-              requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+        log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error reading from app_res_stream: {:?}",
+              pool_id,
+              lambda_id,
+              channel_id,
+              requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
               bytes_read,
               chunk.err());
         return Err(LambdaRequestError::AppConnectionError);
@@ -148,6 +189,16 @@ pub async fn relay_response_to_router(
     let chunk_len = chunk_data.len();
     // If chunk_len is zero the response
     if chunk_len == 0 {
+      log_debug!(
+        debug_mode,
+        "{} PoolId: {}, LambdaId: {}, ChannelId: {}, BytesRead: {}, ChunkLen: {} - Response from app - Channel closed",
+        app_url,
+        pool_id,
+        lambda_id,
+        channel_id,
+        bytes_read,
+        chunk_len
+      );
       break;
     }
 
@@ -165,13 +216,24 @@ pub async fn relay_response_to_router(
       let bytes = writer.get_mut().split().into();
 
       match tx.send(Ok(Frame::data(bytes))).await {
-        Ok(_) => {}
+        Ok(_) => {
+          log_debug!(
+            debug_mode,
+            "{} PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Sent bytes to router using encoder",
+            app_url,
+            pool_id,
+            lambda_id,
+            channel_id,
+            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
+            bytes_read
+          );
+        }
         Err(err) => {
           log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
-                            pool_id_clone,
-                            lambda_id_clone,
-                            channel_id_clone,
-                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            pool_id,
+                            lambda_id,
+                            channel_id,
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_read,
                             err);
           return Err(LambdaRequestError::RouterConnectionError);
@@ -179,13 +241,24 @@ pub async fn relay_response_to_router(
       }
     } else {
       match tx.send(Ok(chunk)).await {
-        Ok(_) => {}
+        Ok(_) => {
+          log_debug!(
+            debug_mode,
+            "{} PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesSent: {} - Sent bytes to router without encoder",
+            app_url,
+            pool_id,
+            lambda_id,
+            channel_id,
+            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
+            bytes_read
+          );
+        }
         Err(err) => {
           log::error!("PoolId: {}, LambdaId: {}, ChannelId: {}, Reqs in Flight: {}, BytesRead: {} - Error sending to tx: {}",
-                            pool_id_clone,
-                            lambda_id_clone,
-                            channel_id_clone,
-                            requests_in_flight_clone.load(std::sync::atomic::Ordering::Acquire),
+                            pool_id,
+                            lambda_id,
+                            channel_id,
+                            requests_in_flight.load(std::sync::atomic::Ordering::Acquire),
                             bytes_read,
                             err);
           return Err(LambdaRequestError::RouterConnectionError);
@@ -211,5 +284,15 @@ pub async fn relay_response_to_router(
     .await
     .map_err(|_| LambdaRequestError::RouterConnectionError)?;
 
-  Ok(())
+  log_debug!(
+    debug_mode,
+    "{} PoolId: {}, LambdaId: {}, ChannelId: {}, BytesSent: {} - Response from app - Completed",
+    app_url,
+    pool_id,
+    lambda_id,
+    channel_id,
+    bytes_read
+  );
+
+  Ok(bytes_read)
 }

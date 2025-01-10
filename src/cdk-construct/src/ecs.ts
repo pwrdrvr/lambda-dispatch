@@ -58,10 +58,17 @@ export interface LambdaDispatchECSProps {
   readonly cpuArchitecture?: ecs.CpuArchitecture;
 
   /**
-   * Container image for the ECS task
+   * Image for the lambda-dispatch Router
    * @default - latest image from public ECR repository
    */
-  readonly containerImage?: ecs.ContainerImage;
+  readonly routerImage?: ecs.ContainerImage;
+
+  /**
+   * Image for the demo app
+   * This can be the same as the lambda image because it just won't start the lambda extension
+   * @default - undefined
+   */
+  readonly demoAppImage?: ecs.ContainerImage;
 
   /**
    * The removal policy to apply to the log group
@@ -84,9 +91,13 @@ export class LambdaDispatchECS extends Construct {
    */
   public readonly securityGroup: ec2.SecurityGroup;
   /**
-   * Target group for the ECS service
+   * Target group for the Router service
    */
-  public readonly targetGroup: elbv2.ApplicationTargetGroup;
+  public readonly targetGroupRouter: elbv2.ApplicationTargetGroup;
+  /**
+   * Target group for the Demo App service
+   */
+  public readonly targetGroupDemoApp: elbv2.ApplicationTargetGroup;
 
   constructor(scope: Construct, id: string, props: LambdaDispatchECSProps) {
     super(scope, id);
@@ -118,7 +129,7 @@ export class LambdaDispatchECS extends Construct {
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', {
       memoryLimitMiB: props.memoryLimitMiB ?? 2048,
       cpu: props.cpu ?? 1024,
-      taskRole: taskRole,
+      taskRole,
       runtimePlatform: {
         cpuArchitecture: props.cpuArchitecture ?? ecs.CpuArchitecture.ARM64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
@@ -130,29 +141,44 @@ export class LambdaDispatchECS extends Construct {
       removalPolicy: props.removalPolicy,
     });
 
-    const container = taskDefinition.addContainer('LambdaDispatchRouter', {
+    // Give the task role permission to describe the log group, create log streams in that group, and write log events to those streams
+    logGroup.grant(taskRole, 'logs:DescribeLogGroups', 'logs:CreateLogStream', 'logs:PutLogEvents');
+
+    const routerContainer = taskDefinition.addContainer('LambdaDispatchRouter', {
       image:
-        props.containerImage ??
+        props.routerImage ??
         ecs.ContainerImage.fromRegistry('public.ecr.aws/pwrdrvr/lambda-dispatch-router:latest'),
       logging: ecs.LogDriver.awsLogs({
         logGroup: logGroup,
-        streamPrefix: 'ecs',
+        streamPrefix: 'router',
       }),
       environment: {
         DOTNET_ThreadPool_UnfairSemaphoreSpinLimit: '0',
-        LAMBDA_DISPATCH_MaxWorkerThreads: '2',
+        LAMBDA_DISPATCH_MinWorkerThreads: '1',
+        LAMBDA_DISPATCH_MaxWorkerThreads: '4',
         LAMBDA_DISPATCH_FunctionName: props.lambdaFunction.functionArn,
         LAMBDA_DISPATCH_MaxConcurrentCount: '10',
         LAMBDA_DISPATCH_AllowInsecureControlChannel: 'true',
         LAMBDA_DISPATCH_PreferredControlChannelScheme: 'http',
+        AWS_CLOUDWATCH_LOG_GROUP: logGroup.logGroupName,
       },
     });
-
-    container.addPortMappings(
+    routerContainer.addPortMappings(
       { containerPort: 5001, protocol: ecs.Protocol.TCP },
       { containerPort: 5003, protocol: ecs.Protocol.TCP },
       { containerPort: 5004, protocol: ecs.Protocol.TCP },
     );
+
+    const demoAppContainer = taskDefinition.addContainer('DemoApp', {
+      image:
+        props.demoAppImage ??
+        ecs.ContainerImage.fromRegistry('public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app:latest'),
+      logging: ecs.LogDriver.awsLogs({
+        logGroup: logGroup,
+        streamPrefix: 'demo-app',
+      }),
+    });
+    demoAppContainer.addPortMappings({ containerPort: 3001, protocol: ecs.Protocol.TCP });
 
     this.securityGroup = new ec2.SecurityGroup(this, 'EcsSecurityGroup', {
       vpc: props.vpc,
@@ -160,7 +186,7 @@ export class LambdaDispatchECS extends Construct {
       description: 'Security Group for ECS Fargate tasks',
     });
 
-    // Add inbound rules for ports 5003 and 5004
+    // Add inbound rules for ports 5003 and 5004 on the router from within the VPC
     this.securityGroup.addIngressRule(
       ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
       ec2.Port.tcp(5003),
@@ -172,13 +198,26 @@ export class LambdaDispatchECS extends Construct {
       'Allow inbound traffic on port 5004 from within the VPC (HTTPS from Lambda)',
     );
 
-    this.targetGroup = new elbv2.ApplicationTargetGroup(this, 'FargateTargetGroup', {
+    this.targetGroupRouter = new elbv2.ApplicationTargetGroup(this, 'FargateTargetGroup', {
       vpc: props.vpc,
       port: 5001,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targetType: elbv2.TargetType.IP,
       healthCheck: {
         path: '/health',
+        interval: cdk.Duration.seconds(5),
+        timeout: cdk.Duration.seconds(2),
+        healthyThresholdCount: 2,
+      },
+    });
+
+    this.targetGroupDemoApp = new elbv2.ApplicationTargetGroup(this, 'DemoAppTargetGroup', {
+      vpc: props.vpc,
+      port: 3001,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      healthCheck: {
+        path: '/health-quick',
         interval: cdk.Duration.seconds(5),
         timeout: cdk.Duration.seconds(2),
         healthyThresholdCount: 2,
@@ -212,6 +251,7 @@ export class LambdaDispatchECS extends Construct {
     });
 
     // Attach the service to the target group
-    this.service.attachToApplicationTargetGroup(this.targetGroup);
+    this.service.attachToApplicationTargetGroup(this.targetGroupRouter);
+    this.service.attachToApplicationTargetGroup(this.targetGroupDemoApp);
   }
 }
