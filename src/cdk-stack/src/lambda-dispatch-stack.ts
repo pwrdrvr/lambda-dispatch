@@ -140,11 +140,11 @@ export class LambdaDispatchStack extends cdk.Stack {
       dockerImage:
         !usePublicImages && (props.lambdaECRRepoName || props.lambdaImageTag)
           ? lambda.DockerImageCode.fromEcr(
-              ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
-              {
-                tagOrDigest: lambdaTag,
-              },
-            )
+            ecr.Repository.fromRepositoryName(this, 'LambdaRepo', lambdaECRRepoName),
+            {
+              tagOrDigest: lambdaTag,
+            },
+          )
           : undefined,
     });
 
@@ -153,12 +153,19 @@ export class LambdaDispatchStack extends cdk.Stack {
       vpc,
       lambdaFunction: lambdaConstruct.function,
       cluster,
-      containerImage:
+      routerImage:
         !usePublicImages && process.env.PR_NUMBER
           ? ecs.ContainerImage.fromEcrRepository(
-              ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
-              `pr-${process.env.PR_NUMBER}-${process.env.GIT_SHA_SHORT}`,
-            )
+            ecr.Repository.fromRepositoryName(this, 'EcsRepo', 'lambda-dispatch-router'),
+            `pr-${process.env.PR_NUMBER}-${process.env.GIT_SHA_SHORT}`,
+          )
+          : undefined,
+      demoAppImage:
+        !usePublicImages && process.env.PR_NUMBER
+          ? ecs.ContainerImage.fromEcrRepository(
+            ecr.Repository.fromRepositoryName(this, 'DemoAppRepo', 'lambda-dispatch-demo-app'),
+            `pr-${process.env.PR_NUMBER}-arm64-${process.env.GIT_SHA_SHORT}`,
+          )
           : undefined,
       useFargateSpot: props.useFargateSpot ?? true,
       removalPolicy: props.removalPolicy,
@@ -167,14 +174,21 @@ export class LambdaDispatchStack extends cdk.Stack {
     // Allow ECS tasks to invoke Lambda
     lambdaConstruct.function.grantInvoke(ecsConstruct.service.taskDefinition.taskRole);
 
-    const hostname = `lambdadispatch${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
+    const hostnameRouter = `lambdadispatch${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
+    const hostnameDemoApp = `lambdadispatch-demoapp${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
 
     // Add the target group to the HTTPS listener
     httpsListener.addTargetGroups('EcsTargetGroup', {
-      targetGroups: [ecsConstruct.targetGroup],
-      conditions: [elbv2.ListenerCondition.hostHeaders([`${hostname}.ghpublic.pwrdrvr.com`])],
+      targetGroups: [ecsConstruct.targetGroupRouter],
+      conditions: [elbv2.ListenerCondition.hostHeaders([`${hostnameRouter}.ghpublic.pwrdrvr.com`])],
       // Set the priority to the PR number or 49999 if not a PR
       priority: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) : 49999,
+    });
+    httpsListener.addTargetGroups('EcsTargetGroupDemoApp', {
+      targetGroups: [ecsConstruct.targetGroupDemoApp],
+      conditions: [elbv2.ListenerCondition.hostHeaders([`${hostnameDemoApp}.ghpublic.pwrdrvr.com`])],
+      // Set the priority to the PR number + 10000 or 49998 if not a PR
+      priority: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) + 10000 : 49998,
     });
 
     // Create Route53 records
@@ -184,7 +198,12 @@ export class LambdaDispatchStack extends cdk.Stack {
     });
     new route53.ARecord(this, 'LambdaDispatchRecord', {
       zone: hostedZone,
-      recordName: hostname,
+      recordName: hostnameRouter,
+      target: route53.RecordTarget.fromAlias(new route53targets.LoadBalancerTarget(loadBalancer)),
+    });
+    new route53.ARecord(this, 'LambdaDispatchDemoAppRecord', {
+      zone: hostedZone,
+      recordName: hostnameDemoApp,
       target: route53.RecordTarget.fromAlias(new route53targets.LoadBalancerTarget(loadBalancer)),
     });
 

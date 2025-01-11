@@ -1,0 +1,10 @@
+version: '3.3'
+services:
+  # This is just for testing the demo-app as a non-Lambda express app
+  lambdademoapp:
+    platform: linux/arm64
+    build:
+      context: .
+      dockerfile: DockerfileLambdaDemoApp
+    ports:
+      - 3002:3001
