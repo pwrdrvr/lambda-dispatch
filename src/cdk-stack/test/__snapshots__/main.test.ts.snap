@@ -18,6 +18,27 @@ exports[`Snapshot 1`] = `
     },
   },
   "Resources": {
+    "EcsConstructDemoAppTargetGroupA1FB262B": {
+      "Properties": {
+        "HealthCheckIntervalSeconds": 5,
+        "HealthCheckPath": "/health-quick",
+        "HealthCheckTimeoutSeconds": 2,
+        "HealthyThresholdCount": 2,
+        "Port": 3001,
+        "Protocol": "HTTP",
+        "TargetGroupAttributes": [
+          {
+            "Key": "stickiness.enabled",
+            "Value": "false",
+          },
+        ],
+        "TargetType": "ip",
+        "VpcId": {
+          "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+        },
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    },
     "EcsConstructEcsSecurityGroup99862E0E": {
       "Properties": {
         "GroupDescription": "Security Group for ECS Fargate tasks",
@@ -54,6 +75,22 @@ exports[`Snapshot 1`] = `
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
+    "EcsConstructEcsSecurityGroupfromtestImportedHttpsListenerSG12D292F13001BF90D50F": {
+      "Properties": {
+        "Description": "Load balancer to target",
+        "FromPort": 3001,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "EcsConstructEcsSecurityGroup99862E0E",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": "sg-0123456789abcdef0",
+        "ToPort": 3001,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
     "EcsConstructEcsSecurityGroupfromtestImportedHttpsListenerSG12D292F15001AC1C5CD5": {
       "Properties": {
         "Description": "Load balancer to target",
@@ -75,6 +112,7 @@ exports[`Snapshot 1`] = `
         "EcsConstructEcsTaskRoleDefaultPolicy3D727EAB",
         "EcsConstructEcsTaskRole6957983A",
         "ImportedHttpsListenerEcsTargetGroup04657527",
+        "ImportedHttpsListenerEcsTargetGroupDemoApp7EF3289D",
       ],
       "Properties": {
         "CapacityProviderStrategy": [
@@ -102,6 +140,13 @@ exports[`Snapshot 1`] = `
             "ContainerPort": 5001,
             "TargetGroupArn": {
               "Ref": "EcsConstructFargateTargetGroup18C7E4F1",
+            },
+          },
+          {
+            "ContainerName": "DemoApp",
+            "ContainerPort": 3001,
+            "TargetGroupArn": {
+              "Ref": "EcsConstructDemoAppTargetGroupA1FB262B",
             },
           },
         ],
@@ -225,6 +270,20 @@ exports[`Snapshot 1`] = `
               },
             },
             {
+              "Action": [
+                "logs:DescribeLogGroups",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "EcsConstructServiceLogGroup173B1435",
+                  "Arn",
+                ],
+              },
+            },
+            {
               "Action": "lambda:InvokeFunction",
               "Effect": "Allow",
               "Resource": [
@@ -301,8 +360,12 @@ exports[`Snapshot 1`] = `
                 "Value": "0",
               },
               {
+                "Name": "LAMBDA_DISPATCH_MinWorkerThreads",
+                "Value": "1",
+              },
+              {
                 "Name": "LAMBDA_DISPATCH_MaxWorkerThreads",
-                "Value": "2",
+                "Value": "4",
               },
               {
                 "Name": "LAMBDA_DISPATCH_FunctionName",
@@ -325,6 +388,12 @@ exports[`Snapshot 1`] = `
                 "Name": "LAMBDA_DISPATCH_PreferredControlChannelScheme",
                 "Value": "http",
               },
+              {
+                "Name": "AWS_CLOUDWATCH_LOG_GROUP",
+                "Value": {
+                  "Ref": "EcsConstructServiceLogGroup173B1435",
+                },
+              },
             ],
             "Essential": true,
             "Image": "public.ecr.aws/pwrdrvr/lambda-dispatch-router:latest",
@@ -335,7 +404,7 @@ exports[`Snapshot 1`] = `
                   "Ref": "EcsConstructServiceLogGroup173B1435",
                 },
                 "awslogs-region": "us-east-1",
-                "awslogs-stream-prefix": "ecs",
+                "awslogs-stream-prefix": "router",
               },
             },
             "Name": "LambdaDispatchRouter",
@@ -350,6 +419,27 @@ exports[`Snapshot 1`] = `
               },
               {
                 "ContainerPort": 5004,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+          {
+            "Essential": true,
+            "Image": "public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app:latest",
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "EcsConstructServiceLogGroup173B1435",
+                },
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "demo-app",
+              },
+            },
+            "Name": "DemoApp",
+            "PortMappings": [
+              {
+                "ContainerPort": 3001,
                 "Protocol": "tcp",
               },
             ],
@@ -449,6 +539,31 @@ exports[`Snapshot 1`] = `
         ],
         "ListenerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-load-balancer/50dc6c495c0c9188/0467ef3c5c1e9977",
         "Priority": 49999,
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    },
+    "ImportedHttpsListenerEcsTargetGroupDemoApp7EF3289D": {
+      "Properties": {
+        "Actions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "EcsConstructDemoAppTargetGroupA1FB262B",
+            },
+            "Type": "forward",
+          },
+        ],
+        "Conditions": [
+          {
+            "Field": "host-header",
+            "HostHeaderConfig": {
+              "Values": [
+                "lambdadispatch-demoapp.ghpublic.pwrdrvr.com",
+              ],
+            },
+          },
+        ],
+        "ListenerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-load-balancer/50dc6c495c0c9188/0467ef3c5c1e9977",
+        "Priority": 49998,
       },
       "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     },
@@ -565,6 +680,18 @@ exports[`Snapshot 1`] = `
         },
       },
       "Type": "AWS::EC2::SecurityGroup",
+    },
+    "LambdaDispatchDemoAppRecord8186EE15": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": "dualstack.my-load-balancer-1234567890.us-east-1.elb.amazonaws.com",
+          "HostedZoneId": "Z3DZXE0Q79N41H",
+        },
+        "HostedZoneId": "Z005084420J9MD9JNBCUK",
+        "Name": "lambdadispatch-demoapp.ghpublic.pwrdrvr.com.",
+        "Type": "A",
+      },
+      "Type": "AWS::Route53::RecordSet",
     },
     "LambdaDispatchRecord78A0EA12": {
       "Properties": {

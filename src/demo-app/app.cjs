@@ -98,6 +98,10 @@ export async function performInit() {
 // Serve static files from the "public" directory
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+app.get('/health-quick', async (req, res) => {
+  res.send('OK');
+});
+
 app.get('/health', async (req, res) => {
   if (!initPerformed) {
     await performInit();
@@ -163,6 +167,8 @@ app.post('/echo', async (req, res) => {
 
   const logPrefix = `${req.method} ${req.url} HTTP/${req.httpVersion}`;
 
+  const logIt = req.query.log === 'true';
+
   if (debugMode) {
     // Log the request line
     console.log(`${logPrefix} - STARTING`);
@@ -185,7 +191,6 @@ app.post('/echo', async (req, res) => {
 
   let totalBytesReceived = 0;
 
-  // Create transform stream that doubles each chunk
   const logger = new Transform({
     transform(chunk, encoding, callback) {
       const timestamp = new Date().toISOString();
@@ -208,8 +213,10 @@ app.post('/echo', async (req, res) => {
 
   // Pipe the req body to the response with back pressure
   // This will stream incoming bytes as they arrive
+  if (logIt) {
+    req = req.pipe(logger);
+  }
   req
-    .pipe(logger)
     .pipe(res)
     .on('error', (err) => {
       console.error(`${logPrefix} - PIPE ERROR`, err);
