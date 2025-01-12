@@ -28,6 +28,10 @@ exports[`Snapshot 1`] = `
         "Protocol": "HTTP",
         "TargetGroupAttributes": [
           {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "30",
+          },
+          {
             "Key": "stickiness.enabled",
             "Value": "false",
           },
@@ -113,6 +117,10 @@ exports[`Snapshot 1`] = `
         "EcsConstructEcsTaskRole6957983A",
         "ImportedHttpsListenerEcsTargetGroup04657527",
         "ImportedHttpsListenerEcsTargetGroupDemoApp7EF3289D",
+        "ImportedNLBNlbDemoAppHttpsListenerDemoAppNlbTargetGroupB2AB9F78",
+        "ImportedNLBNlbDemoAppHttpsListener3686ACC2",
+        "ImportedNLBNlbRouterHttpsListenerB276D34F",
+        "ImportedNLBNlbRouterHttpsListenerRouterNlbTargetGroupC3F4735F",
       ],
       "Properties": {
         "CapacityProviderStrategy": [
@@ -147,6 +155,20 @@ exports[`Snapshot 1`] = `
             "ContainerPort": 3001,
             "TargetGroupArn": {
               "Ref": "EcsConstructDemoAppTargetGroupA1FB262B",
+            },
+          },
+          {
+            "ContainerName": "LambdaDispatchRouter",
+            "ContainerPort": 5001,
+            "TargetGroupArn": {
+              "Ref": "ImportedNLBNlbRouterHttpsListenerRouterNlbTargetGroupC3F4735F",
+            },
+          },
+          {
+            "ContainerName": "LambdaDispatchRouter",
+            "ContainerPort": 5001,
+            "TargetGroupArn": {
+              "Ref": "ImportedNLBNlbDemoAppHttpsListenerDemoAppNlbTargetGroupB2AB9F78",
             },
           },
         ],
@@ -330,6 +352,10 @@ exports[`Snapshot 1`] = `
         "Port": 5001,
         "Protocol": "HTTP",
         "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "60",
+          },
           {
             "Key": "stickiness.enabled",
             "Value": "false",
@@ -567,6 +593,88 @@ exports[`Snapshot 1`] = `
       },
       "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     },
+    "ImportedNLBNlbDemoAppHttpsListener3686ACC2": {
+      "Properties": {
+        "AlpnPolicy": [
+          "HTTP2Optional",
+        ],
+        "Certificates": [
+          {
+            "CertificateArn": "arn:aws:acm:us-east-2:220761759939:certificate/ba705c87-4af6-4005-9d6d-d51318fdcbeb",
+          },
+        ],
+        "DefaultActions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "ImportedNLBNlbDemoAppHttpsListenerDemoAppNlbTargetGroupB2AB9F78",
+            },
+            "Type": "forward",
+          },
+        ],
+        "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-load-balancer/50dc6c495c0c9188",
+        "Port": 10000,
+        "Protocol": "TLS",
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+    },
+    "ImportedNLBNlbDemoAppHttpsListenerDemoAppNlbTargetGroupB2AB9F78": {
+      "Properties": {
+        "Port": 3001,
+        "Protocol": "TCP",
+        "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "30",
+          },
+        ],
+        "TargetType": "ip",
+        "VpcId": {
+          "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+        },
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    },
+    "ImportedNLBNlbRouterHttpsListenerB276D34F": {
+      "Properties": {
+        "AlpnPolicy": [
+          "HTTP2Optional",
+        ],
+        "Certificates": [
+          {
+            "CertificateArn": "arn:aws:acm:us-east-2:220761759939:certificate/ba705c87-4af6-4005-9d6d-d51318fdcbeb",
+          },
+        ],
+        "DefaultActions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "ImportedNLBNlbRouterHttpsListenerRouterNlbTargetGroupC3F4735F",
+            },
+            "Type": "forward",
+          },
+        ],
+        "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-load-balancer/50dc6c495c0c9188",
+        "Port": 443,
+        "Protocol": "TLS",
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+    },
+    "ImportedNLBNlbRouterHttpsListenerRouterNlbTargetGroupC3F4735F": {
+      "Properties": {
+        "Port": 5001,
+        "Protocol": "TCP",
+        "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "30",
+          },
+        ],
+        "TargetType": "ip",
+        "VpcId": {
+          "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
+        },
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    },
     "LambdaConstructLambdaExecutionRole6995D3C9": {
       "Properties": {
         "AssumeRolePolicyDocument": {
@@ -689,6 +797,30 @@ exports[`Snapshot 1`] = `
         },
         "HostedZoneId": "Z005084420J9MD9JNBCUK",
         "Name": "lambdadispatch-demoapp.ghpublic.pwrdrvr.com.",
+        "Type": "A",
+      },
+      "Type": "AWS::Route53::RecordSet",
+    },
+    "LambdaDispatchNLBDemoAppRecord620C9D32": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": "dualstack.my-load-balancer-1234567890.us-east-1.elb.amazonaws.com",
+          "HostedZoneId": "Z3DZXE0Q79N41H",
+        },
+        "HostedZoneId": "Z005084420J9MD9JNBCUK",
+        "Name": "lambdadispatch-nlb-demoapp.ghpublic.pwrdrvr.com.",
+        "Type": "A",
+      },
+      "Type": "AWS::Route53::RecordSet",
+    },
+    "LambdaDispatchNLBRecordD91391E8": {
+      "Properties": {
+        "AliasTarget": {
+          "DNSName": "dualstack.my-load-balancer-1234567890.us-east-1.elb.amazonaws.com",
+          "HostedZoneId": "Z3DZXE0Q79N41H",
+        },
+        "HostedZoneId": "Z005084420J9MD9JNBCUK",
+        "Name": "lambdadispatch-nlb.ghpublic.pwrdrvr.com.",
         "Type": "A",
       },
       "Type": "AWS::Route53::RecordSet",

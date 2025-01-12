@@ -8,6 +8,23 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
 /**
+ * Port configuration for the Network Load Balancer
+ */
+export interface LambdaDispatchECSNlbPortConfiguration {
+  /**
+   * Port that the NLB will listen on for the Router container
+   * @default 443
+   */
+  readonly routerPort: number;
+
+  /**
+   * Port that the NLB will listen on for the Demo App container
+   * @default undefined
+   */
+  readonly demoAppPort: number;
+}
+
+/**
  * Properties for the ECS construct
  */
 export interface LambdaDispatchECSProps {
@@ -76,6 +93,30 @@ export interface LambdaDispatchECSProps {
    * @default - undefined
    */
   readonly removalPolicy?: cdk.RemovalPolicy;
+
+  /**
+   * Whether to create a Network Load Balancer in addition to the Application Load Balancer
+   * @default false
+   */
+  readonly createNetworkLoadBalancer?: boolean;
+
+  /**
+   * Network Load Balancer
+   */
+  readonly networkLoadBalancer?: elbv2.INetworkLoadBalancer;
+
+  /**
+   * Certificate to use for HTTPS listeners on the Network Load Balancer
+   * Required if createNetworkLoadBalancer is true
+   */
+  readonly nlbCertificate?: elbv2.IListenerCertificate;
+
+  /**
+   * Port configuration for the Network Load Balancer
+   * These are the ports that the NLB will listen on and forward to the containers
+   * @default - undefined
+   */
+  readonly nlbPorts?: LambdaDispatchECSNlbPortConfiguration;
 }
 
 /**
@@ -91,13 +132,36 @@ export class LambdaDispatchECS extends Construct {
    */
   public readonly securityGroup: ec2.SecurityGroup;
   /**
-   * Target group for the Router service
+   * Application Load Balancer target group for the Router service
    */
   public readonly targetGroupRouter: elbv2.ApplicationTargetGroup;
   /**
-   * Target group for the Demo App service
+   * Application Load Balancer target group for the Demo App service
    */
   public readonly targetGroupDemoApp: elbv2.ApplicationTargetGroup;
+
+  /**
+   * Network Load Balancer target group for the Router service
+   * Only set if createNetworkLoadBalancer is true
+   */
+  public readonly nlbTargetGroupRouter?: elbv2.NetworkTargetGroup;
+  /**
+   * Network Load Balancer target group for the Demo App service
+   * Only set if createNetworkLoadBalancer is true
+   */
+  public readonly nlbTargetGroupDemoApp?: elbv2.NetworkTargetGroup;
+
+  /**
+   * Network Load Balancer Router Listener
+   * Only set if createNetworkLoadBalancer is true
+   */
+  public readonly nlbRouterListener?: elbv2.NetworkListener;
+
+  /**
+   * Network Load Balancer Demo App Listener
+   * Only set if createNetworkLoadBalancer is true and demoAppPort is specified
+   */
+  public readonly nlbDemoAppListener?: elbv2.NetworkListener;
 
   constructor(scope: Construct, id: string, props: LambdaDispatchECSProps) {
     super(scope, id);
@@ -113,6 +177,14 @@ export class LambdaDispatchECS extends Construct {
     // Validate Fargate Spot and CPU architecture combination
     if (props.useFargateSpot && props.cpuArchitecture === ecs.CpuArchitecture.ARM64) {
       throw new Error('Fargate Spot only supports AMD64 architecture');
+    }
+
+    // Validate NLB-specific props
+    if (props.createNetworkLoadBalancer && !props.networkLoadBalancer) {
+      throw new Error('networkLoadBalancer is required when createNetworkLoadBalancer is true');
+    }
+    if (props.createNetworkLoadBalancer && !props.nlbCertificate) {
+      throw new Error('nlbCertificate is required when createNetworkLoadBalancer is true');
     }
 
     const taskRole = new iam.Role(this, 'EcsTaskRole', {
@@ -268,5 +340,51 @@ export class LambdaDispatchECS extends Construct {
       scaleInCooldown: cdk.Duration.seconds(60),
       scaleOutCooldown: cdk.Duration.seconds(60),
     });
+
+    // Create Network Load Balancer if requested
+    if (
+      props.createNetworkLoadBalancer &&
+      props.networkLoadBalancer &&
+      props.nlbCertificate &&
+      props.nlbPorts
+    ) {
+      // Create HTTPS listener for Router (default port 443)
+      const routerPort = props.nlbPorts?.routerPort ?? 443;
+      const nlbRouterListener = props.networkLoadBalancer.addListener('NlbRouterHttpsListener', {
+        port: routerPort,
+        protocol: elbv2.Protocol.TLS,
+        alpnPolicy: elbv2.AlpnPolicy.HTTP2_OPTIONAL,
+        certificates: [props.nlbCertificate],
+        sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
+      });
+
+      nlbRouterListener.addTargets('RouterNlbTarget', {
+        port: 5001,
+        protocol: elbv2.Protocol.TCP,
+        targets: [this.service],
+        deregistrationDelay: cdk.Duration.seconds(30),
+      });
+
+      // Create HTTPS listener for DemoApp if port is specified
+      if (props.nlbPorts?.demoAppPort) {
+        const nlbDempAppListener = props.networkLoadBalancer.addListener(
+          'NlbDemoAppHttpsListener',
+          {
+            port: props.nlbPorts.demoAppPort,
+            protocol: elbv2.Protocol.TLS,
+            alpnPolicy: elbv2.AlpnPolicy.HTTP2_OPTIONAL,
+            certificates: [props.nlbCertificate],
+            sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
+          },
+        );
+
+        nlbDempAppListener.addTargets('DemoAppNlbTarget', {
+          port: 3001,
+          protocol: elbv2.Protocol.TCP,
+          targets: [this.service],
+          deregistrationDelay: cdk.Duration.seconds(30),
+        });
+      }
+    }
   }
 }

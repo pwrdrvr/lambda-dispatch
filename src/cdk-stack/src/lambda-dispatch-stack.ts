@@ -1,5 +1,6 @@
 import { LambdaDispatchFunction, LambdaDispatchECS } from '@pwrdrvr/lambda-dispatch-cdk';
 import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -31,14 +32,29 @@ export interface LambdaDispatchStackProps extends cdk.StackProps {
   readonly loadBalancerSecurityGroupId: string;
 
   /**
+   * Network Load Balancer for the ECS service
+   */
+  readonly networkLoadBalancerArn: string;
+
+  /**
    * Hosted zone ID for ALB
    */
   readonly loadBalancerHostedZoneId: string;
 
   /**
+   * Hosted zone ID for NLB
+   */
+  readonly networkLoadBalancerHostedZoneId: string;
+
+  /**
    * DNS name for ALB
    */
   readonly loadBalancerDnsName: string;
+
+  /**
+   * DNS name for NLB
+   */
+  readonly networkLoadBalancerDnsName: string;
 
   /**
    * ECS Cluster ARN
@@ -104,6 +120,16 @@ export class LambdaDispatchStack extends cdk.Stack {
         loadBalancerDnsName: props.loadBalancerDnsName,
       },
     );
+    const networkLoadBalancer = elbv2.NetworkLoadBalancer.fromNetworkLoadBalancerAttributes(
+      this,
+      'ImportedNLB',
+      {
+        loadBalancerArn: props.networkLoadBalancerArn,
+        vpc,
+        loadBalancerCanonicalHostedZoneId: props.networkLoadBalancerHostedZoneId,
+        loadBalancerDnsName: props.networkLoadBalancerDnsName,
+      },
+    );
 
     const httpsListener = elbv2.ApplicationListener.fromApplicationListenerAttributes(
       this,
@@ -119,7 +145,6 @@ export class LambdaDispatchStack extends cdk.Stack {
       },
     );
 
-    // const cluster = ecs.Cluster.fromClusterArn(this, 'ImportedCluster', props.ecsClusterArn);
     const cluster = ecs.Cluster.fromClusterAttributes(this, 'ImportedCluster', {
       clusterArn: props.ecsClusterArn,
       vpc: props.vpc,
@@ -148,6 +173,13 @@ export class LambdaDispatchStack extends cdk.Stack {
           : undefined,
     });
 
+    // Import certificate
+    const certificate = acm.Certificate.fromCertificateArn(
+      this,
+      'Certificate',
+      'arn:aws:acm:us-east-2:220761759939:certificate/ba705c87-4af6-4005-9d6d-d51318fdcbeb',
+    );
+
     // Create ECS construct
     const ecsConstruct = new LambdaDispatchECS(this, 'EcsConstruct', {
       vpc,
@@ -169,13 +201,22 @@ export class LambdaDispatchStack extends cdk.Stack {
           : undefined,
       useFargateSpot: props.useFargateSpot ?? true,
       removalPolicy: props.removalPolicy,
+      createNetworkLoadBalancer: true,
+      networkLoadBalancer: networkLoadBalancer,
+      nlbCertificate: certificate,
+      nlbPorts: {
+        routerPort: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) : 443,
+        demoAppPort: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) + 10000 : 10000,
+      },
     });
 
     // Allow ECS tasks to invoke Lambda
     lambdaConstruct.function.grantInvoke(ecsConstruct.service.taskDefinition.taskRole);
 
     const hostnameRouter = `lambdadispatch${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
+    const hostnameRouterNLB = `lambdadispatch-nlb${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
     const hostnameDemoApp = `lambdadispatch-demoapp${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
+    const hostnameDemoAppNLB = `lambdadispatch-nlb-demoapp${process.env.PR_NUMBER ? `-pr-${process.env.PR_NUMBER}` : ''}`;
 
     // Add the target group to the HTTPS listener
     httpsListener.addTargetGroups('EcsTargetGroup', {
@@ -191,7 +232,7 @@ export class LambdaDispatchStack extends cdk.Stack {
       priority: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) + 10000 : 49998,
     });
 
-    // Create Route53 records
+    // Create Route53 records for ALB and NLB
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'HostedZone', {
       hostedZoneId: 'Z005084420J9MD9JNBCUK',
       zoneName: 'ghpublic.pwrdrvr.com',
@@ -205,6 +246,16 @@ export class LambdaDispatchStack extends cdk.Stack {
       zone: hostedZone,
       recordName: hostnameDemoApp,
       target: route53.RecordTarget.fromAlias(new route53targets.LoadBalancerTarget(loadBalancer)),
+    });
+    new route53.ARecord(this, 'LambdaDispatchNLBRecord', {
+      zone: hostedZone,
+      recordName: hostnameRouterNLB,
+      target: route53.RecordTarget.fromAlias(new route53targets.LoadBalancerTarget(networkLoadBalancer)),
+    });
+    new route53.ARecord(this, 'LambdaDispatchNLBDemoAppRecord', {
+      zone: hostedZone,
+      recordName: hostnameDemoAppNLB,
+      target: route53.RecordTarget.fromAlias(new route53targets.LoadBalancerTarget(networkLoadBalancer)),
     });
 
     // Output the VPC ID
