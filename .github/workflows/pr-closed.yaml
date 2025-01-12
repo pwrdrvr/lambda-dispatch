@@ -27,9 +27,12 @@ jobs:
           aws-region: us-east-2
 
       - name: Delete Stacks
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          AWS_REGION: us-east-2
         run: |
+          echo "Deleting stack: lambda-dispatch-app-stack-pr-${PR_NUMBER}"
           # Delete all stacks for this PR
-          PR_NUMBER=${{ github.event.pull_request.number }}
           aws cloudformation delete-stack --stack-name "lambda-dispatch-app-stack-pr-${PR_NUMBER}"
           # Wait for deletion to complete
           aws cloudformation wait stack-delete-complete --stack-name "lambda-dispatch-app-stack-pr-${PR_NUMBER}"
