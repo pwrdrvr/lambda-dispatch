@@ -363,6 +363,12 @@ export class LambdaDispatchECS extends Construct {
         protocol: elbv2.Protocol.TCP,
         targets: [this.service],
         deregistrationDelay: cdk.Duration.seconds(30),
+        healthCheck: {
+          interval: cdk.Duration.seconds(5),
+          timeout: cdk.Duration.seconds(2),
+          healthyThresholdCount: 2,
+          unhealthyThresholdCount: 2,
+        },
       });
 
       // Create HTTPS listener for DemoApp if port is specified
@@ -383,6 +389,12 @@ export class LambdaDispatchECS extends Construct {
           protocol: elbv2.Protocol.TCP,
           targets: [this.service],
           deregistrationDelay: cdk.Duration.seconds(30),
+          healthCheck: {
+            interval: cdk.Duration.seconds(5),
+            timeout: cdk.Duration.seconds(2),
+            healthyThresholdCount: 2,
+            unhealthyThresholdCount: 2,
+          },
         });
       }
     }
