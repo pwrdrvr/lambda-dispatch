@@ -22,6 +22,7 @@ exports[`Snapshot 1`] = `
       "Properties": {
         "HealthCheckIntervalSeconds": 5,
         "HealthCheckPath": "/health-quick",
+        "HealthCheckPort": "3001",
         "HealthCheckTimeoutSeconds": 2,
         "HealthyThresholdCount": 2,
         "Port": 3001,
@@ -614,11 +615,17 @@ exports[`Snapshot 1`] = `
         "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-load-balancer/50dc6c495c0c9188",
         "Port": 10000,
         "Protocol": "TLS",
+        "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
     },
     "ImportedNLBNlbDemoAppHttpsListenerDemoAppNlbTargetGroupB2AB9F78": {
       "Properties": {
+        "HealthCheckIntervalSeconds": 5,
+        "HealthCheckPath": "/health-quick",
+        "HealthCheckPort": "3001",
+        "HealthCheckTimeoutSeconds": 2,
+        "HealthyThresholdCount": 2,
         "Port": 3001,
         "Protocol": "TCP",
         "TargetGroupAttributes": [
@@ -628,6 +635,7 @@ exports[`Snapshot 1`] = `
           },
         ],
         "TargetType": "ip",
+        "UnhealthyThresholdCount": 2,
         "VpcId": {
           "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
         },
@@ -655,11 +663,15 @@ exports[`Snapshot 1`] = `
         "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-load-balancer/50dc6c495c0c9188",
         "Port": 443,
         "Protocol": "TLS",
+        "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
     },
     "ImportedNLBNlbRouterHttpsListenerRouterNlbTargetGroupC3F4735F": {
       "Properties": {
+        "HealthCheckIntervalSeconds": 5,
+        "HealthCheckTimeoutSeconds": 2,
+        "HealthyThresholdCount": 2,
         "Port": 5001,
         "Protocol": "TCP",
         "TargetGroupAttributes": [
@@ -669,6 +681,7 @@ exports[`Snapshot 1`] = `
           },
         ],
         "TargetType": "ip",
+        "UnhealthyThresholdCount": 2,
         "VpcId": {
           "Fn::ImportValue": "vpc-stack:ExportsOutputRefvpcA2121C384D1B3CDE",
         },

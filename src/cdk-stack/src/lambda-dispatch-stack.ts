@@ -205,7 +205,9 @@ export class LambdaDispatchStack extends cdk.Stack {
       networkLoadBalancer: networkLoadBalancer,
       nlbCertificate: certificate,
       nlbPorts: {
+        // Port PR-number goes to the router (C# / DotNet)
         routerPort: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) : 443,
+        // Port PR-number + 10000 goes to the demo app (Node.js)
         demoAppPort: process.env.PR_NUMBER ? parseInt(process.env.PR_NUMBER) + 10000 : 10000,
       },
     });

@@ -295,6 +295,7 @@ export class LambdaDispatchECS extends Construct {
         interval: cdk.Duration.seconds(5),
         timeout: cdk.Duration.seconds(2),
         healthyThresholdCount: 2,
+        port: '3001',
       },
       deregistrationDelay: cdk.Duration.seconds(30),
     });
@@ -394,6 +395,7 @@ export class LambdaDispatchECS extends Construct {
             timeout: cdk.Duration.seconds(2),
             healthyThresholdCount: 2,
             unhealthyThresholdCount: 2,
+            port: '3001',
           },
         });
       }
