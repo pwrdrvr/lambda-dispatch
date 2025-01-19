@@ -388,7 +388,12 @@ export class LambdaDispatchECS extends Construct {
         nlbDempAppListener.addTargets('DemoAppNlbTarget', {
           port: 3001,
           protocol: elbv2.Protocol.TCP,
-          targets: [this.service],
+          targets: [
+            this.service.loadBalancerTarget({
+              containerName: 'DemoApp',
+              containerPort: 3001,
+            }),
+          ],
           deregistrationDelay: cdk.Duration.seconds(30),
           healthCheck: {
             interval: cdk.Duration.seconds(5),
