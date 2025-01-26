@@ -1,2 +1,6 @@
 export { LambdaDispatchFunction, LambdaDispatchFunctionProps } from './lambda';
-export { LambdaDispatchECS, LambdaDispatchECSProps } from './ecs';
+export {
+  LambdaDispatchECS,
+  LambdaDispatchECSProps,
+  LambdaDispatchECSNlbPortConfiguration,
+} from './ecs';

@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.Text;
 using System.Buffers;
 using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-using System.Net;
 
 namespace PwrDrvr.LambdaDispatch.Router.TestClient;
 
@@ -21,19 +19,6 @@ public class Program
     {
       Console.WriteLine(message);
     }
-  }
-
-  private static HttpClientHandler CreateHttpClientHandler(bool allowAllCertificates = true)
-  {
-    HttpClientHandler handler = new HttpClientHandler();
-
-    // Browser doesn't support ServerCertificateCustomValidationCallback
-    if (allowAllCertificates)
-    {
-      handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-    }
-
-    return handler;
   }
 
   private static string FormatBytes(long bytes)

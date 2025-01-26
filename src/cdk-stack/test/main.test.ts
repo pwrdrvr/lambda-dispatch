@@ -27,6 +27,10 @@ test('Snapshot', () => {
     loadBalancerSecurityGroupId: 'sg-0123456789abcdef0',
     loadBalancerDnsName: 'my-load-balancer-1234567890.us-east-1.elb.amazonaws.com',
     loadBalancerHostedZoneId: 'Z3DZXE0Q79N41H',
+    networkLoadBalancerArn:
+      'arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-load-balancer/50dc6c495c0c9188',
+    networkLoadBalancerDnsName: 'my-load-balancer-1234567890.us-east-1.elb.amazonaws.com',
+    networkLoadBalancerHostedZoneId: 'Z3DZXE0Q79N41H',
     ecsClusterArn: 'arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster',
     ecsClusterName: 'my-cluster',
   });

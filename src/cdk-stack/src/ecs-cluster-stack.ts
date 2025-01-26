@@ -13,11 +13,14 @@ export interface EcsClusterStackProps extends cdk.StackProps {
 }
 
 export class EcsClusterStack extends cdk.Stack {
-  // Explose the ALB as a public property
+  // Expose the ALB as a public property
   public readonly loadBalancer: elbv2.IApplicationLoadBalancer;
 
   // Expose the HTTPS listener as a public property
   public readonly httpsListener: elbv2.IApplicationListener;
+
+  // Expose the NLB
+  public readonly networkLoadBalancer: elbv2.INetworkLoadBalancer;
 
   constructor(scope: Construct, id: string, props: EcsClusterStackProps) {
     super(scope, id, props);
@@ -35,7 +38,7 @@ export class EcsClusterStack extends cdk.Stack {
       securityGroup,
     });
 
-    // Create certificate
+    // Import certificate
     const certificate = acm.Certificate.fromCertificateArn(
       this,
       'Certificate',
@@ -70,6 +73,17 @@ export class EcsClusterStack extends cdk.Stack {
       enableFargateCapacityProviders: true,
     });
 
+    //
+    // Create Network Load Balancer
+    //
+    this.networkLoadBalancer = new elbv2.NetworkLoadBalancer(this, 'NetworkLoadBalancer', {
+      vpc: props.vpc,
+      internetFacing: true,
+      crossZoneEnabled: true,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      securityGroups: [securityGroup],
+    });
+
     // Output the VPC ID
     new cdk.CfnOutput(this, 'VpcId', {
       value: props.vpc.vpcId,
@@ -81,6 +95,12 @@ export class EcsClusterStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'LoadBalancerArn', {
       value: this.loadBalancer.loadBalancerArn,
       exportName: `${this.stackName}-LoadBalancerArn`,
+    });
+
+    // Output the Network Load Balancer ARN
+    new cdk.CfnOutput(this, 'NetworkLoadBalancerArn', {
+      value: this.networkLoadBalancer.loadBalancerArn,
+      exportName: `${this.stackName}-NetworkLoadBalancerArn`,
     });
 
     // Output the HTTPS Listener ARN
@@ -100,10 +120,18 @@ export class EcsClusterStack extends cdk.Stack {
       value: this.loadBalancer.loadBalancerCanonicalHostedZoneId,
       exportName: `${this.stackName}-ALBCanonicalHostedZoneId`,
     });
+    new cdk.CfnOutput(this, 'NetworkCanonicalHostedZoneId', {
+      value: this.networkLoadBalancer.loadBalancerCanonicalHostedZoneId,
+      exportName: `${this.stackName}-NetworkALBCanonicalHostedZoneId`,
+    });
 
     new cdk.CfnOutput(this, 'LoadBalancerDnsName', {
       value: this.loadBalancer.loadBalancerDnsName,
       exportName: `${this.stackName}-ALBDnsName`,
+    });
+    new cdk.CfnOutput(this, 'NetworkALBDnsName', {
+      value: this.networkLoadBalancer.loadBalancerDnsName,
+      exportName: `${this.stackName}-NetworkALBDnsName`,
     });
 
     // Output the cluster ARN

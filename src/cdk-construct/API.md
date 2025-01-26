@@ -103,8 +103,12 @@ Any object.
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.securityGroup">securityGroup</a></code> | <code>aws-cdk-lib.aws_ec2.SecurityGroup</code> | Security group for the ECS tasks. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.service">service</a></code> | <code>aws-cdk-lib.aws_ecs.FargateService</code> | The ECS Fargate service. |
-| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupDemoApp">targetGroupDemoApp</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Target group for the Demo App service. |
-| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupRouter">targetGroupRouter</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Target group for the Router service. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupDemoApp">targetGroupDemoApp</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Application Load Balancer target group for the Demo App service. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.targetGroupRouter">targetGroupRouter</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup</code> | Application Load Balancer target group for the Router service. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbDemoAppListener">nlbDemoAppListener</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.NetworkListener</code> | Network Load Balancer Demo App Listener Only set if createNetworkLoadBalancer is true and demoAppPort is specified. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbRouterListener">nlbRouterListener</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.NetworkListener</code> | Network Load Balancer Router Listener Only set if createNetworkLoadBalancer is true. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbTargetGroupDemoApp">nlbTargetGroupDemoApp</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.NetworkTargetGroup</code> | Network Load Balancer target group for the Demo App service Only set if createNetworkLoadBalancer is true. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbTargetGroupRouter">nlbTargetGroupRouter</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.NetworkTargetGroup</code> | Network Load Balancer target group for the Router service Only set if createNetworkLoadBalancer is true. |
 
 ---
 
@@ -152,7 +156,7 @@ public readonly targetGroupDemoApp: ApplicationTargetGroup;
 
 - *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup
 
-Target group for the Demo App service.
+Application Load Balancer target group for the Demo App service.
 
 ---
 
@@ -164,7 +168,55 @@ public readonly targetGroupRouter: ApplicationTargetGroup;
 
 - *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.ApplicationTargetGroup
 
-Target group for the Router service.
+Application Load Balancer target group for the Router service.
+
+---
+
+##### `nlbDemoAppListener`<sup>Optional</sup> <a name="nlbDemoAppListener" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbDemoAppListener"></a>
+
+```typescript
+public readonly nlbDemoAppListener: NetworkListener;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.NetworkListener
+
+Network Load Balancer Demo App Listener Only set if createNetworkLoadBalancer is true and demoAppPort is specified.
+
+---
+
+##### `nlbRouterListener`<sup>Optional</sup> <a name="nlbRouterListener" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbRouterListener"></a>
+
+```typescript
+public readonly nlbRouterListener: NetworkListener;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.NetworkListener
+
+Network Load Balancer Router Listener Only set if createNetworkLoadBalancer is true.
+
+---
+
+##### `nlbTargetGroupDemoApp`<sup>Optional</sup> <a name="nlbTargetGroupDemoApp" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbTargetGroupDemoApp"></a>
+
+```typescript
+public readonly nlbTargetGroupDemoApp: NetworkTargetGroup;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.NetworkTargetGroup
+
+Network Load Balancer target group for the Demo App service Only set if createNetworkLoadBalancer is true.
+
+---
+
+##### `nlbTargetGroupRouter`<sup>Optional</sup> <a name="nlbTargetGroupRouter" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECS.property.nlbTargetGroupRouter"></a>
+
+```typescript
+public readonly nlbTargetGroupRouter: NetworkTargetGroup;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.NetworkTargetGroup
+
+Network Load Balancer target group for the Router service Only set if createNetworkLoadBalancer is true.
 
 ---
 
@@ -299,6 +351,53 @@ The Lambda function instance.
 
 ## Structs <a name="Structs" id="Structs"></a>
 
+### LambdaDispatchECSNlbPortConfiguration <a name="LambdaDispatchECSNlbPortConfiguration" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration"></a>
+
+Port configuration for the Network Load Balancer.
+
+#### Initializer <a name="Initializer" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration.Initializer"></a>
+
+```typescript
+import { LambdaDispatchECSNlbPortConfiguration } from '@pwrdrvr/lambda-dispatch-cdk'
+
+const lambdaDispatchECSNlbPortConfiguration: LambdaDispatchECSNlbPortConfiguration = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration.property.demoAppPort">demoAppPort</a></code> | <code>number</code> | Port that the NLB will listen on for the Demo App container. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration.property.routerPort">routerPort</a></code> | <code>number</code> | Port that the NLB will listen on for the Router container. |
+
+---
+
+##### `demoAppPort`<sup>Required</sup> <a name="demoAppPort" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration.property.demoAppPort"></a>
+
+```typescript
+public readonly demoAppPort: number;
+```
+
+- *Type:* number
+- *Default:* undefined
+
+Port that the NLB will listen on for the Demo App container.
+
+---
+
+##### `routerPort`<sup>Required</sup> <a name="routerPort" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration.property.routerPort"></a>
+
+```typescript
+public readonly routerPort: number;
+```
+
+- *Type:* number
+- *Default:* 443
+
+Port that the NLB will listen on for the Router container.
+
+---
+
 ### LambdaDispatchECSProps <a name="LambdaDispatchECSProps" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps"></a>
 
 Properties for the ECS construct.
@@ -320,10 +419,14 @@ const lambdaDispatchECSProps: LambdaDispatchECSProps = { ... }
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.vpc">vpc</a></code> | <code>aws-cdk-lib.aws_ec2.IVpc</code> | VPC where the ECS service will be deployed. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.cpu">cpu</a></code> | <code>number</code> | CPU units for the ECS task. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.cpuArchitecture">cpuArchitecture</a></code> | <code>aws-cdk-lib.aws_ecs.CpuArchitecture</code> | CPU architecture to use for the ECS tasks Note: Fargate Spot only supports AMD64 architecture. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.createNetworkLoadBalancer">createNetworkLoadBalancer</a></code> | <code>boolean</code> | Whether to create a Network Load Balancer in addition to the Application Load Balancer. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.demoAppImage">demoAppImage</a></code> | <code>aws-cdk-lib.aws_ecs.ContainerImage</code> | Image for the demo app This can be the same as the lambda image because it just won't start the lambda extension. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.maxCapacity">maxCapacity</a></code> | <code>number</code> | Maximum number of ECS tasks. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.memoryLimitMiB">memoryLimitMiB</a></code> | <code>number</code> | Memory limit for the ECS task in MiB. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.minCapacity">minCapacity</a></code> | <code>number</code> | Minimum number of ECS tasks. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.networkLoadBalancer">networkLoadBalancer</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.INetworkLoadBalancer</code> | Network Load Balancer. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.nlbCertificate">nlbCertificate</a></code> | <code>aws-cdk-lib.aws_elasticloadbalancingv2.IListenerCertificate</code> | Certificate to use for HTTPS listeners on the Network Load Balancer Required if createNetworkLoadBalancer is true. |
+| <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.nlbPorts">nlbPorts</a></code> | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration">LambdaDispatchECSNlbPortConfiguration</a></code> | Port configuration for the Network Load Balancer These are the ports that the NLB will listen on and forward to the containers. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.removalPolicy">removalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | The removal policy to apply to the log group. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.routerImage">routerImage</a></code> | <code>aws-cdk-lib.aws_ecs.ContainerImage</code> | Image for the lambda-dispatch Router. |
 | <code><a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.useFargateSpot">useFargateSpot</a></code> | <code>boolean</code> | Whether to use Fargate Spot capacity provider Note: Fargate Spot only supports AMD64 architecture. |
@@ -392,6 +495,19 @@ CPU architecture to use for the ECS tasks Note: Fargate Spot only supports AMD64
 
 ---
 
+##### `createNetworkLoadBalancer`<sup>Optional</sup> <a name="createNetworkLoadBalancer" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.createNetworkLoadBalancer"></a>
+
+```typescript
+public readonly createNetworkLoadBalancer: boolean;
+```
+
+- *Type:* boolean
+- *Default:* false
+
+Whether to create a Network Load Balancer in addition to the Application Load Balancer.
+
+---
+
 ##### `demoAppImage`<sup>Optional</sup> <a name="demoAppImage" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.demoAppImage"></a>
 
 ```typescript
@@ -441,6 +557,43 @@ public readonly minCapacity: number;
 - *Default:* 1
 
 Minimum number of ECS tasks.
+
+---
+
+##### `networkLoadBalancer`<sup>Optional</sup> <a name="networkLoadBalancer" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.networkLoadBalancer"></a>
+
+```typescript
+public readonly networkLoadBalancer: INetworkLoadBalancer;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.INetworkLoadBalancer
+
+Network Load Balancer.
+
+---
+
+##### `nlbCertificate`<sup>Optional</sup> <a name="nlbCertificate" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.nlbCertificate"></a>
+
+```typescript
+public readonly nlbCertificate: IListenerCertificate;
+```
+
+- *Type:* aws-cdk-lib.aws_elasticloadbalancingv2.IListenerCertificate
+
+Certificate to use for HTTPS listeners on the Network Load Balancer Required if createNetworkLoadBalancer is true.
+
+---
+
+##### `nlbPorts`<sup>Optional</sup> <a name="nlbPorts" id="@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSProps.property.nlbPorts"></a>
+
+```typescript
+public readonly nlbPorts: LambdaDispatchECSNlbPortConfiguration;
+```
+
+- *Type:* <a href="#@pwrdrvr/lambda-dispatch-cdk.LambdaDispatchECSNlbPortConfiguration">LambdaDispatchECSNlbPortConfiguration</a>
+- *Default:* undefined
+
+Port configuration for the Network Load Balancer These are the ports that the NLB will listen on and forward to the containers.
 
 ---
 
