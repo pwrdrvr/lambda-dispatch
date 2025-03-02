@@ -16,6 +16,20 @@ const project = new awscdk.AwsCdkConstructLibrary({
   // description: undefined,  /* The description is just a string that helps people understand the purpose of the package. */
   // devDeps: [],             /* Build dependencies for this module. */
   // packageName: undefined,  /* The "name" in package.json. */
+
+  publishToMaven: {
+    mavenArtifactId: 'lambdadispatch-cdk',
+    javaPackage: 'com.pwrdrvr.lambdadispatch.cdk',
+    mavenGroupId: 'com.pwrdrvr.lambdadispatch',
+  },
+  publishToNuget: {
+    dotNetNamespace: 'PwrDrvr.LambdaDispatch.CDK',
+    packageId: 'PwrDrvr.LambdaDispatch.CDK',
+  },
+  publishToPypi: {
+    distName: 'pwrdrvr.lambdadispatch.cdk',
+    module: 'pwrdrvr.lambdadispatch.cdk',
+  },
 });
 
 project.compileTask.exec('cp DockerfileLambda lib/DockerfileLambda');

@@ -120,3 +120,115 @@ jobs:
         run: cd .repo && npx projen package:js
       - name: Collect js artifact
         run: mv .repo/dist dist
+  package-java:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: ${{ !needs.build.outputs.self_mutation_happened }}
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: "11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: dist
+      - name: Restore build artifact permissions
+        run: cd dist && setfacl --restore=permissions-backup.acl
+        continue-on-error: true
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          path: .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Extract build artifact
+        run: tar --strip-components=1 -xzvf dist/js/*.tgz -C .repo
+      - name: Move build artifact out of the way
+        run: mv dist dist.old
+      - name: Create java artifact
+        run: cd .repo && npx projen package:java
+      - name: Collect java artifact
+        run: mv .repo/dist dist
+  package-python:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: ${{ !needs.build.outputs.self_mutation_happened }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: dist
+      - name: Restore build artifact permissions
+        run: cd dist && setfacl --restore=permissions-backup.acl
+        continue-on-error: true
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          path: .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Extract build artifact
+        run: tar --strip-components=1 -xzvf dist/js/*.tgz -C .repo
+      - name: Move build artifact out of the way
+        run: mv dist dist.old
+      - name: Create python artifact
+        run: cd .repo && npx projen package:python
+      - name: Collect python artifact
+        run: mv .repo/dist dist
+  package-dotnet:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: ${{ !needs.build.outputs.self_mutation_happened }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.x
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: dist
+      - name: Restore build artifact permissions
+        run: cd dist && setfacl --restore=permissions-backup.acl
+        continue-on-error: true
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          path: .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Extract build artifact
+        run: tar --strip-components=1 -xzvf dist/js/*.tgz -C .repo
+      - name: Move build artifact out of the way
+        run: mv dist dist.old
+      - name: Create dotnet artifact
+        run: cd .repo && npx projen package:dotnet
+      - name: Collect dotnet artifact
+        run: mv .repo/dist dist
