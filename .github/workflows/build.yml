@@ -722,3 +722,78 @@ jobs:
           for i in {1..5}; do
             curl ${BASE_URL}/ping
           done
+          
+  create-status-checks:
+    needs: [deploy, smoke-test]
+    runs-on: ubuntu-latest
+    if: ${{ always() && needs.deploy.result != 'failed' && github.event_name == 'pull_request' }}
+    steps:
+      - name: Create Status Checks with URLs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Generate the URLs based on PR number
+          ALB_ROUTER_URL="https://lambdadispatch-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com"
+          ALB_DEMOAPP_URL="https://lambdadispatch-demoapp-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com"
+          NLB_ROUTER_URL="https://lambdadispatch-nlb-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com"
+          NLB_DEMOAPP_URL="https://lambdadispatch-nlb-demoapp-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com"
+          
+          # Create deployment statuses for each URL
+          # ALB Router
+          gh api repos/${{ github.repository }}/deployments \
+            -F ref=${{ github.event.pull_request.head.ref }} \
+            -F environment="ALB Router" \
+            -F auto_merge=false \
+            -F required_contexts=[] | jq .id > deployment_id_alb_router.txt
+          
+          ALB_ROUTER_ID=$(cat deployment_id_alb_router.txt)
+          gh api repos/${{ github.repository }}/deployments/$ALB_ROUTER_ID/statuses \
+            -F state=success \
+            -F environment_url=$ALB_ROUTER_URL \
+            -F description="ALB Router URL" \
+            -F log_url=$ALB_ROUTER_URL
+
+          # ALB Demo App
+          gh api repos/${{ github.repository }}/deployments \
+            -F ref=${{ github.event.pull_request.head.ref }} \
+            -F environment="ALB Demo App" \
+            -F auto_merge=false \
+            -F required_contexts=[] | jq .id > deployment_id_alb_demoapp.txt
+          
+          ALB_DEMOAPP_ID=$(cat deployment_id_alb_demoapp.txt)
+          gh api repos/${{ github.repository }}/deployments/$ALB_DEMOAPP_ID/statuses \
+            -F state=success \
+            -F environment_url=$ALB_DEMOAPP_URL \
+            -F description="ALB Demo App URL" \
+            -F log_url=$ALB_DEMOAPP_URL
+
+          # NLB Router
+          gh api repos/${{ github.repository }}/deployments \
+            -F ref=${{ github.event.pull_request.head.ref }} \
+            -F environment="NLB Router" \
+            -F auto_merge=false \
+            -F required_contexts=[] | jq .id > deployment_id_nlb_router.txt
+          
+          NLB_ROUTER_ID=$(cat deployment_id_nlb_router.txt)
+          gh api repos/${{ github.repository }}/deployments/$NLB_ROUTER_ID/statuses \
+            -F state=success \
+            -F environment_url=$NLB_ROUTER_URL \
+            -F description="NLB Router URL (Port ${PR_NUMBER})" \
+            -F log_url=$NLB_ROUTER_URL
+
+          # NLB Demo App
+          gh api repos/${{ github.repository }}/deployments \
+            -F ref=${{ github.event.pull_request.head.ref }} \
+            -F environment="NLB Demo App" \
+            -F auto_merge=false \
+            -F required_contexts=[] | jq .id > deployment_id_nlb_demoapp.txt
+          
+          NLB_DEMOAPP_ID=$(cat deployment_id_nlb_demoapp.txt)
+          gh api repos/${{ github.repository }}/deployments/$NLB_DEMOAPP_ID/statuses \
+            -F state=success \
+            -F environment_url=$NLB_DEMOAPP_URL \
+            -F description="NLB Demo App URL (Port ${PR_NUMBER}+10000)" \
+            -F log_url=$NLB_DEMOAPP_URL
+          
+          echo "Created deployment status checks with URLs for all endpoints"
