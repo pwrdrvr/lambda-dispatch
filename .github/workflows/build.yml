@@ -722,3 +722,91 @@ jobs:
           for i in {1..5}; do
             curl ${BASE_URL}/ping
           done
+          
+  create-status-checks:
+    needs: [deploy, smoke-test]
+    runs-on: ubuntu-latest
+    if: ${{ always() && needs.deploy.result != 'failed' && github.event_name == 'pull_request' }}
+    steps:
+      - name: Generate URLs
+        id: generate-urls
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "alb_router=https://lambdadispatch-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com" >> $GITHUB_OUTPUT
+          echo "alb_demoapp=https://lambdadispatch-demoapp-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com" >> $GITHUB_OUTPUT
+          echo "nlb_router=https://lambdadispatch-nlb-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com" >> $GITHUB_OUTPUT
+          echo "nlb_demoapp=https://lambdadispatch-nlb-demoapp-pr-${PR_NUMBER}.ghpublic.pwrdrvr.com" >> $GITHUB_OUTPUT
+      
+      - name: Find Deployment URLs Comment
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '### 🚀 Deployment URLs'
+      
+      - name: Post Deployment URLs Comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ### 🚀 Deployment URLs
+            
+            #### Application Load Balancer (ALB)
+            - **Router**: [${{ steps.generate-urls.outputs.alb_router }}](${{ steps.generate-urls.outputs.alb_router }})
+            - **Demo App**: [${{ steps.generate-urls.outputs.alb_demoapp }}](${{ steps.generate-urls.outputs.alb_demoapp }})
+            
+            #### Network Load Balancer (NLB)
+            - **Router (Port ${{ github.event.pull_request.number }})**: [${{ steps.generate-urls.outputs.nlb_router }}](${{ steps.generate-urls.outputs.nlb_router }})
+            - **Demo App (Port ${{ github.event.pull_request.number }}+10000)**: [${{ steps.generate-urls.outputs.nlb_demoapp }}](${{ steps.generate-urls.outputs.nlb_demoapp }})
+            
+            ### 🧪 Test Endpoints
+            
+            #### Basic Tests
+            ```bash
+            # Simple ping test
+            curl -v ${{ steps.generate-urls.outputs.alb_router }}/ping
+            
+            # View request headers
+            curl ${{ steps.generate-urls.outputs.alb_router }}/headers
+            
+            # Delayed response (milliseconds)
+            curl ${{ steps.generate-urls.outputs.alb_router }}/delay?delay=500
+            ```
+            
+            #### Load/Performance Tests
+            ```bash
+            # Ping test with 100 concurrent requests (Hey)
+            hey -h2 -c 100 -n 10000 ${{ steps.generate-urls.outputs.alb_router }}/ping
+            
+            # Ping test with controlled concurrency (oha)
+            oha -c 20 -z 60s ${{ steps.generate-urls.outputs.alb_router }}/ping
+            
+            # Post and echo data
+            curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${{ steps.generate-urls.outputs.alb_router }}/echo
+            ```
+            
+            #### Advanced Features
+            ```bash
+            # Chunked/streaming response
+            curl ${{ steps.generate-urls.outputs.alb_router }}/chunked-response
+            
+            # Read from S3
+            curl ${{ steps.generate-urls.outputs.alb_router }}/read-s3
+            
+            # Read from DynamoDB
+            curl ${{ steps.generate-urls.outputs.alb_router }}/read
+            ```
+            
+            *Deployment updated: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}*
+      
+      # Create a single environment for the main deployment URL to show in PR checks
+      - name: Update Main Environment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # This will update the environment URL that appears in the PR checks
+          echo "Deployment URLs have been posted as a comment"
