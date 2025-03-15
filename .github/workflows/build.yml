@@ -763,6 +763,44 @@ jobs:
             - **Router (Port ${{ github.event.pull_request.number }})**: [${{ steps.generate-urls.outputs.nlb_router }}](${{ steps.generate-urls.outputs.nlb_router }})
             - **Demo App (Port ${{ github.event.pull_request.number }}+10000)**: [${{ steps.generate-urls.outputs.nlb_demoapp }}](${{ steps.generate-urls.outputs.nlb_demoapp }})
             
+            ### 🧪 Test Endpoints
+            
+            #### Basic Tests
+            ```bash
+            # Simple ping test
+            curl -v ${{ steps.generate-urls.outputs.alb_router }}/ping
+            
+            # View request headers
+            curl ${{ steps.generate-urls.outputs.alb_router }}/headers
+            
+            # Delayed response (milliseconds)
+            curl ${{ steps.generate-urls.outputs.alb_router }}/delay?delay=500
+            ```
+            
+            #### Load/Performance Tests
+            ```bash
+            # Ping test with 100 concurrent requests (Hey)
+            hey -h2 -c 100 -n 10000 ${{ steps.generate-urls.outputs.alb_router }}/ping
+            
+            # Ping test with controlled concurrency (oha)
+            oha -c 20 -z 60s ${{ steps.generate-urls.outputs.alb_router }}/ping
+            
+            # Post and echo data
+            curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${{ steps.generate-urls.outputs.alb_router }}/echo
+            ```
+            
+            #### Advanced Features
+            ```bash
+            # Chunked/streaming response
+            curl ${{ steps.generate-urls.outputs.alb_router }}/chunked-response
+            
+            # Read from S3
+            curl ${{ steps.generate-urls.outputs.alb_router }}/read-s3
+            
+            # Read from DynamoDB
+            curl ${{ steps.generate-urls.outputs.alb_router }}/read
+            ```
+            
             *Deployment updated: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}*
       
       # Create a single environment for the main deployment URL to show in PR checks

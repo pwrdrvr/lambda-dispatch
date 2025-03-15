@@ -98,6 +98,181 @@ export async function performInit() {
 // Serve static files from the "public" directory
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+app.get('/', (req, res) => {
+  // HTML for the documentation page
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lambda Dispatch Demo App</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1, h2, h3 {
+      color: #0066cc;
+    }
+    .endpoint {
+      background: #f5f5f5;
+      border-left: 4px solid #0066cc;
+      padding: 10px 15px;
+      margin-bottom: 20px;
+      border-radius: 0 4px 4px 0;
+    }
+    .endpoint h3 {
+      margin-top: 0;
+    }
+    code {
+      background: #eee;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    }
+    pre {
+      background: #f8f8f8;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+      border: 1px solid #ddd;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+<body>
+  <h1>Lambda Dispatch Demo App</h1>
+  <p>This application demonstrates various features of the Lambda Dispatch system. Use the endpoints below to test different aspects of the service.</p>
+  
+  <h2>Health and Status Endpoints</h2>
+  
+  <div class="endpoint">
+    <h3>GET /health-quick</h3>
+    <p>Quick health check that doesn't wait for initialization.</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/health-quick</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /health</h3>
+    <p>Full health check that ensures initialization is complete (waits for ${initSleepMs}ms).</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/health</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /ping</h3>
+    <p>Simple ping endpoint that returns "pong".</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/ping</code></pre>
+    <p>Load test with hey:</p>
+    <pre><code>hey -h2 -c 100 -n 10000 ${req.protocol}://${req.headers.host}/ping</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /headers</h3>
+    <p>Returns all HTTP headers from the incoming request as JSON.</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/headers</code></pre>
+  </div>
+  
+  <h2>Delay and Streaming Endpoints</h2>
+  
+  <div class="endpoint">
+    <h3>GET /delay</h3>
+    <p>Delays the response by the specified number of milliseconds.</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/delay?delay=500</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /chunked-response</h3>
+    <p>Returns a chunked response with an initial payload, 5 second delay, then final payload.</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/chunked-response</code></pre>
+  </div>
+  
+  <h2>Echo Endpoints</h2>
+  
+  <div class="endpoint">
+    <h3>POST /echo</h3>
+    <p>Streams the request body directly to the response with back pressure.</p>
+    <pre><code>curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${req.protocol}://${req.headers.host}/echo</code></pre>
+    <p>Debug mode:</p>
+    <pre><code>curl -X POST -H "Content-Type: text/plain" -H "X-Lambda-Dispatch-Debug: true" --data "Hello World" ${req.protocol}://${req.headers.host}/echo</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>POST /echo-slow</h3>
+    <p>Reads the entire request body into memory before sending the response.</p>
+    <pre><code>curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${req.protocol}://${req.headers.host}/echo-slow</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>POST /double-echo</h3>
+    <p>Echoes each chunk of the request body twice, doubling the response size.</p>
+    <pre><code>curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${req.protocol}://${req.headers.host}/double-echo</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>POST /half-echo</h3>
+    <p>Echoes half of each chunk of the request body, halving the response size.</p>
+    <pre><code>curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${req.protocol}://${req.headers.host}/half-echo</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>ALL /debug</h3>
+    <p>Returns the request line, headers, and body. Works with any HTTP method.</p>
+    <pre><code>curl -X POST -H "Content-Type: text/plain" --data "Hello World" ${req.protocol}://${req.headers.host}/debug</code></pre>
+  </div>
+  
+  <h2>AWS Service Endpoints</h2>
+  
+  <div class="endpoint">
+    <h3>GET /read-s3</h3>
+    <p>Reads an image file from S3 and returns it. Good for testing larger payloads.</p>
+    <pre><code>curl -o image.jpg ${req.protocol}://${req.headers.host}/read-s3</code></pre>
+    <p>Load test with hey:</p>
+    <pre><code>hey -h2 -c 100 -n 1000 ${req.protocol}://${req.headers.host}/read-s3</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /read</h3>
+    <p>Reads a random item from DynamoDB.</p>
+    <pre><code>curl ${req.protocol}://${req.headers.host}/read</code></pre>
+    <p>Load test with k6:</p>
+    <pre><code>k6 run k6/read-dynamodb-constant.js</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /odd-status</h3>
+    <p>Returns an unusual HTTP status code (519).</p>
+    <pre><code>curl -i ${req.protocol}://${req.headers.host}/odd-status</code></pre>
+  </div>
+  
+  <h2>Static Files</h2>
+  
+  <div class="endpoint">
+    <h3>GET /public/silly-test-image.jpg</h3>
+    <p>Serves a static image file stored in the application.</p>
+    <pre><code>curl -o local-image.jpg ${req.protocol}://${req.headers.host}/public/silly-test-image.jpg</code></pre>
+  </div>
+  
+</body>
+</html>`;
+
+  res.send(html);
+});
+
 app.get('/health-quick', async (req, res) => {
   res.send('OK');
 });
