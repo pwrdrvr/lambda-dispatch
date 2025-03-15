@@ -24,6 +24,7 @@
     "build": "tsc --build tsconfig.json",
     "build:demo-app": "yarn workspace @pwrdrvr/lambda-dispatch-demo-app build",
     "start:demo-app": "NUMBER_OF_WORKERS=${NUMBER_OF_WORKERS:-1} yarn workspace @pwrdrvr/lambda-dispatch-demo-app start:app",
+    "start:demo-app:logging": "NUMBER_OF_WORKERS=${NUMBER_OF_WORKERS:-1} yarn workspace @pwrdrvr/lambda-dispatch-demo-app start:app:logging",
     "test": "yarn workspace @pwrdrvr/lambda-dispatch-cdk test && yarn workspace @pwrdrvr/lambda-dispatch-cdk-stack test"
   },
   "author": "",

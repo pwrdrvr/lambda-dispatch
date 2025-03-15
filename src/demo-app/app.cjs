@@ -62,7 +62,9 @@ const logFormat =
 
 // Use the custom format
 app.use(trackBytes);
-app.use(morgan(logFormat));
+if (process.env.LOGGING === 'true') {
+  app.use(morgan(logFormat));
+}
 
 const port = 3001;
 const spdyPort = 3002;
@@ -371,7 +373,9 @@ app.post('/echo', async (req, res) => {
       const timestamp = new Date().toISOString();
       totalBytesReceived += chunk.length;
       if (debugMode) {
-        console.log(`${logPrefix} - RECEIVED chunk ${chunk.length} bytes, total ${totalBytesReceived} bytes at ${timestamp}`);
+        console.log(
+          `${logPrefix} - RECEIVED chunk ${chunk.length} bytes, total ${totalBytesReceived} bytes at ${timestamp}`,
+        );
       }
 
       this.push(chunk);
@@ -383,7 +387,7 @@ app.post('/echo', async (req, res) => {
         console.log(`${logPrefix} - FINISHED`);
       }
       callback();
-    }
+    },
   });
 
   // Pipe the req body to the response with back pressure
@@ -465,7 +469,7 @@ app.post('/double-echo', async (req, res) => {
 
 app.post('/half-echo', async (req, res) => {
   const contentType = req.get('Content-Type');
-  
+
   if (contentType) {
     res.set('Content-Type', contentType);
   }
@@ -492,7 +496,7 @@ app.post('/half-echo', async (req, res) => {
       const halfLength = chunk.length >> 1;
       this.push(chunk.slice(0, halfLength), 'binary');
       callback();
-    }
+    },
   });
 
   // Pipe through halver transform then to response
