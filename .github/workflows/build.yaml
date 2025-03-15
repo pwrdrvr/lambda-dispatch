@@ -190,9 +190,9 @@ jobs:
 
       - name: Upload digest
         if: needs.check-access.outputs.has-token-access == 'true'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: digests-router
+          name: digests-router-${{ matrix.arch }}
           path: /tmp/digests-router/*
           if-no-files-found: error
           retention-days: 1
@@ -212,13 +212,34 @@ jobs:
     steps:
       - name: Clear digests
         run: |
-          rm -rf /tmp/digests-router/* || true
+          mkdir -p /tmp/digests-router/public /tmp/digests-router/private
+          rm -rf /tmp/digests-router/public/* /tmp/digests-router/private/* || true
 
-      - name: Download digests
-        uses: actions/download-artifact@v3
+      - name: Download AMD64 digests
+        uses: actions/download-artifact@v4
         with:
-          name: digests-router
-          path: /tmp/digests-router
+          name: digests-router-amd64
+          path: /tmp/digests-router-amd64
+
+      - name: Download ARM64 digests
+        uses: actions/download-artifact@v4
+        with:
+          name: digests-router-arm64
+          path: /tmp/digests-router-arm64
+
+      - name: Merge digests
+        run: |
+          # Copy files from platform-specific folders to the main folder
+          cp -r /tmp/digests-router-amd64/public/* /tmp/digests-router/public/ || true
+          cp -r /tmp/digests-router-amd64/private/* /tmp/digests-router/private/ || true
+          cp -r /tmp/digests-router-arm64/public/* /tmp/digests-router/public/ || true
+          cp -r /tmp/digests-router-arm64/private/* /tmp/digests-router/private/ || true
+          
+          # List files to verify
+          echo "Public digests:"
+          ls -la /tmp/digests-router/public/ || true
+          echo "Private digests:"
+          ls -la /tmp/digests-router/private/ || true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -388,9 +409,9 @@ jobs:
 
       - name: Upload digest
         if: needs.check-access.outputs.has-token-access == 'true'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: digests-extension
+          name: digests-extension-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -409,12 +430,30 @@ jobs:
     steps:
       - name: Clear digests
         run: |
+          mkdir -p /tmp/digests
           rm -rf /tmp/digests/* || true
-      - name: Download digests
-        uses: actions/download-artifact@v3
+      
+      - name: Download x86_64 digests
+        uses: actions/download-artifact@v4
         with:
-          name: digests-extension
-          path: /tmp/digests
+          name: digests-extension-x86_64
+          path: /tmp/digests-x86_64
+
+      - name: Download aarch64 digests
+        uses: actions/download-artifact@v4
+        with:
+          name: digests-extension-aarch64
+          path: /tmp/digests-aarch64
+          
+      - name: Merge digests
+        run: |
+          # Copy files from platform-specific folders to the main folder
+          cp -r /tmp/digests-x86_64/* /tmp/digests/ || true
+          cp -r /tmp/digests-aarch64/* /tmp/digests/ || true
+          
+          # List files to verify
+          echo "Extension digests:"
+          ls -la /tmp/digests/ || true
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
