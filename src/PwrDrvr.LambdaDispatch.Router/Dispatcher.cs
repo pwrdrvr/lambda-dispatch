@@ -258,7 +258,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
       }
 
       // Log an access log entry
-      _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log",
+      _logger.LogTrace("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log",
         accessLogProps.Method,
         accessLogProps.Uri,
         accessLogProps.Protocol,
@@ -745,7 +745,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
             RunRequestResult runRequestResult = task.Result;
 
             // Log an access log entry
-            _logger.LogInformation("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log - Background",
+            _logger.LogTrace("{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - Access Log - Background",
               accessLogProps.Method,
               accessLogProps.Uri,
               accessLogProps.Protocol,

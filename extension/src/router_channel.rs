@@ -534,7 +534,7 @@ impl RouterChannel {
     // Include: Path and Query string, status code, bytes sent, bytes received, duration, time since
     // last bytes sent, time since last bytes received
     // log::info()
-    log::info!(
+    log::trace!(
       "{} - {} - BytesSentToApp: {} - BytesRcvdFromApp: {} - Access Log",
       app_url,
       status_code,
