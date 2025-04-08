@@ -204,7 +204,7 @@ public class LambdaInstanceManager : ILambdaInstanceManager
     {
       // Add the connection to the instance
       // The instance will eventually get rebalanced in the least outstanding queue
-      var result = await instance.AddConnection(request, response, channelId, dispatchMode).ConfigureAwait(false);
+      var result = await instance.AddConnection(request, response, channelId, dispatchMode);
 
       if (result.WasRejected || result.Connection == null)
       {

@@ -297,8 +297,8 @@ public class MetricsRegistry : IMetricsRegistry
   {
     while (true)
     {
-      await Task.WhenAll(this.Metrics.ReportRunner.RunAllAsync()).ConfigureAwait(false);
-      await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+      await Task.WhenAll(this.Metrics.ReportRunner.RunAllAsync());
+      await Task.Delay(TimeSpan.FromSeconds(5));
     }
   }
 }

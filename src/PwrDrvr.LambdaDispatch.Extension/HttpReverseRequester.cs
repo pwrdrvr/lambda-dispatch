@@ -147,10 +147,10 @@ public class HttpReverseRequester
     // Read the Response before sending the Request
     // TODO: We can await the pair of the Response or Request closing to avoid deadlocks
     //
-    var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+    var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
     // Get the stream that we can write the response to
-    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync().ConfigureAwait(false);
+    Stream requestStreamForResponse = await duplexContent.WaitForStreamAsync();
     if (response.StatusCode != HttpStatusCode.OK)
     {
       _logger.LogWarning("CLOSING - Got a {status} on the outer request LambdaId: {id}, ChannelId: {channelId}", response.StatusCode, _id, channelId);
@@ -173,7 +173,7 @@ public class HttpReverseRequester
     var headerBuffer = ArrayPool<byte>.Shared.Rent(32 * 1024);
     try
     {
-      var requestStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+      var requestStream = await response.Content.ReadAsStreamAsync();
 
       // Read up to max headers size of data
       // Read until we fill the bufer OR we get an EOF
@@ -189,7 +189,7 @@ public class HttpReverseRequester
           break;
         }
 
-        var bytesRead = await requestStream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead).ConfigureAwait(false);
+        var bytesRead = await requestStream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead);
         if (bytesRead == 0)
         {
           // Done reading
@@ -445,12 +445,12 @@ public class HttpReverseRequester
       offset += endOfHeadersBytes.Length;
 
       // Write the headers to the stream
-      await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset)).ConfigureAwait(false);
+      await requestStreamForResponse.WriteAsync(headerBuffer.AsMemory(0, offset));
 
       // Copy the body from the request to the response
       // NOTE: CopyToAsync will only start sending when EOF is read on the response stream
 #if false
-      await response.Content.CopyToAsync(requestStreamForResponse).ConfigureAwait(false);
+      await response.Content.CopyToAsync(requestStreamForResponse);
 #else
       var bytes = ArrayPool<byte>.Shared.Rent(128 * 1024);
       try
@@ -469,7 +469,7 @@ public class HttpReverseRequester
         ArrayPool<byte>.Shared.Return(bytes);
       }
 #endif
-      await requestStreamForResponse.FlushAsync().ConfigureAwait(false);
+      await requestStreamForResponse.FlushAsync();
       requestStreamForResponse.Close();
       duplexContent.Complete();
     }
@@ -504,7 +504,7 @@ public class HttpReverseRequester
       request.Headers.Host = $"lambdadispatch.local:{_uri.Port}";
       request.Headers.Add("X-Lambda-Id", _id);
 
-      using var response = await _client.SendAsync(request).ConfigureAwait(false);
+      using var response = await _client.SendAsync(request);
 
       if (response.StatusCode != HttpStatusCode.OK)
       {
@@ -539,7 +539,7 @@ public class HttpReverseRequester
       request.Headers.Host = $"lambdadispatch.local:{_uri.Port}";
       request.Headers.Add("X-Lambda-Id", _id);
 
-      using var response = await _client.SendAsync(request).ConfigureAwait(false);
+      using var response = await _client.SendAsync(request);
 
       if (response.StatusCode != HttpStatusCode.OK)
       {

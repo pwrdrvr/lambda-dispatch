@@ -64,14 +64,14 @@ public class Function
 
         _logger.LogDebug("Lambda Extension Registering");
         // The Extension API will not return so we cannot await this
-        await RegisterLambdaExtension().ConfigureAwait(false);
+        await RegisterLambdaExtension();
         _logger.LogDebug("Lambda Extension Registered");
 
         if (!_staticResponse)
         {
             _logger.LogDebug("Contained App - Skipping Startup, Waiting for Healthy");
             // Wait for the health endpoint to return OK
-            await AwaitChildAppHealthy().ConfigureAwait(false);
+            await AwaitChildAppHealthy();
             _logger.LogInformation("Contained App - Healthy");
         }
         else
@@ -80,7 +80,7 @@ public class Function
         }
 #if !SKIP_METRICS
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-        Task.Run(() => MetricsRegistry.PrintMetrics(ctsShutdown.Token)).ConfigureAwait(false);
+        Task.Run(() => MetricsRegistry.PrintMetrics(ctsShutdown.Token));
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 #endif
         Func<WaiterRequest, ILambdaContext, Task<WaiterResponse>> handler = FunctionHandler;
@@ -133,14 +133,14 @@ public class Function
             var execName = Path.GetFileName(Process.GetCurrentProcess().MainModule?.FileName ?? "lambda-dispatch");
             _logger.LogInformation("Registering Lambda Extension with name: {}", execName);
             registerRequest.Headers.Add("Lambda-Extension-Name", execName);
-            var registerResponse = await client.SendAsync(registerRequest).ConfigureAwait(false);
+            var registerResponse = await client.SendAsync(registerRequest);
             if (!registerResponse.IsSuccessStatusCode)
             {
                 throw new Exception($"Failed to register extension: {registerResponse.StatusCode}");
             }
             var extensionId = registerResponse.Headers.GetValues("Lambda-Extension-Identifier").FirstOrDefault();
             // Discard the response body
-            await registerResponse.Content.CopyToAsync(Stream.Null).ConfigureAwait(false);
+            await registerResponse.Content.CopyToAsync(Stream.Null);
             if (string.IsNullOrEmpty(extensionId))
             {
                 throw new Exception($"Failed to get extension id");
@@ -153,7 +153,7 @@ public class Function
                 {
                     var nextEventRequest = new HttpRequestMessage(HttpMethod.Get, nextEventUrl);
                     nextEventRequest.Headers.Add("Lambda-Extension-Identifier", extensionId);
-                    var nextEventResponse = await client.SendAsync(nextEventRequest).ConfigureAwait(false);
+                    var nextEventResponse = await client.SendAsync(nextEventRequest);
                     if (!nextEventResponse.IsSuccessStatusCode)
                     {
                         throw new Exception($"Failed to get next event: {nextEventResponse.StatusCode}");
@@ -196,7 +196,7 @@ public class Function
         {
             try
             {
-                var response = await client.GetAsync(healthCheckUrl).ConfigureAwait(false);
+                var response = await client.GetAsync(healthCheckUrl);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     _logger.LogInformation("Contained App - Got OK result");
@@ -209,7 +209,7 @@ public class Function
                 _logger.LogDebug("Contained App - Healthcheck failed");
             }
 
-            await Task.Delay(250).ConfigureAwait(false); // Wait for a second before polling again
+            await Task.Delay(250); // Wait for a second before polling again
         }
         while (true);
 
@@ -302,7 +302,7 @@ public class Function
                                 _logger.LogDebug("Getting request from Router");
 
                                 (var outerStatus, var receivedRequest, var requestForResponse, var requestStreamForResponse, var duplexContent)
-                                    = await reverseRequester.GetRequest(channelId).ConfigureAwait(false);
+                                    = await reverseRequester.GetRequest(channelId);
 
                                 lastWakeupTime = DateTime.Now;
 
@@ -361,7 +361,7 @@ public class Function
                                     {
                                         // Return after headers are received
                                         _logger.LogDebug("Sending request to Contained App");
-                                        using var response = await appHttpClient.SendAsync(receivedRequest, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                                        using var response = await appHttpClient.SendAsync(receivedRequest, HttpCompletionOption.ResponseHeadersRead);
 
                                         _logger.LogDebug("Got response from Contained App");
 
@@ -371,7 +371,7 @@ public class Function
                                         }
 
                                         // Send the response back
-                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
                                     }
                                     else
                                     {
@@ -379,7 +379,7 @@ public class Function
                                         // Read the bytes off the request body, if any
                                         if (receivedRequest.Content != null)
                                         {
-                                            await receivedRequest.Content.CopyToAsync(Stream.Null).ConfigureAwait(false);
+                                            await receivedRequest.Content.CopyToAsync(Stream.Null);
                                         }
 
                                         using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
@@ -387,7 +387,7 @@ public class Function
                                             Content = new StringContent($"Hello from LambdaLB")
                                         };
 
-                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
                                     }
 
 #if !SKIP_METRICS
@@ -407,7 +407,7 @@ public class Function
                                         {
                                             Content = new StringContent(ex.Message)
                                         };
-                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId).ConfigureAwait(false);
+                                        await reverseRequester.SendResponse(response, requestForResponse, requestStreamForResponse, duplexContent, channelId);
                                     }
                                     catch (Exception ex2)
                                     {
@@ -517,7 +517,7 @@ public class Function
                 {
                     try
                     {
-                        var completedTask = await Task.WhenAny(tcsShutdown.Task, Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token)).ConfigureAwait(false);
+                        var completedTask = await Task.WhenAny(tcsShutdown.Task, Task.Delay(TimeSpan.FromSeconds(5), pingCts.Token));
 
                         if (completedTask == tcsShutdown.Task)
                         {

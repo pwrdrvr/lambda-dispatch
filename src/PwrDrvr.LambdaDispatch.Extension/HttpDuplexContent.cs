@@ -32,7 +32,7 @@ public class HttpDuplexContent : HttpContent
     stream.Flush();
     _waitForCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     _waitForStream.SetResult(stream);
-    await _waitForCompletion.Task.ConfigureAwait(false);
+    await _waitForCompletion.Task;
   }
 
   public Task<Stream> WaitForStreamAsync()
