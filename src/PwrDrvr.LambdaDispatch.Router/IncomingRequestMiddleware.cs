@@ -141,7 +141,10 @@ public class IncomingRequestMiddleware
 
       // We're going to handle this
       // We will prevent the endpoint router from ever seeing this request
+      // Log the request and the thread it's running on
+      _logger.LogInformation("LambdaId: {}, ThreadId: {} - Incoming request starting", lambdaArn, Thread.CurrentThread.ManagedThreadId);
       await _poolManager.GetOrCreatePoolByLambdaName(lambdaArn).Dispatcher.AddRequest(context.Request, context.Response, accessLogProps, debugMode);
+      _logger.LogInformation("LambdaId: {}, ThreadId: {} - Incoming request completed", lambdaArn, Thread.CurrentThread.ManagedThreadId);
     }
     else
     {

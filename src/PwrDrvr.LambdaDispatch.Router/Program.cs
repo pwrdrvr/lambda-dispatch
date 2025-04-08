@@ -78,7 +78,8 @@ public class Program
         _logger.LogInformation("GIT_HASH: {GIT_HASH}", Environment.GetEnvironmentVariable("GIT_HASH") ?? "none");
         _logger.LogInformation("BUILD_TIME: {BUILD_TIME}", Environment.GetEnvironmentVariable("BUILD_TIME") ?? "none");
         AdjustThreadPool();
-        CreateHostBuilder(args).Build().Run();
+        var app = CreateHostBuilder(args).Build();
+        app.Run();
     }
 
     public static string? GetCertPath(string filename)
@@ -114,6 +115,7 @@ public class Program
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
+            .UseAffinityTaskScheduler(1)
             .ConfigureAppConfiguration((hostingContext, config) =>
             {
                 // Add other configuration sources as needed

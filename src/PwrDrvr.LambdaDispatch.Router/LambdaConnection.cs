@@ -573,6 +573,7 @@ public class LambdaConnection : ILambdaConnection
   private async Task<long> RelayResponseFromLambda(HttpResponse incomingResponse, AccessLogProps accessLogProps, bool debugMode = false)
   {
     _logger.LogDebug("LambdaId: {} - Copying response body from Lambda", Instance.Id);
+    _logger.LogInformation("LambdaId: {}, ThreadId: {} - Copying response body from Lambda", Instance.Id, Thread.CurrentThread.ManagedThreadId);
 
     long totalBodyBytesRead = 0;
     long totalBodyBytesWritten = 0;
