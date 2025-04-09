@@ -659,7 +659,7 @@ jobs:
     outputs:
       stack-url-suffix: ${{ steps.getDeployUrl.outputs.stack-url-suffix }}
       url: https://lambdadispatch${{ steps.getDeployUrl.outputs.stack-url-suffix }}.ghpublic.pwrdrvr.com
-    if: ${{ success() && needs.install-deps.result != 'failed' }}
+    if: ${{ !cancelled() && needs.install-deps.result != 'failed' }}
     env:
       DEMO_APP_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
       ROUTER_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
@@ -706,7 +706,7 @@ jobs:
   smoke-test:
     needs: [deploy]
     runs-on: ubuntu-latest
-    if: ${{ success() && needs.deploy.result != 'failed' }}
+    if: ${{ !cancelled() && needs.deploy.result != 'failed' }}
     steps:
       - name: Smoke Test
         run: |
@@ -726,7 +726,7 @@ jobs:
   create-status-checks:
     needs: [deploy, smoke-test]
     runs-on: ubuntu-latest
-    if: ${{ success() && needs.deploy.result != 'failed' && github.event_name == 'pull_request' }}
+    if: ${{ !cancelled() && needs.deploy.result != 'failed' && github.event_name == 'pull_request' }}
     steps:
       - name: Generate URLs
         id: generate-urls
