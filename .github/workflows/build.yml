@@ -774,7 +774,8 @@ jobs:
               "",
               "_Note: Tests run against the /ping endpoint for 60 seconds each._",
               "",
-              `*Last updated: ${new Date().toISOString()}*`
+              `*Last updated: ${new Date().toISOString()}*`,
+              "" // Add empty line at the end
             ].join("\n");
             
             fs.writeFileSync("test-results/table.md", table);
