@@ -723,8 +723,87 @@ jobs:
             curl ${BASE_URL}/ping
           done
 
+  performance-test:
+    needs:
+      - smoke-test
+      - deploy
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() && needs.smoke-test.result != 'failed' && github.event_name == 'pull_request' }}
+    steps:
+      - name: Install oha
+        run: |
+          wget https://github.com/hatoo/oha/releases/download/v0.5.8/oha-linux-amd64 -O oha
+          chmod +x oha
+          sudo mv oha /usr/local/bin/
+
+      - name: Run Performance Tests
+        id: perf-test
+        run: |
+          # Create results directory
+          mkdir -p test-results
+
+          # Run performance tests and save results
+          echo "Running latency test (20 concurrent, 60s)..."
+          oha --no-tui -j -c 20 -z 60s ${{ needs.deploy.outputs.url }}/ping > test-results/latency.json
+          cat test-results/latency.json
+
+          echo "Running throughput test (100 concurrent, 60s)..."
+          oha --no-tui -j -c 100 -z 60s ${{ needs.deploy.outputs.url }}/ping > test-results/throughput.json
+          cat test-results/throughput.json
+
+          # Parse results and create markdown table
+          echo "Generating markdown table..."
+          node -e '
+            const fs = require("fs");
+            const latencyResults = JSON.parse(fs.readFileSync("test-results/latency.json"));
+            const throughputResults = JSON.parse(fs.readFileSync("test-results/throughput.json"));
+            
+            const formatNumber = (num) => Number(num).toLocaleString(undefined, { maximumFractionDigits: 2 });
+            
+            const table = [
+              "### 🚀 Performance Test Results",
+              "",
+              "| Metric | Latency Test (20 concurrent) | Throughput Test (100 concurrent) |",
+              "|--------|----------------------------|--------------------------------|",
+              `| Total Requests | ${formatNumber(latencyResults.summary.total)} | ${formatNumber(throughputResults.summary.total)} |`,
+              `| Requests/sec | ${formatNumber(latencyResults.summary.rps)} | ${formatNumber(throughputResults.summary.rps)} |`,
+              `| Mean Latency | ${formatNumber(latencyResults.summary.average)}ms | ${formatNumber(throughputResults.summary.average)}ms |`,
+              `| p95 Latency | ${formatNumber(latencyResults.latencyPercentiles.p95)}ms | ${formatNumber(throughputResults.latencyPercentiles.p95)}ms |`,
+              `| p99 Latency | ${formatNumber(latencyResults.latencyPercentiles.p99)}ms | ${formatNumber(throughputResults.latencyPercentiles.p99)}ms |`,
+              `| Max Latency | ${formatNumber(latencyResults.summary.slowest)}ms | ${formatNumber(throughputResults.summary.slowest)}ms |`,
+              "",
+              "_Note: Tests run against the /ping endpoint for 60 seconds each._",
+              "",
+              `*Last updated: ${new Date().toISOString()}*`,
+              "" // Add empty line at the end
+            ].join("\n");
+            
+            fs.writeFileSync("test-results/table.md", table);
+          '
+
+          # Save table content to outputs
+          echo "performance_results<<EOF" >> $GITHUB_OUTPUT
+          cat test-results/table.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Find Performance Results Comment
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '### 🚀 Performance Test Results'
+
+      - name: Post Performance Results Comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.perf-test.outputs.performance_results }}
+
   create-status-checks:
-    needs: [deploy, smoke-test]
+    needs: [deploy, smoke-test, performance-test]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() && needs.deploy.result != 'failed' && github.event_name == 'pull_request' }}
     steps:
