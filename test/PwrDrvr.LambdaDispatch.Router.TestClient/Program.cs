@@ -258,7 +258,7 @@ public class Program
           break;
         }
 
-        var bytesRead = await stream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead).ConfigureAwait(false);
+        var bytesRead = await stream.ReadAsync(headerBuffer, totalBytesRead, headerBuffer.Length - totalBytesRead);
         if (bytesRead == 0)
         {
           // Done reading

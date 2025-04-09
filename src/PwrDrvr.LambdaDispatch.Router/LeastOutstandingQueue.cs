@@ -392,7 +392,7 @@ public class LeastOutstandingQueue : IDisposable, ILambdaInstanceQueue
       // Wait for a short period before checking again
       try
       {
-        await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationTokenSource.Token).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationTokenSource.Token);
       }
       catch (TaskCanceledException)
       {
@@ -443,7 +443,7 @@ public class LeastOutstandingQueue : IDisposable, ILambdaInstanceQueue
       // Wait a bit
       try
       {
-        await Task.Delay(TimeSpan.FromSeconds(10), cancellationTokenSource.Token).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromSeconds(10), cancellationTokenSource.Token);
       }
       catch (TaskCanceledException)
       {

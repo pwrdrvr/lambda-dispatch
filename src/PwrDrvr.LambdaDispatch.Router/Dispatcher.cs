@@ -194,7 +194,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
         }
 
         // TODO: If we want to cancel we need to pass a token in here
-        runRequestResult = await lambdaConnection.RunRequest(incomingRequest, incomingResponse, accessLogProps, debugMode).ConfigureAwait(false);
+        runRequestResult = await lambdaConnection.RunRequest(incomingRequest, incomingResponse, accessLogProps, debugMode);
         accessLogProps.StatusCode = incomingResponse.StatusCode;
 
         if (debugMode)
@@ -770,7 +770,7 @@ public class Dispatcher : IDispatcher, IBackgroundDispatcher
               "-"
               );
         }
-      }).ConfigureAwait(false);
+      });
 
       return startedRequest;
     }

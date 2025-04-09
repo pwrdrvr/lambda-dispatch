@@ -54,7 +54,7 @@ public class Startup
 #if !SKIP_METRICS
         if (_config.LogPeriodicMetrics)
         {
-            Task.Run(metricsRegistry.PrintMetrics).ConfigureAwait(false);
+            Task.Run(metricsRegistry.PrintMetrics);
         }
 #endif
     }

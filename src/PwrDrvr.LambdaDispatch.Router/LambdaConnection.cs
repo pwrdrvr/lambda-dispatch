@@ -238,7 +238,7 @@ public class LambdaConnection : ILambdaConnection
       offset += 2;
 
       // Send the headers to the Lambda
-      await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token).ConfigureAwait(false);
+      await Response.BodyWriter.WriteAsync(headerBuffer.AsMemory(0, offset), CTS.Token);
 
       if (debugMode)
       {
@@ -353,14 +353,14 @@ public class LambdaConnection : ILambdaConnection
           ArrayPool<byte>.Shared.Return(bytes);
         }
 
-        await incomingRequest.BodyReader.CompleteAsync().ConfigureAwait(false);
+        await incomingRequest.BodyReader.CompleteAsync();
 
         _logger.LogDebug("Finished sending incoming request body to Lambda");
       }
 
       // Mark that the Request has been sent on the LambdaInstances
-      await Response.BodyWriter.CompleteAsync().ConfigureAwait(false);
-      await Response.CompleteAsync().ConfigureAwait(false);
+      await Response.BodyWriter.CompleteAsync();
+      await Response.CompleteAsync();
 
       // Get the response from the lambda request and relay it back to the caller
       _logger.LogDebug("Finished sending entire request to Lambda");
@@ -444,7 +444,7 @@ public class LambdaConnection : ILambdaConnection
       // Wait for both to finish
       // This allows us to continue sending request body while receiving
       // and relaying the response body (duplex)
-      var completedTask = await Task.WhenAny(proxyRequestTask, proxyResponseTask).ConfigureAwait(false);
+      var completedTask = await Task.WhenAny(proxyRequestTask, proxyResponseTask);
       if (completedTask.Exception != null)
       {
         _logger.LogError(completedTask.Exception, "{Method} {Url} {Protocol} {RemoteIP} {UserAgent} - {} Status - {} Bytes Received - {} Bytes Sent - RUNREQUEST - EXCEPTION",
@@ -464,14 +464,14 @@ public class LambdaConnection : ILambdaConnection
       {
         // ProxyRequestToLambda finished first
         // Wait for RelayResponseFromLambda to finish
-        totalBytesWritten = await proxyResponseTask.ConfigureAwait(false);
+        totalBytesWritten = await proxyResponseTask;
         totalBytesRead = completedTask.Result;
       }
       else
       {
         // RelayResponseFromLambda finished first
         // Wait for ProxyRequestToLambda to finish
-        totalBytesRead = await proxyRequestTask.ConfigureAwait(false);
+        totalBytesRead = await proxyRequestTask;
         totalBytesWritten = completedTask.Result;
       }
     }
@@ -555,7 +555,7 @@ public class LambdaConnection : ILambdaConnection
 
       try
       {
-        await incomingResponse.CompleteAsync().ConfigureAwait(false);
+        await incomingResponse.CompleteAsync();
       }
       catch { }
 
@@ -595,7 +595,7 @@ public class LambdaConnection : ILambdaConnection
           break;
         }
 
-        var bytesRead = await Request.Body.ReadAsync(headerBuffer.AsMemory(totalBytesRead, headerBuffer.Length - totalBytesRead), CTS.Token).ConfigureAwait(false);
+        var bytesRead = await Request.Body.ReadAsync(headerBuffer.AsMemory(totalBytesRead, headerBuffer.Length - totalBytesRead), CTS.Token);
         if (bytesRead == 0)
         {
           // Done reading
@@ -734,7 +734,7 @@ public class LambdaConnection : ILambdaConnection
         // There are bytes left in the buffer
         // Copy them to the response
         totalBodyBytesRead += totalBytesRead - startOfNextLine;
-        await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine), CTS.Token).ConfigureAwait(false);
+        await incomingResponse.BodyWriter.WriteAsync(headerBuffer.AsMemory(startOfNextLine, totalBytesRead - startOfNextLine), CTS.Token);
         totalBodyBytesWritten += totalBytesRead - startOfNextLine;
       }
     }
@@ -785,7 +785,7 @@ public class LambdaConnection : ILambdaConnection
       {
         try
         {
-          bytesRead = await responseStream.ReadAsync(bytes, CTS.Token).ConfigureAwait(false);
+          bytesRead = await responseStream.ReadAsync(bytes, CTS.Token);
         }
         catch (Exception ex)
         {
@@ -809,7 +809,7 @@ public class LambdaConnection : ILambdaConnection
 
         try
         {
-          await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token).ConfigureAwait(false);
+          await incomingResponse.Body.WriteAsync(bytes.AsMemory(0, bytesRead), CTS.Token);
           totalBodyBytesWritten += bytesRead;
         }
         catch (Exception ex)
