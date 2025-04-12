@@ -1,0 +1,27 @@
+name: Performance Test Only
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  check-label:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ contains(github.event.pull_request.labels.*.name, 'PERF-TEST-ONLY') }}
+    steps:
+      - name: Check for PERF-TEST-ONLY label
+        id: check
+        run: |
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'PERF-TEST-ONLY') }}" == "true" ]]; then
+            echo "Label PERF-TEST-ONLY is present"
+          else
+            echo "Label PERF-TEST-ONLY is not present"
+          fi
+
+  perf-test:
+    needs: check-label
+    if: needs.check-label.outputs.should-run == 'true'
+    uses: ./.github/workflows/performance-test.yml
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
