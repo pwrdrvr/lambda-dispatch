@@ -740,6 +740,7 @@ jobs:
             curl ${BASE_URL}/ping
           done
 
+  # Dummy comment
   performance-test:
     needs:
       - smoke-test
