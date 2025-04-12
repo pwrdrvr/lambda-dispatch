@@ -732,7 +732,7 @@ jobs:
     steps:
       - name: Install oha
         run: |
-          wget https://github.com/hatoo/oha/releases/download/v0.5.8/oha-linux-amd64 -O oha
+          wget https://github.com/hatoo/oha/releases/download/v1.8.0/oha-linux-amd64 -O oha
           chmod +x oha
           sudo mv oha /usr/local/bin/
 
