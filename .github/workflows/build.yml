@@ -676,7 +676,7 @@ jobs:
     outputs:
       stack-url-suffix: ${{ steps.getDeployUrl.outputs.stack-url-suffix }}
       url: https://lambdadispatch${{ steps.getDeployUrl.outputs.stack-url-suffix }}.ghpublic.pwrdrvr.com
-    if: ${{ !cancelled() && needs.install-deps.result != 'failed' }}
+    if: ${{ needs.install-deps.result == 'success' }}
     env:
       DEMO_APP_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-demo-app${{ github.event_name == 'pull_request' && '-dev' || '' }}
       ROUTER_REGISTRY_IMAGE: public.ecr.aws/pwrdrvr/lambda-dispatch-router${{ github.event_name == 'pull_request' && '-dev' || '' }}
@@ -723,7 +723,7 @@ jobs:
   smoke-test:
     needs: [deploy]
     runs-on: ubuntu-latest
-    if: ${{ !cancelled() && needs.deploy.result != 'failed' }}
+    if: ${{ needs.deploy.result == 'success' }}
     steps:
       - name: Smoke Test
         run: |
@@ -744,7 +744,7 @@ jobs:
     needs:
       - smoke-test
       - deploy
-    if: ${{ !cancelled() && needs.smoke-test.result != 'failed' && github.event_name == 'pull_request' }}
+    if: ${{ needs.smoke-test.result == 'success' && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/performance-test.yml
     with:
       pr_number: ${{ github.event.pull_request.number }}
@@ -752,7 +752,7 @@ jobs:
   create-status-checks:
     needs: [deploy, smoke-test, performance-test]
     runs-on: ubuntu-latest
-    if: ${{ !cancelled() && needs.deploy.result != 'failed' && github.event_name == 'pull_request' }}
+    if: ${{ needs.deploy.result == 'success' && github.event_name == 'pull_request' }}
     steps:
       - name: Generate URLs
         id: generate-urls
