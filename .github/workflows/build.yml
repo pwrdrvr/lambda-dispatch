@@ -654,7 +654,7 @@ jobs:
       - build-demoapp
       - merge-router
     runs-on: ubuntu-latest
-    if: ${{ !failure() && needs.check-skip.result != 'skipped' && (needs.build-demoapp.result == 'skipped' || needs.build-demoapp.result == 'success') && (needs.merge-router.result == 'skipped' || needs.merge-router.result == 'success') }}
+    if: ${{ !failure() && needs.check-skip.outputs.should-skip != 'true' && (needs.build-demoapp.result == 'skipped' || needs.build-demoapp.result == 'success') && (needs.merge-router.result == 'skipped' || needs.merge-router.result == 'success') }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/configure-nodejs
